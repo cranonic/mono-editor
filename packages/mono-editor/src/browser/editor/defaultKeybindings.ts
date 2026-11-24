@@ -26,6 +26,7 @@ export interface CoreKeybindingHost {
   isReadOnly(): boolean;
   getTabSize(): number;
   getLanguageIdAtPosition?: (lineNumber: number, column: number) => string;
+  onBeforePaste?: (text: string) => Promise<boolean>;
   syncTextarea(): void;
   emitContent(): void;
   emitCursorEvents(source: string): void;
@@ -138,6 +139,7 @@ export function registerCoreKeybindingsAndActions(host: CoreKeybindingHost): voi
     let text = '';
     try { text = await navigator.clipboard.readText(); } catch { return; }
     if (!text) return;
+    if (host.onBeforePaste && (await host.onBeforePaste(text))) return;
     const model = host.getModel();
     const sel = host.selection;
     if (sel.hasMultipleCursors) {

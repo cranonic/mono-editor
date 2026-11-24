@@ -1,11 +1,14 @@
 import type { RenderMetrics } from '../../common/config/editorOptions';
 import type { SelectionState } from '../../common/core/SelectionState';
+import type { DocumentSymbol } from '../../common/languages/providers/extendedTypes';
 import type { TextModel } from '../../common/model/TextModel';
 import type { FoldingModel } from '../../common/viewModel/FoldingModel';
+import { MarkdownScopeFinder, OutlineScopeFinder } from '../../common/viewModel/markdownSticky';
 import {
   DEFAULT_STICKY_SCROLL,
   IndentScopeFinder,
   layoutStickyForScroll,
+  type IScopeFinder,
   type MonoStickyScrollOptions,
   type StickyRenderLine,
 } from '../../common/viewModel/StickyScroll';
@@ -24,30 +27,52 @@ export interface StickyComputeArgs {
   foldingModel: FoldingModel | null;
 }
 
+function isMarkdownLanguage(langId: string): boolean {
+  const id = langId.toLowerCase();
+  return id === 'markdown' || id === 'md' || id === 'mdx';
+}
+
 /**
  * Manages top sticky scope headers and bottom active-line sticky bar state & hit-testing.
- * Top sticky is ALWAYS pinned to the real top of the editor (y = 0); Find floats above it.
+ * Scope strategy priority:
+ *  1. `OutlineScopeFinder` (when DocumentSymbolProvider supplies outline symbols & not forced to indent)
+ *  2. `MarkdownScopeFinder` (automatic for Markdown `#`/`##`/`###` headings ignoring fenced code blocks)
+ *  3. `IndentScopeFinder` fallback
  */
 export class StickyScrollController {
   private opts: Required<MonoStickyScrollOptions>;
-  private scopeFinder: IndentScopeFinder;
+  private indentFinder: IndentScopeFinder;
+  private markdownFinder: MarkdownScopeFinder;
+  private outlineFinder: OutlineScopeFinder;
+  private hasOutlineSymbols = false;
   lastSticky: StickyRenderLine[] = [];
   lastStickyHeight = 0;
   lastBottomSticky: { lineNumber: number; caretColumn: number } | null = null;
 
   constructor(model: TextModel, stickyScroll?: MonoStickyScrollOptions) {
     this.opts = { ...DEFAULT_STICKY_SCROLL, ...stickyScroll };
-    this.scopeFinder = new IndentScopeFinder(model);
+    this.indentFinder = new IndentScopeFinder(model);
+    this.markdownFinder = new MarkdownScopeFinder(model);
+    this.outlineFinder = new OutlineScopeFinder(model);
   }
 
   setModel(model: TextModel, tabSize: number): void {
-    this.scopeFinder.sync(model, tabSize);
-    this.scopeFinder.invalidate();
+    this.indentFinder.sync(model, tabSize);
+    this.markdownFinder.sync(model, tabSize);
+    this.outlineFinder.sync(model, tabSize);
+    this.outlineFinder.setSymbols(null);
+    this.hasOutlineSymbols = false;
+    this.invalidate();
+  }
+
+  setOutlineSymbols(symbols: readonly DocumentSymbol[] | null): void {
+    this.outlineFinder.setSymbols(symbols);
+    this.hasOutlineSymbols = Boolean(symbols && symbols.length > 0);
   }
 
   setOptions(opts: MonoStickyScrollOptions): void {
     this.opts = { ...DEFAULT_STICKY_SCROLL, ...opts };
-    this.scopeFinder.invalidate();
+    this.invalidate();
   }
 
   getOptions(): Required<MonoStickyScrollOptions> {
@@ -55,7 +80,22 @@ export class StickyScrollController {
   }
 
   invalidate(): void {
-    this.scopeFinder.invalidate();
+    this.indentFinder.invalidate();
+    this.markdownFinder.invalidate();
+    this.outlineFinder.invalidate();
+  }
+
+  private resolveFinder(model: TextModel, tabSize: number): IScopeFinder {
+    if (this.opts.defaultModel !== 'indentationModel' && this.hasOutlineSymbols) {
+      this.outlineFinder.sync(model, tabSize);
+      return this.outlineFinder;
+    }
+    if (isMarkdownLanguage(model.getLanguageId())) {
+      this.markdownFinder.sync(model, tabSize);
+      return this.markdownFinder;
+    }
+    this.indentFinder.sync(model, tabSize);
+    return this.indentFinder;
   }
 
   compute(args: StickyComputeArgs): StickyRenderLine[] {
@@ -79,7 +119,7 @@ export class StickyScrollController {
       foldingModel,
     } = args;
 
-    this.scopeFinder.sync(model, tabSize);
+    const finder = this.resolveFinder(model, tabSize);
     const caretLine = selection.active.lineNumber;
     const caretCol = selection.active.column;
     const isLineHidden =
@@ -87,11 +127,9 @@ export class StickyScrollController {
         ? (ln: number) => foldingModel.isLineHidden(ln)
         : undefined;
 
-    // Content is drawn `topInsetPx` lower than the doc origin (Find bar clearance) but the sticky stack
-    // stays at the real top, so the headers must be computed for the row that is actually under it.
     const stickyScrollTop = renderTop - topInsetPx;
     const layout = layoutStickyForScroll(
-      this.scopeFinder,
+      finder,
       stickyScrollTop,
       metrics,
       this.opts.maxLineCount,
@@ -132,13 +170,13 @@ export class StickyScrollController {
   /** Stack height for `args.renderTop` without touching the live sticky state (used by reveal logic). */
   peekHeight(args: StickyComputeArgs): number {
     if (!this.opts.enabled) return 0;
-    this.scopeFinder.sync(args.model, args.tabSize);
+    const finder = this.resolveFinder(args.model, args.tabSize);
     const isLineHidden =
       args.foldingEnabled && args.foldingModel?.hasCollapsed()
         ? (ln: number) => args.foldingModel!.isLineHidden(ln)
         : undefined;
     return layoutStickyForScroll(
-      this.scopeFinder,
+      finder,
       args.renderTop - args.topInsetPx,
       args.metrics,
       this.opts.maxLineCount,

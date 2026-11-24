@@ -3,12 +3,14 @@ import {
   type IEditorContribution,
   type IEditorContributionHost,
 } from '../../browser/editor/editorTypes';
+import type { InputChangeEvent } from '../../browser/input/InputController';
 import { languageFeatures } from '../../common/languages/languageFeaturesService';
 import { MonoCommands } from '../../platform/keybindings/KeybindingService';
 
 export class FormatController implements IEditorContribution {
   readonly id = ContributionIds.Format;
   private readonly host: IEditorContributionHost;
+  private onTypeInFlight = false;
 
   constructor(host: IEditorContributionHost) {
     this.host = host;
@@ -30,6 +32,48 @@ export class FormatController implements IEditorContribution {
       () => this.runFormatSelection(),
       { title: 'Format Selection', category: 'Format' },
     );
+  }
+
+  onInputChange(ev: InputChangeEvent): void {
+    if (this.host.isReadOnly() || this.onTypeInFlight) return;
+    let triggerCh = '';
+    if (ev.kind === 'enter') triggerCh = '\n';
+    else if (ev.kind === 'type' && ev.text && ev.text.length === 1) triggerCh = ev.text;
+    if (!triggerCh) return;
+    void this.runOnTypeFormatting(triggerCh);
+  }
+
+  async runOnTypeFormatting(ch: string): Promise<boolean> {
+    if (this.host.isReadOnly() || this.host.isDisposed()) return false;
+    const pos = this.host.getPosition();
+    const langId = this.host.getLanguageIdAtPosition(pos.lineNumber, pos.column);
+    const providers = languageFeatures.getOnTypeFormattingProviders(langId);
+    if (!providers.length) return false;
+
+    const matching = providers.filter((p) => p.autoFormatTriggerCharacters.includes(ch));
+    if (!matching.length) return false;
+
+    this.onTypeInFlight = true;
+    try {
+      const modelLike = this.host.modelAsFeatureLike();
+      const opts = { tabSize: this.host.getTabSize(), insertSpaces: true };
+      const token = { isCancellationRequested: false };
+      for (const p of matching) {
+        try {
+          const edits = await Promise.resolve(
+            p.provideOnTypeFormattingEdits(modelLike, pos, ch, opts, token),
+          );
+          if (edits?.length && !this.host.isDisposed()) {
+            return this.host.applyTextEditsAtomic(edits, 'formatOnType');
+          }
+        } catch (e) {
+          console.warn('[mono on-type format]', e);
+        }
+      }
+      return false;
+    } finally {
+      this.onTypeInFlight = false;
+    }
   }
 
   async runFormatDocument(): Promise<boolean> {

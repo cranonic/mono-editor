@@ -139,6 +139,7 @@ export interface MonoEditorOptions {
     delay?: number;
     sticky?: boolean;
     above?: boolean;
+    openOnMouseHover?: boolean;
   };
   /** LSP Inlay Hints options (parameter & type annotations). */
   inlayHints?: {
@@ -150,7 +151,8 @@ export interface MonoEditorOptions {
   /** Multiline Ghost Text / AI Inline Completions options. */
   inlineSuggest?: {
     enabled?: boolean;
-    showToolbar?: 'always' | 'onHover' | 'never';
+    debounceMs?: number;
+    showToolbar?: 'always' | 'touch' | 'onHover' | 'never';
     italic?: boolean;
   };
   /** LSP Semantic Token highlighting overlay options. */

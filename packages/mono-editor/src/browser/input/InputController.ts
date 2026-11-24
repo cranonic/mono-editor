@@ -52,6 +52,7 @@ export class InputController {
   private getTokenTypeAt?: (lineNumber: number, column: number) => string | null;
   private goalColumn: number | null = null;
   private preKeyHandler: ((e: KeyboardEvent) => boolean) | null = null;
+  private pasteInterceptor: ((text: string) => Promise<boolean> | boolean) | null = null;
 
   constructor(
     host: HTMLElement,
@@ -80,6 +81,7 @@ export class InputController {
     const ta = this.textarea;
     ta.addEventListener('keydown', this.onKeyDown);
     ta.addEventListener('input', this.onInput);
+    ta.addEventListener('paste', this.onPaste);
     ta.addEventListener('compositionstart', this.onCompositionStart);
     ta.addEventListener('compositionupdate', this.onCompositionUpdate);
     ta.addEventListener('compositionend', this.onCompositionEnd);
@@ -99,6 +101,7 @@ export class InputController {
   blur(): void { this.bridge.blur(); }
   setKeybindingService(kb: KeybindingService | null): void { this.keybindings = kb; }
   setPreKeyHandler(fn: ((e: KeyboardEvent) => boolean) | null): void { this.preKeyHandler = fn; }
+  setPasteInterceptor(fn: ((text: string) => Promise<boolean> | boolean) | null): void { this.pasteInterceptor = fn; }
 
   setModel(model: TextModel): void {
     this.model = model;
@@ -113,6 +116,7 @@ export class InputController {
     const ta = this.textarea;
     ta.removeEventListener('keydown', this.onKeyDown);
     ta.removeEventListener('input', this.onInput);
+    ta.removeEventListener('paste', this.onPaste);
     ta.removeEventListener('compositionstart', this.onCompositionStart);
     ta.removeEventListener('compositionupdate', this.onCompositionUpdate);
     ta.removeEventListener('compositionend', this.onCompositionEnd);
@@ -152,6 +156,21 @@ export class InputController {
     });
     this.goalColumn = null;
     this.onChange(res.committed ? { kind: 'type', text: res.text } : { kind: 'composition', text: '' });
+  };
+
+  private onPaste = (e: ClipboardEvent): void => {
+    if (this.readOnly || this.disposed || !this.pasteInterceptor) return;
+    const text = e.clipboardData?.getData('text/plain') ?? '';
+    if (!text) return;
+    e.preventDefault();
+    this.textarea.value = '';
+    const interceptor = this.pasteInterceptor;
+    void Promise.resolve(interceptor(text)).then((handled) => {
+      if (handled || this.disposed || this.readOnly) return;
+      replaceSelectionText(this.model, this.selection, text);
+      this.goalColumn = null;
+      this.onChange({ kind: 'type', text });
+    });
   };
 
   private onInput = (e?: Event): void => {

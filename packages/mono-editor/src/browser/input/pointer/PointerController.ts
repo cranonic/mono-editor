@@ -2,7 +2,7 @@ import type { RenderMetrics } from '../../../common/config/editorOptions';
 import type { SelectionState } from '../../../common/core/SelectionState';
 import type { TextModel } from '../../../common/model/TextModel';
 import { graphemeRangeAt } from '../../../common/util/grapheme';
-import type { ColorHit, TeardropHit } from '../../render/CanvasRenderer';
+import type { ColorHit, InlayHintHit, LinkHit, TeardropHit } from '../../render/CanvasRenderer';
 import type { ViewController } from '../../view/ViewController';
 import { TeardropDragController } from './teardropHandles';
 import { AXIS_LOCK_RATIO, TouchScrollPhysics, type ScrollAxis } from './touchScroll';
@@ -30,6 +30,8 @@ export class PointerController {
   private onInteract: (kind: PointerInteractKind) => void;
   private onFoldToggle?: (lineNumber: number) => void;
   private onColorSwatchClick?: (hit: ColorHit) => void;
+  private onInlayHintClick?: (hit: InlayHintHit) => void;
+  private onLinkClick?: (hit: LinkHit, e: PointerEvent) => void;
   private disposed = false;
 
   private scrollPhysics = new TouchScrollPhysics();
@@ -71,6 +73,8 @@ export class PointerController {
     onInteract: (kind: PointerInteractKind) => void,
     onFoldToggle?: (lineNumber: number) => void,
     onColorSwatchClick?: (hit: ColorHit) => void,
+    onInlayHintClick?: (hit: InlayHintHit) => void,
+    onLinkClick?: (hit: LinkHit, e: PointerEvent) => void,
   ) {
     this.root = root;
     this.model = model;
@@ -81,6 +85,8 @@ export class PointerController {
     this.onInteract = onInteract;
     this.onFoldToggle = onFoldToggle;
     this.onColorSwatchClick = onColorSwatchClick;
+    this.onInlayHintClick = onInlayHintClick;
+    this.onLinkClick = onLinkClick;
 
     root.style.touchAction = 'none';
     root.addEventListener('pointerdown', this.onDown, { passive: false });
@@ -190,6 +196,28 @@ export class PointerController {
           e.preventDefault();
           e.stopPropagation();
           this.onColorSwatchClick(ch);
+          return true;
+        }
+      }
+    }
+
+    if (this.onInlayHintClick) {
+      for (const ih of this.view.getInlayHits()) {
+        if (localX >= ih.x && localX <= ih.x + ih.w && localY >= ih.y && localY <= ih.y + ih.h) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.onInlayHintClick(ih);
+          return true;
+        }
+      }
+    }
+
+    if (this.onLinkClick && (e.ctrlKey || e.metaKey)) {
+      for (const lh of this.view.getLinkHits()) {
+        if (localX >= lh.x && localX <= lh.x + lh.w && localY >= lh.y && localY <= lh.y + lh.h) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.onLinkClick(lh, e);
           return true;
         }
       }

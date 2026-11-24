@@ -836,6 +836,14 @@
               </div>
 
               <div class="ctrl-row">
+                <label for="opt-color-hover" title="colorDecoratorsOpenOnHover — off by default for mobile scrolling">Color Open on Hover</label>
+                <span class="switch">
+                  <input id="opt-color-hover" type="checkbox" />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
                 <label for="opt-color-comments">Colors in Comments</label>
                 <span class="switch">
                   <input id="opt-color-comments" type="checkbox" />
@@ -855,6 +863,30 @@
                 <label for="opt-color-script">Colors in &lt;script&gt;</label>
                 <span class="switch">
                   <input id="opt-color-script" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-inlay-hints">Inlay Hints</label>
+                <span class="switch">
+                  <input id="opt-inlay-hints" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-inline-suggest">Ghost Text (AI)</label>
+                <span class="switch">
+                  <input id="opt-inline-suggest" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-semantic-tokens">Semantic Tokens</label>
+                <span class="switch">
+                  <input id="opt-semantic-tokens" type="checkbox" checked />
                   <span class="switch-track"></span>
                 </span>
               </div>
@@ -982,6 +1014,10 @@
                 <button id="act-select-all-occ" class="action-btn" type="button" title="Select All Occurrences (Ctrl+Shift+L)">Select All Occ.</button>
                 <button id="act-sample-10" class="action-btn" type="button" title="10-line file — gutter must stay narrow">10-line File</button>
                 <button id="act-sample-1000" class="action-btn" type="button" title="1000 lines with nested scopes — test Sticky Scroll + Find">1000-line File</button>
+                <button id="act-ghost-preview" class="action-btn" type="button" title="Toggle multiline wrap-aware Ghost Text preview (Tab to accept)">Ghost Preview</button>
+                <button id="act-show-hover" class="action-btn" type="button" title="Show Unified Hover Docs (Ctrl+K)">Show Hover</button>
+                <button id="act-smart-expand" class="action-btn" type="button" title="Expand Selection (Shift+Alt+Right)">Expand Sel.</button>
+                <button id="act-smart-shrink" class="action-btn" type="button" title="Shrink Selection (Shift+Alt+Left)">Shrink Sel.</button>
                 <button id="act-diagnostics" class="action-btn" type="button">Diagnostics</button>
                 <button id="act-reset" class="action-btn" type="button">Reset Sample</button>
               </div>

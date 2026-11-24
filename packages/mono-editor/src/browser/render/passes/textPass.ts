@@ -336,7 +336,7 @@ export const textPass: RenderPass = {
           ctx.stroke();
           f.linkHits.push({
             range: lk.range,
-            url: lk.url,
+            url: lk.url != null ? String(lk.url) : undefined,
             tooltip: lk.tooltip,
             x: x1,
             y,

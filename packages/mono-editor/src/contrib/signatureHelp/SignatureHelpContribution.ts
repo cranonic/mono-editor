@@ -39,13 +39,26 @@ export class SignatureHelpContribution implements IEditorContribution {
 
   onKeyDown(e: KeyboardEvent): boolean { return this.controller.handleKey(e); }
 
+  shouldAllowWheelTarget(target: Node): boolean {
+    return this.controller.isOpen() && this.controller.containsNode(target);
+  }
+
   onInputChange(ev: InputChangeEvent): void {
     if (ev.kind === 'composition') return;
     if (ev.kind === 'type' && ev.text) {
       void this.controller.onType(ev.text);
     } else if (ev.kind === 'backspace') {
       void this.controller.onBackspace();
+    } else if (ev.kind === 'enter') {
+      void this.controller.onEnter();
     } else {
+      this.controller.syncCursor();
+    }
+  }
+
+  onCursorChange(source: string): void {
+    // Live update parameter index when moving caret via arrows or tapping inside arguments
+    if (source === 'mouse' || source === 'api' || source === 'keyboard') {
       this.controller.syncCursor();
     }
   }
@@ -54,9 +67,16 @@ export class SignatureHelpContribution implements IEditorContribution {
     if (this.controller.isOpen()) this.controller.updatePosition();
   }
 
+  onOutsidePointerDown(): void {
+    this.controller.hide();
+  }
+
   onPointerInteract(kind: PointerInteractKind): void {
-    if (kind === 'tap' || kind === 'handle' || kind === 'handleTap' || kind === 'select') {
+    if (kind === 'handle' || kind === 'handleTap' || kind === 'select') {
       this.controller.hide();
+    } else if (kind === 'tap') {
+      // Keep open & update active parameter if user tapped another argument inside the same call
+      this.controller.syncCursor();
     }
   }
 

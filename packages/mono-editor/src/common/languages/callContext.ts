@@ -125,10 +125,29 @@ export function analyzeCallContext(
       else if (ch === '}') braceDepth++;
       else if (ch === '[') {
         if (bracketDepth > 0) bracketDepth--;
-        else return null;
+        else commas = 0; // Caret is inside an array literal argument; discard inner commas
       } else if (ch === '{') {
         if (braceDepth > 0) braceDepth--;
-        else return null;
+        else {
+          // Distinguish object literal arg (preceded by '(', ',', ':', '=', '[') from block body
+          const prevNonWs = (() => {
+            for (let k = i - 1; k >= 0; k--) {
+              if (!/\s/.test(clean[k]!)) return clean[k]!;
+            }
+            for (let pli = li - 1; pli >= 0; pli--) {
+              const pc = cleanLines[pli]!;
+              for (let k = pc.length - 1; k >= 0; k--) {
+                if (!/\s/.test(pc[k]!)) return pc[k]!;
+              }
+            }
+            return '';
+          })();
+          if (prevNonWs === '(' || prevNonWs === ',' || prevNonWs === ':' || prevNonWs === '=' || prevNonWs === '[') {
+            commas = 0;
+          } else {
+            return null;
+          }
+        }
       } else if (ch === ',' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
         commas++;
       } else if (ch === '(') {

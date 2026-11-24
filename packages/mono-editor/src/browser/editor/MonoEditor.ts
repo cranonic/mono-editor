@@ -8,6 +8,7 @@ import { DecorationsCollection } from '../../common/decorations/DecorationsColle
 import { MarkerService } from '../../common/decorations/MarkerService';
 import type { IMarker, IMarkerData, IModelDeltaDecoration } from '../../common/decorations/types';
 import { registerDefaultLanguages } from '../../common/languages/defaults/registerDefaults';
+import type { DocumentSymbol, GhostTextItem } from '../../common/languages/providers/types';
 import { TokenizationSupport } from '../../common/languages/tokenization/TokenizationSupport';
 import { FoldingModel } from '../../common/viewModel/FoldingModel';
 import type { MonoStickyScrollOptions } from '../../common/viewModel/StickyScroll';
@@ -34,9 +35,10 @@ import {
 } from './editorLifecycle';
 import {
   ContributionIds, type IContextMenuContribution, type ICursorPositionChangedEvent,
-  type ICursorSelectionChangedEvent, type IEditorContribution, type IFindContribution,
-  type IFoldingContribution, type IMonoEditor, type IMonoEditorAction, type IScrollEvent,
-  type MonoContentChangeEvent,
+  type ICursorSelectionChangedEvent, type IDocumentSymbolsContribution, type IEditorContribution,
+  type IFindContribution, type IFoldingContribution, type IInlineSuggestContribution,
+  type IMonoEditor, type IMonoEditorAction, type IPasteEditContribution,
+  type IScrollEvent, type MonoContentChangeEvent,
 } from './editorTypes';
 import { ModelController } from './modelController';
 
@@ -45,35 +47,20 @@ export function getActiveMonoEditors(): IMonoEditor[] { return [...activeEditors
 
 /** Thin Monaco-style composition root (<= 400 lines). */
 export class MonoEditor implements IMonoEditor {
-  private readonly root: HTMLDivElement;
-  private readonly modelCtrl: ModelController;
-  private readonly selection = new SelectionState();
-  private readonly renderer: CanvasRenderer;
-  private readonly view: ViewController;
-  private readonly input: InputController;
-  private readonly pointer: PointerController;
-  private readonly tokenization = new TokenizationSupport();
-  private readonly keybindings = new KeybindingService();
-  private readonly commands: CommandService;
-  private readonly palette: PaletteService;
-  private readonly decorations = new DecorationsCollection();
-  private readonly markers = new MarkerService();
-  private readonly folding: FoldingModel;
-  private readonly scrollbar: OverlayScrollbar;
-  private readonly minimap: MinimapController;
-  private readonly bracketColorizer: BracketColorizer;
-  private readonly handleVis: HandleVisibility;
-  private readonly events = new EditorEventBus();
-  private readonly contributions = new Map<string, IEditorContribution>();
-  private readonly opts: EditorOptionState;
-  private readonly isPeekEditor: boolean;
-  private readonly ro: ResizeObserver;
-  private readonly detachDomListeners: () => void;
-  private themeUnsub: MonoDisposable | null = null;
-  private unsubModel: () => void;
-  private lastScrollTop = 0;
-  private lastScrollLeft = 0;
-  private disposed = false;
+  private readonly root: HTMLDivElement; private readonly modelCtrl: ModelController;
+  private readonly selection = new SelectionState(); private readonly renderer: CanvasRenderer;
+  private readonly view: ViewController; private readonly input: InputController;
+  private readonly pointer: PointerController; private readonly tokenization = new TokenizationSupport();
+  private readonly keybindings = new KeybindingService(); private readonly commands: CommandService;
+  private readonly palette: PaletteService; private readonly decorations = new DecorationsCollection();
+  private readonly markers = new MarkerService(); private readonly folding: FoldingModel;
+  private readonly scrollbar: OverlayScrollbar; private readonly minimap: MinimapController;
+  private readonly bracketColorizer: BracketColorizer; private readonly handleVis: HandleVisibility;
+  private readonly events = new EditorEventBus(); private readonly contributions = new Map<string, IEditorContribution>();
+  private readonly opts: EditorOptionState; private readonly isPeekEditor: boolean;
+  private readonly ro: ResizeObserver; private readonly detachDomListeners: () => void;
+  private themeUnsub: MonoDisposable | null = null; private unsubModel: () => void;
+  private lastScrollTop = 0; private lastScrollLeft = 0; private disposed = false;
 
   constructor(host: HTMLElement, options: MonoEditorOptions = {}) {
     registerDefaultLanguages();
@@ -113,11 +100,13 @@ export class MonoEditor implements IMonoEditor {
     this.renderer = sub.renderer; this.view = sub.view; this.scrollbar = sub.scrollbar;
     this.minimap = sub.minimap; this.handleVis = sub.handleVis; this.input = sub.input; this.bracketColorizer = sub.bracketColorizer;
     this.input.setKeybindingService(this.keybindings);
+    const tryPaste = async (text: string) => (await this.getContribution<IPasteEditContribution>(ContributionIds.PasteEdit)?.tryHandlePaste(text)) ?? false;
+    this.input.setPasteInterceptor(tryPaste);
 
     registerCoreKeybindingsAndActions({
       getModel: () => this.modelCtrl.model, selection: this.selection, view: this.view,
       keybindings: this.keybindings, commands: this.commands, isReadOnly: () => this.opts.readOnly,
-      getTabSize: () => this.opts.tabSize,
+      getTabSize: () => this.opts.tabSize, onBeforePaste: tryPaste,
       getLanguageIdAtPosition: (ln, col) => this.tokenization.getLanguageIdAtPosition(this.modelCtrl.model, ln, col),
       syncTextarea: () => this.syncTextarea(), emitContent: () => this.emitContent(), emitCursorEvents: (src) => this.emitCursorEvents(src),
       applyStackSelection: (e, m) => this.modelCtrl.applyStackSelection(this.selection, e, m),
@@ -154,16 +143,15 @@ export class MonoEditor implements IMonoEditor {
       }),
       (ln) => this.toggleFoldAtLine(ln),
       (hit) => { for (const c of this.contributions.values()) c.onColorSwatchClick?.(hit); },
+      (hit) => { for (const c of this.contributions.values()) c.onInlayHintClick?.(hit); },
+      (hit, ev) => { for (const c of this.contributions.values()) c.onLinkClick?.(hit, ev); },
     );
 
     this.detachDomListeners = attachRootDomListeners({
       root: this.root, textarea: this.input.textarea, isDisposed: () => this.disposed,
       getContributions: () => this.contributions.values(), dispatchKeybinding: (e) => this.keybindings.dispatch(e),
       onOutsidePointerDown: () => { this.input.blur(); for (const c of this.contributions.values()) c.onOutsidePointerDown?.(); },
-      onWheelScroll: (dx, dy) => {
-        for (const c of this.contributions.values()) c.onPointerInteract?.('scroll');
-        this.handleVis.onScrollStart(); this.view.scrollBy(dx, dy); this.flushScrollDelta();
-      },
+      onWheelScroll: (dx, dy) => { for (const c of this.contributions.values()) c.onPointerInteract?.('scroll'); this.handleVis.onScrollStart(); this.view.scrollBy(dx, dy); this.flushScrollDelta(); },
       onWheelEnd: () => { this.handleVis.onScrollEnd(); for (const c of this.contributions.values()) c.onScrollEnd?.(); },
     });
 
@@ -246,17 +234,9 @@ export class MonoEditor implements IMonoEditor {
   revealPositionInCenter(position: IPosition): void { this.revealLineInCenter(position.lineNumber); this.revealPosition(position); }
   revealRange(range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }): void { this.revealPosition({ lineNumber: range.startLineNumber, column: range.startColumn }); }
   getScrollTop(): number { return this.view.scrollTop; }
-  setScrollTop(scrollTop: number): void {
-    const prev = this.view.scrollTop; this.view.scrollTop = Math.max(0, scrollTop); this.view.clampScrollPublic();
-    this.lastScrollTop = this.view.scrollTop;
-    if (Math.abs(this.view.scrollTop - prev) > 0.01) { this.emitScrollEvent(true, false); this.view.schedulePaint(); }
-  }
+  setScrollTop(scrollTop: number): void { const p = this.view.scrollTop; this.view.scrollTop = Math.max(0, scrollTop); this.view.clampScrollPublic(); this.lastScrollTop = this.view.scrollTop; if (Math.abs(this.view.scrollTop - p) > 0.01) { this.emitScrollEvent(true, false); this.view.schedulePaint(); } }
   getScrollLeft(): number { return this.view.scrollLeft; }
-  setScrollLeft(scrollLeft: number): void {
-    const prev = this.view.scrollLeft; this.view.scrollLeft = Math.max(0, scrollLeft); this.view.clampScrollPublic();
-    this.lastScrollLeft = this.view.scrollLeft;
-    if (Math.abs(this.view.scrollLeft - prev) > 0.01) { this.emitScrollEvent(false, true); this.view.schedulePaint(); }
-  }
+  setScrollLeft(scrollLeft: number): void { const p = this.view.scrollLeft; this.view.scrollLeft = Math.max(0, scrollLeft); this.view.clampScrollPublic(); this.lastScrollLeft = this.view.scrollLeft; if (Math.abs(this.view.scrollLeft - p) > 0.01) { this.emitScrollEvent(false, true); this.view.schedulePaint(); } }
 
   focus(): void { this.syncTextarea(); this.input.focus(); this.events.emitFocus(); }
   blur(): void { this.input.blur(); this.events.emitBlur(); }
@@ -331,6 +311,18 @@ export class MonoEditor implements IMonoEditor {
   foldAll(): void { this.getContribution<IFoldingContribution>(ContributionIds.Folding)?.foldAll(); }
   unfoldAll(): void { this.getContribution<IFoldingContribution>(ContributionIds.Folding)?.unfoldAll(); }
 
+  private ghostContrib() { return this.getContribution<IInlineSuggestContribution>(ContributionIds.InlineSuggest); }
+  setGhostTexts(items: readonly GhostTextItem[]): void { this.ghostContrib()?.setGhostTexts(items); }
+  clearGhostTexts(owner?: string): void { this.ghostContrib()?.clearGhostTexts(owner); }
+  getGhostTexts(owner?: string): readonly GhostTextItem[] { return this.ghostContrib()?.getGhostTexts(owner) ?? []; }
+  acceptGhostText(): boolean { return this.ghostContrib()?.accept() ?? false; }
+  acceptGhostTextWord(): boolean { return this.ghostContrib()?.acceptWord() ?? false; }
+  acceptGhostTextLine(): boolean { return this.ghostContrib()?.acceptLine() ?? false; }
+  nextGhostText(): void { this.ghostContrib()?.next(); }
+  prevGhostText(): void { this.ghostContrib()?.prev(); }
+  dismissGhostText(): void { this.ghostContrib()?.dismiss(); }
+  getDocumentSymbols(): Promise<DocumentSymbol[]> { return this.getContribution<IDocumentSymbolsContribution>(ContributionIds.DocumentSymbols)?.getDocumentSymbols() ?? Promise.resolve([]); }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true; activeEditors.delete(this);
@@ -342,7 +334,6 @@ export class MonoEditor implements IMonoEditor {
     this.handleVis.dispose(); this.events.dispose(); this.modelCtrl.dispose(); this.root.remove();
   }
 
-  /** `renderer` is passed explicitly only during bootstrap, before `this.renderer` is assigned. */
   private metrics(renderer: CanvasRenderer = this.renderer): RenderMetrics {
     const charWidth = renderer.measureCharWidth(`${this.opts.fontSize}px ${this.opts.fontFamily}`);
     const { gutterWidth, foldGutterWidth, gutterNumberPad } = computeGutterLayout({
@@ -352,11 +343,7 @@ export class MonoEditor implements IMonoEditor {
     return { fontFamily: this.opts.fontFamily, fontSize: this.opts.fontSize, lineHeight: this.opts.lineHeight, gutterWidth, foldGutterWidth, gutterNumberPad, charWidth, paddingLeft: 8, paddingTop: 4 };
   }
   private revealCtx() {
-    return {
-      model: this.modelCtrl.model, selection: this.selection, folding: this.folding, view: this.view,
-      metrics: () => this.metrics(), showLineNumbers: () => this.opts.lineNumbers,
-      onScrollChanged: (top: boolean, left: boolean) => { this.lastScrollTop = this.view.scrollTop; this.lastScrollLeft = this.view.scrollLeft; this.emitScrollEvent(top, left); },
-    };
+    return { model: this.modelCtrl.model, selection: this.selection, folding: this.folding, view: this.view, metrics: () => this.metrics(), showLineNumbers: () => this.opts.lineNumbers, onScrollChanged: (top: boolean, left: boolean) => { this.lastScrollTop = this.view.scrollTop; this.lastScrollLeft = this.view.scrollLeft; this.emitScrollEvent(top, left); } };
   }
   private subscribeActiveModel(): () => void {
     return this.modelCtrl.model.onDidChange((versionId, change) => {

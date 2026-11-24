@@ -134,7 +134,7 @@ export class MarkdownScopeFinder implements IScopeFinder {
     this.model = model;
   }
 
-  sync(model: TextModel): void {
+  sync(model: TextModel, _tabSize?: number): void {
     const ver = model.getVersionId();
     if (model !== this.model || ver !== this.version) {
       this.model = model;
@@ -199,11 +199,19 @@ export class OutlineScopeFinder implements IScopeFinder {
     this.setSymbols(symbols);
   }
 
+  sync(model: TextModel, _tabSize?: number): void {
+    this.model = model;
+  }
+
   setModel(model: TextModel): void {
     this.model = model;
   }
 
-  setSymbols(symbols: readonly DocumentSymbol[]): void {
+  setSymbols(symbols: readonly DocumentSymbol[] | null): void {
+    if (!symbols || !symbols.length) {
+      this.flatScopes = [];
+      return;
+    }
     const out: Scope[] = [];
     const visit = (list: readonly DocumentSymbol[]) => {
       for (const sym of list) {

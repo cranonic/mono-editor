@@ -161,7 +161,7 @@ export interface PaintOptions {
   getLineInlayHints?: (lineNumber: number) => readonly ResolvedInlayHint[];
   getLineGhostInline?: (lineNumber: number) => readonly InlineGhostRun[];
   getLineSemanticTokens?: (lineNumber: number) => readonly SemanticTokenSpan[];
-  getLineLinks?: (lineNumber: number) => readonly { range: IRange; url?: string; tooltip?: string }[];
+  getLineLinks?: (lineNumber: number) => readonly { range: IRange; url?: string | { toString(): string }; tooltip?: string }[];
   hoverRange?: IRange | null;
   documentHighlights?: readonly { range: IRange; kind?: number }[];
   ghostTextItalic?: boolean;
@@ -188,7 +188,7 @@ export interface FrameContext {
   inlayHintsForLine: (lineNumber: number) => readonly ResolvedInlayHint[];
   ghostInlineForLine: (lineNumber: number) => readonly InlineGhostRun[];
   semanticTokensForLine: (lineNumber: number) => readonly SemanticTokenSpan[];
-  linksForLine: (lineNumber: number) => readonly { range: IRange; url?: string; tooltip?: string }[];
+  linksForLine: (lineNumber: number) => readonly { range: IRange; url?: string | { toString(): string }; tooltip?: string }[];
   virtualElementsForLine: (lineNumber: number) => readonly InlineVirtualElement[];
   bracketsForLine: (lineNumber: number) => readonly LineBracketColor[];
   bracketColorOf: (entry: LineBracketColor) => string;
@@ -421,7 +421,7 @@ export function buildFrameContext(
     return res;
   };
 
-  const lineLinkCache = new Map<number, readonly { range: IRange; url?: string; tooltip?: string }[]>();
+  const lineLinkCache = new Map<number, readonly { range: IRange; url?: string | { toString(): string }; tooltip?: string }[]>();
   const linksForLine = (ln: number) => {
     if (!opts.getLineLinks) return [];
     let res = lineLinkCache.get(ln);

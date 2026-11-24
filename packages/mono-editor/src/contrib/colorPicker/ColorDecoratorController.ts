@@ -17,20 +17,31 @@ export class ColorDecoratorController implements IEditorContribution {
   private readonly host: IEditorContributionHost;
   private readonly picker: ColorPickerWidget;
   private enabled: boolean;
+  private openOnHover: boolean;
   private rules: ColorDecoratorRules | undefined;
   private cacheVersion = -1;
   private lineCache = new Map<number, ColorMatch[]>();
   private providerColorsByLine = new Map<number, ColorMatch[]>();
   private providerTimer: ReturnType<typeof setTimeout> | null = null;
+  private hoverTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastHoverKey: string | null = null;
 
   constructor(host: IEditorContributionHost) {
     this.host = host;
     this.enabled = host.initialOptions.colorDecorators !== false;
+    // Defaults strictly to `false` so mobile scrolling / resting fingers never accidentally open color palettes.
+    this.openOnHover = host.initialOptions.colorDecoratorsOpenOnHover === true;
     this.rules = host.initialOptions.colorDecoratorsRules;
     this.picker = new ColorPickerWidget(host.root);
 
     host.view.setLineColorsProvider((ln) => this.getLineColorMatches(ln));
+    host.root.addEventListener('pointermove', this.onRootPointerMove, { passive: true });
+    host.root.addEventListener('pointerleave', this.onRootPointerLeave);
     this.scheduleProviderColors();
+  }
+
+  isOpenOnHover(): boolean {
+    return this.openOnHover;
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
@@ -46,10 +57,12 @@ export class ColorDecoratorController implements IEditorContribution {
   }
 
   onScroll(): void {
+    this.cancelHoverTimer();
     if (this.picker.isOpen()) this.picker.close(true);
   }
 
   onModelChange(_model: TextModel): void {
+    this.cancelHoverTimer();
     this.picker.close(false);
     this.invalidateCache();
   }
@@ -70,6 +83,10 @@ export class ColorDecoratorController implements IEditorContribution {
       this.enabled = patch.colorDecorators;
       dirty = true;
     }
+    if (patch.colorDecoratorsOpenOnHover !== undefined) {
+      this.openOnHover = patch.colorDecoratorsOpenOnHover === true;
+      if (!this.openOnHover) this.cancelHoverTimer();
+    }
     if (patch.colorDecoratorsRules !== undefined) {
       this.rules = patch.colorDecoratorsRules;
       dirty = true;
@@ -78,6 +95,71 @@ export class ColorDecoratorController implements IEditorContribution {
   }
 
   onColorSwatchClick(hit: ColorHit): void {
+    this.cancelHoverTimer();
+    this.openPickerForHit(hit);
+  }
+
+  dispose(): void {
+    this.cancelHoverTimer();
+    this.host.root.removeEventListener('pointermove', this.onRootPointerMove);
+    this.host.root.removeEventListener('pointerleave', this.onRootPointerLeave);
+    this.host.view.setLineColorsProvider(null);
+    if (this.providerTimer) clearTimeout(this.providerTimer);
+    this.providerTimer = null;
+    this.picker.dispose();
+  }
+
+  private onRootPointerMove = (e: PointerEvent): void => {
+    // Opt-in desktop mouse hover only; never triggers on touch or when disabled (default).
+    if (!this.enabled || !this.openOnHover || e.pointerType !== 'mouse' || this.host.isDisposed()) {
+      return;
+    }
+    const target = e.target as Element | null;
+    if (target?.closest?.('.mono-color-picker')) return;
+
+    const rect = this.host.root.getBoundingClientRect();
+    const localX = e.clientX - rect.left;
+    const localY = e.clientY - rect.top;
+    const hit = this.host.view
+      .getColorHits()
+      .find(
+        (ch) =>
+          localX >= ch.x - 3 &&
+          localX <= ch.x + ch.w + 3 &&
+          localY >= ch.y - 3 &&
+          localY <= ch.y + ch.h + 3,
+      );
+
+    if (!hit) {
+      this.cancelHoverTimer();
+      this.lastHoverKey = null;
+      return;
+    }
+
+    const key = `${hit.match.lineNumber}:${hit.match.startColumn}`;
+    if (this.lastHoverKey === key && (this.picker.isOpen() || this.hoverTimer)) return;
+    this.lastHoverKey = key;
+    this.cancelHoverTimer();
+    this.hoverTimer = setTimeout(() => {
+      this.hoverTimer = null;
+      if (!this.openOnHover || this.host.isDisposed()) return;
+      this.openPickerForHit(hit);
+    }, 260);
+  };
+
+  private onRootPointerLeave = (): void => {
+    this.cancelHoverTimer();
+    this.lastHoverKey = null;
+  };
+
+  private cancelHoverTimer(): void {
+    if (this.hoverTimer) {
+      clearTimeout(this.hoverTimer);
+      this.hoverTimer = null;
+    }
+  }
+
+  private openPickerForHit(hit: ColorHit): void {
     const model = this.host.getModel();
     const { match } = hit;
     const initialStartOff = model.getOffsetAt(match.lineNumber, match.startColumn);
@@ -114,13 +196,6 @@ export class ColorDecoratorController implements IEditorContribution {
         },
       },
     );
-  }
-
-  dispose(): void {
-    this.host.view.setLineColorsProvider(null);
-    if (this.providerTimer) clearTimeout(this.providerTimer);
-    this.providerTimer = null;
-    this.picker.dispose();
   }
 
   private invalidateCache(): void {

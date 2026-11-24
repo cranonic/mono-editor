@@ -1,11 +1,30 @@
-import type { IRange } from '../../core/types';
+import type {
+  CancellationToken,
+  CodeActionCommand,
+  FormattingOptions,
+  IMarkdownString,
+  IRange,
+  IWorkspaceTextEdit,
+  Location,
+  LocationLink,
+  ModelLike,
+  TextEdit,
+  WorkspaceEdit,
+} from './baseTypes';
 
-export type { IRange };
-
-export interface TextEdit {
-  range: IRange;
-  text: string;
-}
+export type {
+  CancellationToken,
+  CodeActionCommand,
+  FormattingOptions,
+  IMarkdownString,
+  IRange,
+  IWorkspaceTextEdit,
+  Location,
+  LocationLink,
+  ModelLike,
+  TextEdit,
+  WorkspaceEdit,
+};
 
 export interface CompletionItemLabel {
   label: string;
@@ -20,11 +39,6 @@ export const CompletionItemInsertTextRule = {
 
 export type CompletionItemInsertTextRule =
   (typeof CompletionItemInsertTextRule)[keyof typeof CompletionItemInsertTextRule];
-
-export interface IMarkdownString {
-  value: string;
-  isTrusted?: boolean;
-}
 
 export interface CompletionItem {
   label: string | CompletionItemLabel;
@@ -127,46 +141,14 @@ export interface SignatureHelpContext {
   activeSignatureHelp?: SignatureHelp;
 }
 
-export interface FormattingOptions {
-  tabSize: number;
-  insertSpaces: boolean;
-}
-
-export interface Location {
-  uri?: { toString(): string };
-  range: IRange;
-}
-
-export interface LocationLink {
-  targetUri?: { toString(): string };
-  targetRange: IRange;
-  targetSelectionRange?: IRange;
-  originSelectionRange?: IRange;
-}
-
 export interface ReferenceContext {
   includeDeclaration: boolean;
-}
-
-export interface IWorkspaceTextEdit {
-  resource?: { toString(): string };
-  textEdit: TextEdit;
-}
-
-export interface WorkspaceEdit {
-  edits: IWorkspaceTextEdit[];
 }
 
 export interface RenameLocation {
   range: IRange;
   text: string;
   rejectReason?: string;
-}
-
-export interface CodeActionCommand {
-  id: string;
-  title: string;
-  arguments?: unknown[];
 }
 
 export interface CodeAction {
@@ -204,21 +186,6 @@ export interface IColorPresentation {
   textEdit?: TextEdit;
   additionalTextEdits?: TextEdit[];
 }
-
-export interface CancellationToken {
-  isCancellationRequested: boolean;
-}
-
-export type ModelLike = {
-  uri?: { toString(): string };
-  uriString?: string;
-  getValue(): string;
-  getLineContent(line: number): string;
-  getLineCount?(): number;
-  getOffsetAt?(line: number, column: number): number;
-  getPositionAt?(offset: number): { lineNumber: number; column: number };
-  getLanguageId?(): string;
-};
 
 export interface CompletionProvider {
   triggerCharacters?: string[];

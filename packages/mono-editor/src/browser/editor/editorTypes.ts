@@ -16,6 +16,8 @@ import type {
   IModelDeltaDecoration,
 } from '../../common/decorations/types';
 import type {
+  DocumentSymbol,
+  GhostTextItem,
   Location,
   ModelLike,
   TextEdit,
@@ -31,7 +33,7 @@ import type { KeybindingService, MonoKeybinding } from '../../platform/keybindin
 import type { ResolvedWidgetTheme } from '../../platform/theme/widgetTheme';
 import type { InputChangeEvent, InputController } from '../input/InputController';
 import type { PointerInteractKind } from '../input/pointer/PointerController';
-import type { ColorHit } from '../render/CanvasRenderer';
+import type { ColorHit, InlayHintHit, LinkHit } from '../render/CanvasRenderer';
 import type { ViewController } from '../view/ViewController';
 
 export interface MonoContentChangeEvent {
@@ -150,6 +152,18 @@ export interface IMonoEditor {
   unfoldAll?(): void;
   toggleFoldAtLine?(lineNumber: number): void;
 
+  // Direct Ghost Text / Copilot / Codex Plugin API
+  setGhostTexts?(items: readonly GhostTextItem[]): void;
+  clearGhostTexts?(owner?: string): void;
+  getGhostTexts?(owner?: string): readonly GhostTextItem[];
+  acceptGhostText?(): boolean;
+  acceptGhostTextWord?(): boolean;
+  acceptGhostTextLine?(): boolean;
+  nextGhostText?(): void;
+  prevGhostText?(): void;
+  dismissGhostText?(): void;
+  getDocumentSymbols?(): Promise<DocumentSymbol[]>;
+
   dispose(): void;
 }
 
@@ -168,6 +182,14 @@ export const ContributionIds = {
   ReferencesPeek: 'editor.contrib.referencesPeek',
   Rename: 'editor.contrib.rename',
   CodeAction: 'editor.contrib.codeAction',
+  InlineSuggest: 'editor.contrib.inlineSuggest',
+  InlayHints: 'editor.contrib.inlayHints',
+  SemanticTokens: 'editor.contrib.semanticTokens',
+  DocumentHighlight: 'editor.contrib.documentHighlight',
+  DocumentSymbols: 'editor.contrib.documentSymbols',
+  Links: 'editor.contrib.links',
+  SelectionRange: 'editor.contrib.selectionRange',
+  PasteEdit: 'editor.contrib.pasteEdit',
 } as const;
 
 /** Lifecycle interface implemented by every self-contained feature in `src/contrib/`. */
@@ -193,6 +215,10 @@ export interface IEditorContribution {
   shouldAllowWheelTarget?(target: Node): boolean;
   /** Handle a click on a rendered color swatch. */
   onColorSwatchClick?(hit: ColorHit): void;
+  /** Handle a click on a rendered inlay hint chip. */
+  onInlayHintClick?(hit: InlayHintHit): void;
+  /** Handle a Ctrl/Cmd+click or explicit tap on a rendered document link. */
+  onLinkClick?(hit: LinkHit, e: PointerEvent): void;
   /** Handle a click on a rendered fold chevron. */
   onFoldToggle?(lineNumber: number): void;
 }
@@ -270,4 +296,24 @@ export interface IFoldingContribution extends IEditorContribution {
   toggleFoldAtLine(lineNumber: number): void;
   foldAll(): void;
   unfoldAll(): void;
+}
+
+export interface IInlineSuggestContribution extends IEditorContribution {
+  setGhostTexts(items: readonly GhostTextItem[]): void;
+  clearGhostTexts(owner?: string): void;
+  getGhostTexts(owner?: string): readonly GhostTextItem[];
+  accept(): boolean;
+  acceptWord(): boolean;
+  acceptLine(): boolean;
+  next(): void;
+  prev(): void;
+  dismiss(): void;
+}
+
+export interface IDocumentSymbolsContribution extends IEditorContribution {
+  getDocumentSymbols(): Promise<DocumentSymbol[]>;
+}
+
+export interface IPasteEditContribution extends IEditorContribution {
+  tryHandlePaste(text: string): Promise<boolean>;
 }

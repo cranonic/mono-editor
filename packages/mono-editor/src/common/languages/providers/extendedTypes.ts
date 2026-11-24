@@ -9,7 +9,7 @@ import type {
   ModelLike,
   TextEdit,
   WorkspaceEdit,
-} from './types';
+} from './baseTypes';
 
 // ── Inline Completions & Universal Ghost Text (Copilot / Codex / AI) ─────────
 

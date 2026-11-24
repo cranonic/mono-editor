@@ -111,11 +111,39 @@ export {
 } from './common/editOperations/EditOperations';
 
 export { DEFAULT_STICKY_SCROLL } from './common/viewModel/StickyScroll';
+export { MarkdownScopeFinder, OutlineScopeFinder } from './common/viewModel/markdownSticky';
 export type {
+  IScopeFinder,
   MonoStickyScrollOptions,
   StickyLine,
   StickyRenderLine,
 } from './common/viewModel/StickyScroll';
+
+// Phase 6: Universal Multiline Ghost Text & Inlay Hints virtual layout
+export {
+  buildWrappedGhostRows,
+  collectInlineVirtualElements,
+  extractNextGhostLine,
+  extractNextGhostWord,
+  GhostTextModel,
+  INLAY_CHIP_PAD_X,
+  INLAY_OUTER_MARGIN,
+  mapVirtualXToRealX,
+  splitGhostText,
+  virtualAdvanceBeforeColumn,
+  virtualElementStartX,
+} from './common/virtualText';
+export type {
+  GhostAcceptResult,
+  GhostTextItem,
+  GhostTextKind,
+  InlineGhostRun,
+  InlineVirtualElement,
+  LineVirtualInputs,
+  NormalizedGhostText,
+  ResolvedInlayHint,
+  VirtualGhostRow,
+} from './common/virtualText';
 
 // Phase 2: Folding, Word Wrap Projection, Code Features & Overlay Scrollbar
 export { ViewLineProjection } from './common/viewModel/ViewLineProjection';
@@ -146,13 +174,13 @@ export type {
 // Phase 3: Snippets, Safe Markdown, Dynamic Caret Color & Widget Theme
 export { hasSnippetSyntax, parseSnippet, SnippetSession } from './common/editOperations/SnippetSession';
 export type { ParsedSnippet } from './common/editOperations/SnippetSession';
-export { renderMarkdownToDom } from './browser/render/markdownDom';
+export { renderHighlightedCodeToDom, renderMarkdownToDom } from './browser/render/markdownDom';
 export {
   COLOR_SWATCH_ADVANCE,
   resolveDynamicCaretColor,
   softenDynamicColor,
 } from './browser/render/CanvasRenderer';
-export type { ColorHit } from './browser/render/CanvasRenderer';
+export type { ColorHit, InlayHintHit, LinkHit } from './browser/render/CanvasRenderer';
 export { SignatureHelpController } from './contrib/signatureHelp/SignatureHelpController';
 export { SignatureHelpWidget } from './contrib/signatureHelp/SignatureHelpWidget';
 export { InlineRenameWidget } from './contrib/rename/InlineRenameWidget';
@@ -280,13 +308,24 @@ export type {
   IRange,
 } from './common/decorations';
 
-// Language features (completion / hover / folding / signature help / LSP)
+// Language features (completion / hover / folding / signature help / mobile-first LSP)
 export {
+  analyzeCallContext,
+  applySemanticTokenEdits,
   CompletionItemInsertTextRule,
   CompletionItemKind,
+  decodeSemanticTokens,
+  DocumentHighlightKind,
+  InlayHintKind,
+  InlineCompletionTriggerKind,
   languageFeatures,
+  resolveParameterLabelRange,
+  SemanticTokensCache,
+  SymbolKind,
+  SymbolTag,
 } from './common/languages';
 export type {
+  ActiveCallContext,
   CodeAction,
   CodeActionContext,
   CodeActionList,
@@ -294,10 +333,20 @@ export type {
   CompletionItem,
   CompletionList,
   CompletionProvider,
+  DeclarationProvider,
   DefinitionProvider,
   DocumentColorProvider,
   DocumentFormattingEditProvider,
+  DocumentHighlight,
+  DocumentHighlightProvider,
+  DocumentPasteContext,
+  DocumentPasteEdit,
+  DocumentPasteEditProvider,
   DocumentRangeFormattingEditProvider,
+  DocumentRangeSemanticTokensProvider,
+  DocumentSemanticTokensProvider,
+  DocumentSymbol,
+  DocumentSymbolProvider,
   FoldingRange,
   FoldingRangeProvider,
   FormattingOptions,
@@ -306,20 +355,39 @@ export type {
   IColor,
   IColorInformation,
   IColorPresentation,
+  ILink,
+  ILinksList,
   IMarkdownString,
+  InlayHint,
+  InlayHintLabelPart,
+  InlayHintsProvider,
+  InlineCompletionContext,
+  InlineCompletionItem,
+  InlineCompletionList,
+  InlineCompletionsProvider,
   IWorkspaceTextEdit,
+  LinkProvider,
   Location,
   LocationLink,
+  OnTypeFormattingEditProvider,
   ParameterInformation,
   ReferenceContext,
   ReferenceProvider,
   RenameLocation,
   RenameProvider,
+  SelectionRange,
+  SelectionRangeProvider,
+  SemanticTokens,
+  SemanticTokensEdit,
+  SemanticTokensEdits,
+  SemanticTokensLegend,
+  SemanticTokenSpan,
   SignatureHelp,
   SignatureHelpContext,
   SignatureHelpProvider,
   SignatureHelpResult,
   SignatureInformation,
   TextEdit,
+  TypeDefinitionProvider,
   WorkspaceEdit,
 } from './common/languages';

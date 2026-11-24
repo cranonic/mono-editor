@@ -20,21 +20,21 @@ export interface SemanticTokenSpan {
 }
 
 const LSP_TO_MONO_TOKEN: Record<string, MonoTokenType> = {
-  namespace: 'namespace',
+  namespace: 'type',
   type: 'type',
   class: 'class',
-  enum: 'enum',
-  interface: 'interface',
+  enum: 'type',
+  interface: 'type',
   struct: 'type',
-  typeParameter: 'typeParameter',
-  parameter: 'parameter',
+  typeParameter: 'type',
+  parameter: 'variable',
   variable: 'variable',
   property: 'property',
   enumMember: 'constant',
   event: 'property',
   function: 'function',
-  method: 'method',
-  macro: 'decorator',
+  method: 'function',
+  macro: 'macro',
   keyword: 'keyword',
   modifier: 'keyword',
   comment: 'comment',
@@ -53,7 +53,7 @@ export function mapSemanticTokenType(
   if (rawType === 'variable' && modifiers.includes('readonly')) {
     return 'constant';
   }
-  return LSP_TO_MONO_TOKEN[rawType] ?? 'identifier';
+  return LSP_TO_MONO_TOKEN[rawType] ?? 'plain';
 }
 
 /** Extracts active modifier names from an LSP bitmask against `legend.tokenModifiers`. */
