@@ -1,0 +1,10 @@
+node_modules/
+**/node_modules/
+.vercel
+.keystore
+Trust
+Trust2
+key.note
+app (*).apk
+packages/docs-site
+packages/msce

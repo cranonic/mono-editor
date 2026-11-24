@@ -1,0 +1,356 @@
+kichu fix dao : syntax color professionally support -  
+string lateral support multiline e , `${var}`  , 
+mix syntax color & features support html file e as example : 
+    style tag e css highlight ar css completion etc.   Script tag e javascript  ar   baki html  , 
+    markdown highlight ar rich markdown preview (mermaid , math equation , ) support , 
+    rainbow brace color support according theme upto 5 level  - customizable rules api
+
+
+
+
+
+
+
+
+
+
+ami dekhlam move line up/down , duplicate line up down  ar ja ja existing commands ache ar implemented hoini sob plan koro
+cursor caret movement , selection etc
+
+Je je event api still implement hoini segulo dekhe plan korbe 
+১. কার্সার ও সিলেকশন (Cursor & Selection)
+
+• onDidChangeCursorPosition(listener: (e: ICursorPositionChangedEvent) => void): IDisposable
+• onDidChangeCursorSelection(listener: (e: ICursorSelectionChangedEvent) => void): IDisposable
+
+২. কন্টেন্ট ও মডেল (Content & Model)
+
+• onDidChangeModelContent(listener: (e: IModelContentChangedEvent) => void): IDisposable
+• onDidChangeModel(listener: (e: IModelChangedEvent) => void): IDisposable
+• onDidChangeModelLanguage(listener: (e: IModelLanguageChangedEvent) => void): IDisposable
+• onDidChangeModelLanguageConfiguration(listener: (e: IModelLanguageConfigurationChangedEvent) => void): IDisposable
+• onDidChangeModelOptions(listener: (e: IModelOptionsChangedEvent) => void): IDisposable
+• onDidChangeModelDecorations(listener: (e: IModelDecorationsChangedEvent) => void): IDisposable
+• onDidChangeModelTokens(listener: (e: IModelTokensChangedEvent) => void): IDisposable
+• onDidChangeModelAttached(listener: () => void): IDisposable
+• onDidChangeModelDetached(listener: () => void): IDisposable
+• onWillDisposeModel(listener: (model: ITextModel) => void): IDisposable
+
+৩. মাউস, কিবোর্ড ও ইনপুট (Mouse, Keyboard & Input)
+
+• onMouseDown(listener: (e: IEditorMouseEvent) => void): IDisposable
+• onMouseUp(listener: (e: IEditorMouseEvent) => void): IDisposable
+• onMouseMove(listener: (e: IEditorMouseEvent) => void): IDisposable
+• onMouseLeave(listener: (e: IPartialEditorMouseEvent) => void): IDisposable
+• onContextMenu(listener: (e: IEditorMouseEvent) => void): IDisposable
+• onMouseWheel(listener: (e: IMouseWheelEvent) => void): IDisposable
+• onKeyDown(listener: (e: IKeyboardEvent) => void): IDisposable
+• onKeyUp(listener: (e: IKeyboardEvent) => void): IDisposable
+• onDidType(listener: (text: string) => void): IDisposable
+• onWillType(listener: (text: string) => void): IDisposable
+• onDidPaste(listener: (e: IPasteEvent) => void): IDisposable
+• onDidCompositionStart(listener: () => void): IDisposable
+• onDidCompositionEnd(listener: () => void): IDisposable
+
+৪. ফোকাস, স্ক্রল ও লেআউট (Focus, Scroll & Layout)
+
+• onDidFocusEditorText(listener: () => void): IDisposable
+• onDidBlurEditorText(listener: () => void): IDisposable
+• onDidFocusEditorWidget(listener: () => void): IDisposable
+• onDidBlurEditorWidget(listener: () => void): IDisposable
+• onDidScrollChange(listener: (e: IScrollEvent) => void): IDisposable
+• onDidLayoutChange(listener: (e: EditorLayoutInfo) => void): IDisposable
+• onDidContentSizeChange(listener: (e: IContentSizeChangedEvent) => void): IDisposable
+• onDidChangeConfiguration(listener: (e: ConfigurationChangedEvent) => void): IDisposable
+• onDidChangeViewZones(listener: (e: IViewZonesChangedEvent) => void): IDisposable
+• onDidChangeHiddenAreas(listener: () => void): IDisposable
+
+৫. গ্লোবাল ও লাইফসাইকেল (monaco.editor & Instance Lifecycle)
+
+• onDidDispose(listener: () => void): IDisposable
+• onDidAttemptReadOnlyEdit(listener: () => void): IDisposable
+• editor.onDidCreateEditor(listener: (codeEditor: ICodeEditor) => void): IDisposable
+• editor.onDidCreateDiffEditor(listener: (diffEditor: IDiffEditor) => void): IDisposable
+• editor.onDidCreateModel(listener: (model: ITextModel) => void): IDisposable
+• editor.onWillDisposeModel(listener: (model: ITextModel) => void): IDisposable
+• editor.onDidChangeMarkers(listener: (e: readonly Uri[]) => void): IDisposabl
+
+ami kichu internet theke tule dilam ami thik jani na mono editor e hoito onek event already completed but jegulo hoini segulo  dekhbe ar detailed plan create korbe
+
+
+abar je je instance api still hoini segulo plan korbe ar untick diye rakhbe  jegulo pore korbe mane hoito akhon posdible na segulo later orange tick kore rakhbe 
+ami tar moddhe kichu dilam 
+১. ভ্যালু ও মডেল ম্যানেজমেন্ট (Value & Model)
+
+• getValue(options?: { preserveBOM: boolean; lineEnding: string }): string
+• setValue(newValue: string): void
+• getModel(): ITextModel | null
+• setModel(model: ITextModel | null): void
+• executeEdits(source: string | null | undefined, edits: IIdentifiedSingleEditOperation[], endCursorState?: ICursorStateComputer | Selection[]): boolean
+• executeCommand(source: string | null | undefined, command: ICommand): void
+• executeCommands(source: string | null | undefined, commands: (ICommand | null)[]): void
+• pushUndoStop(): boolean
+• popUndoStop(): boolean
+
+২. কার্সার ও সিলেকশন (Cursor & Selection)
+
+• getPosition(): Position | null
+• setPosition(position: IPosition, source?: string): void
+• getPositions(): Position[] | null
+• setPositions(positions: readonly IPosition[], source?: string): void
+• getSelection(): Selection | null
+• setSelection(selection: IRange | Range | ISelection | Selection, source?: string): void
+• getSelections(): Selection[] | null
+• setSelections(selections: readonly ISelection[], source?: string): void
+• saveViewState(): ICodeEditorViewState | null
+• restoreViewState(state: ICodeEditorViewState | null): void
+
+৩. স্ক্রল ও নেভিগেশন (Scroll & Reveal)
+
+• revealLine(lineNumber: number, scrollType?: ScrollType): void
+• revealLineInCenter(lineNumber: number, scrollType?: ScrollType): void
+• revealLineInCenterIfOutsideViewport(lineNumber: number, scrollType?: ScrollType): void
+• revealLineNearTop(lineNumber: number, scrollType?: ScrollType): void
+• revealLines(startLineNumber: number, endLineNumber: number, scrollType?: ScrollType): void
+• revealLinesInCenter(lineNumber: number, endLineNumber: number, scrollType?: ScrollType): void
+• revealLinesInCenterIfOutsideViewport(lineNumber: number, endLineNumber: number, scrollType?: ScrollType): void
+• revealLinesNearTop(lineNumber: number, endLineNumber: number, scrollType?: ScrollType): void
+• revealPosition(position: IPosition, scrollType?: ScrollType): void
+• revealPositionInCenter(position: IPosition, scrollType?: ScrollType): void
+• revealPositionInCenterIfOutsideViewport(position: IPosition, scrollType?: ScrollType): void
+• revealPositionNearTop(position: IPosition, scrollType?: ScrollType): void
+• revealRange(range: IRange, scrollType?: ScrollType): void
+• revealRangeInCenter(range: IRange, scrollType?: ScrollType): void
+• revealRangeInCenterIfOutsideViewport(range: IRange, scrollType?: ScrollType): void
+• revealRangeNearTop(range: IRange, scrollType?: ScrollType): void
+• revealRangeAtTop(range: IRange, scrollType?: ScrollType): void
+• getScrollWidth(): number
+• getScrollHeight(): number
+• getScrollLeft(): number
+• getScrollTop(): number
+• setScrollLeft(newScrollLeft: number, scrollType?: ScrollType): void
+• setScrollTop(newScrollTop: number, scrollType?: ScrollType): void
+• setScrollPosition(position: INewScrollPosition, scrollType?: ScrollType): void
+• getVisibleRanges(): Range[]
+
+৪. ডেকোরেশন, উইজেট ও ওভারলে (Decorations, Widgets & Overlays)
+
+• createDecorationsCollection(decorations?: IModelDeltaDecoration[]): IEditorDecorationsCollection
+• deltaDecorations(oldDecorations: string[], newDecorations: IModelDeltaDecoration[]): string[] (Deprecated)
+• getLineDecorations(lineNumber: number): IModelDecoration[] | null
+• getDecorationsInRange(range: Range): IModelDecoration[] | null
+• addContentWidget(widget: IContentWidget): void
+• layoutContentWidget(widget: IContentWidget): void
+• removeContentWidget(widget: IContentWidget): void
+• addOverlayWidget(widget: IOverlayWidget): void
+• layoutOverlayWidget(widget: IOverlayWidget): void
+• removeOverlayWidget(widget: IOverlayWidget): void
+• addGlyphMarginWidget(widget: IGlyphMarginWidget): void
+• layoutGlyphMarginWidget(widget: IGlyphMarginWidget): void
+• removeGlyphMarginWidget(widget: IGlyphMarginWidget): void
+• changeViewZones(callback: (accessor: IViewZoneChangeAccessor) => void): void
+
+৫. অ্যাকশন, কমান্ড ও কনট্রিবিউশন (Actions, Commands & Contributions)
+
+• addAction(descriptor: IActionDescriptor): IDisposable
+• addCommand(keybinding: number, handler: ICommandHandler, context?: string): string | null
+• createContextKey<T extends ContextKeyValue = ContextKeyValue>(key: string, defaultValue: T): IContextKey<T>
+• getAction(id: string): IEditorAction | null
+• getSupportedActions(): IEditorAction[]
+• trigger(source: string | null | undefined, handlerId: string, payload: any): void
+• getContribution<T extends IEditorContribution>(id: string): T | null
+
+৬. কনফিগারেশন, লেআউট ও ফোকাস (Configuration, Layout & Focus)
+
+• updateOptions(newOptions: IEditorOptions & IGlobalEditorOptions): void
+• getOptions(): IComputedEditorOptions
+• getOption<T extends EditorOption>(id: T): FindComputedEditorOptionValueById<T>
+• getRawOptions(): IEditorOptions
+• layout(dimension?: IDimension, postponeRendering?: boolean): void
+• getLayoutInfo(): EditorLayoutInfo
+• focus(): void
+• hasTextFocus(): boolean
+• hasWidgetFocus(): boolean
+• render(forceRedraw?: boolean): void
+• dispose(): void
+
+৭. কোঅর্ডিনেট ও ইনফো হেল্পার (Coordinates & Info Helpers)
+
+• getId(): string
+• getEditorType(): string
+• getContainerDomNode(): HTMLElement
+• getDomNode(): HTMLElement | null
+• getTargetAtClientPoint(clientX: number, clientY: number): IMouseTarget | null
+• getScrolledVisiblePosition(position: IPosition): { top: number; left: number; height: number } | null
+• getOffsetForColumn(lineNumber: number, column: number): number
+• getTopForLineNumber(lineNumber: number): number
+• getTopForPosition(lineNumber: number, column: number): number
+• getBottomForLineNumber(lineNumber: number): number
+• applyFontInfo(target: HTMLElement): void
+• setBanner(bannerDomNode: HTMLElement | null, height: number): void
+
+
+ITextModel (মডেল ইনস্ট্যান্স) এবং monaco.editor (স্ট্যাটিক নেমস্পেস)-এর সবগুলো মেথড এবং টাইপ সিগনেচার নিচে দেওয়া হলো:
+
+১. ITextModel Instance Methods
+
+
+ভ্যালু, লাইন ও কন্টেন্ট রিড (Read Content & Lines)
+
+• getValue(eol?: EndOfLinePreference, preserveBOM?: boolean): string
+• getValueLength(eol?: EndOfLinePreference, preserveBOM?: boolean): number
+• getValueInRange(range: IRange, eol?: EndOfLinePreference): string
+• getValueLengthInRange(range: IRange, eol?: EndOfLinePreference): number
+• getLineCount(): number
+• getLineContent(lineNumber: number): string
+• getLineLength(lineNumber: number): number
+• getLinesContent(): string[]
+• getLineMinColumn(lineNumber: number): number
+• getLineMaxColumn(lineNumber: number): number
+• getLineFirstNonWhitespaceColumn(lineNumber: number): number
+• getLineLastNonWhitespaceColumn(lineNumber: number): number
+• getEOL(): string
+• getEndOfLineSequence(): EndOfLineSequence
+• getFullModelRange(): Range
+• getVersionId(): number
+• getAlternativeVersionId(): number
+
+এডিট ও মডিফিকেশন (Edit & Modify)
+
+• setValue(newValue: string): void
+• setEOL(eol: EndOfLineSequence): void
+• applyEdits(operations: IIdentifiedSingleEditOperation[]): void
+• applyEdits(operations: IIdentifiedSingleEditOperation[], computeUndoEdits: boolean): IValidEditOperation[]
+• pushEditOperations(beforeCursorState: Selection[] | null, editOperations: IIdentifiedSingleEditOperation[], cursorStateComputer: ICursorStateComputer | null): Selection[] | null
+• pushStackElement(): void
+• popStackElement(): void
+• updateOptions(newOpts: ITextModelUpdateOptions): void
+• detectIndentation(defaultInsertSpaces: boolean, defaultTabSize: number): void
+• normalizeIndentation(str: string): string
+
+সার্চ ও পজিশন ক্যালকুলেশন (Search & Position Helpers)
+
+• findMatches(searchString: string, searchOnlyEditableRange: boolean, isRegex: boolean, matchCase: boolean, wordSeparators: string | null, captureMatches: boolean, limitResultCount?: number): FindMatch[]
+• findMatches(searchString: string, searchScope: IRange | IRange[], isRegex: boolean, matchCase: boolean, wordSeparators: string | null, captureMatches: boolean, limitResultCount?: number): FindMatch[]
+• findNextMatch(searchString: string, searchStart: IPosition, isRegex: boolean, matchCase: boolean, wordSeparators: string | null, captureMatches: boolean): FindMatch | null
+• findPreviousMatch(searchString: string, searchStart: IPosition, isRegex: boolean, matchCase: boolean, wordSeparators: string | null, captureMatches: boolean): FindMatch | null
+• getPositionAt(offset: number): Position
+• getOffsetAt(position: IPosition): number
+• validatePosition(position: IPosition): Position
+• validateRange(range: IRange): Range
+• modifyPosition(position: IPosition, offset: number): Position
+• getWordAtPosition(position: IPosition): IWordAtPosition | null
+• getWordUntilPosition(position: IPosition): IWordAtPosition
+
+ডেকোরেশন ও ল্যাঙ্গুয়েজ (Decorations & Language)
+
+• deltaDecorations(oldDecorations: string[], newDecorations: IModelDeltaDecoration[], ownerId?: number): string[]
+• getDecorationOptions(id: string): IModelDecorationOptions | null
+• getDecorationRange(id: string): Range | null
+• getLineDecorations(lineNumber: number, ownerId?: number, filterOutValidation?: boolean): IModelDecoration[]
+• getLinesDecorations(startLineNumber: number, endLineNumber: number, ownerId?: number, filterOutValidation?: boolean): IModelDecoration[]
+• getDecorationsInRange(range: IRange, ownerId?: number, filterOutValidation?: boolean, onlyMinimapDecorations?: boolean, onlyMarginDecorations?: boolean): IModelDecoration[]
+• getAllDecorations(ownerId?: number, filterOutValidation?: boolean): IModelDecoration[]
+• getAllMarginDecorations(ownerId?: number): IModelDecoration[]
+• getOverviewRulerDecorations(ownerId?: number, filterOutValidation?: boolean): IModelDecoration[]
+• getLanguageId(): string
+• dispose(): void
+• isDisposed(): boolean
+
+২. monaco.editor Static Methods
+
+
+এডিটর ও মডেল তৈরি (Creation & Lookup)
+
+• create(domElement: HTMLElement, options?: IStandaloneEditorConstructionOptions, override?: IEditorOverrideServices): IStandaloneCodeEditor
+• createDiffEditor(domElement: HTMLElement, options?: IStandaloneDiffEditorConstructionOptions, override?: IEditorOverrideServices): IStandaloneDiffEditor
+• createDiffNavigator(diffEditor: IStandaloneDiffEditor, options?: IDiffNavigatorOptions): IDiffNavigator
+• createModel(value: string, language?: string, uri?: Uri): ITextModel
+• setModelLanguage(model: ITextModel, mimeTypeOrLanguageId: string): void
+• getModel(uri: Uri): ITextModel | null
+• getModels(): ITextModel[]
+• getEditors(): readonly ICodeEditor[]
+• getDiffEditors(): readonly IDiffEditor[]
+
+থিম, কালারাইজ ও মার্কার (Themes, Colorize & Markers)
+
+• defineTheme(themeName: string, themeData: IStandaloneThemeData): void
+• setTheme(themeName: string): void
+• colorize(text: string, languageId: string, options: IColorizerOptions): Promise<string>
+• colorizeElement(domNode: HTMLElement, options: IColorizerElementOptions): Promise<void>
+• colorizeModelLine(model: ITextModel, lineNumber: number, tabSize?: number): string
+• tokenize(text: string, languageId: string): Token[][]
+• setModelMarkers(model: ITextModel, owner: string, markers: IMarkerData[]): void
+• removeAllMarkers(owner: string): void
+• getModelMarkers(filter: { owner?: string; resource?: Uri; take?: number }): IMarker[]
+
+গ্লোবাল অ্যাকশন, কি-বাইন্ডিং ও মেজারমেন্ট (Global Actions & Misc)
+
+• addEditorAction(descriptor: IActionDescriptor): IDisposable
+• addCommand(keybinding: number, handler: ICommandHandler, context?: string): IDisposable
+• addKeybindingRule(rule: IKeybindingRule): IDisposable
+• addKeybindingRules(rules: IKeybindingRule[]): IDisposable
+• registerCommand(id: string, handler: (accessor: any, ...args: any[]) => void): IDisposable
+• registerEditorOpener(opener: ICodeEditorOpener): IDisposable
+• registerLinkOpener(opener: ILinkOpener): IDisposable
+• remeasureFonts(): void
+• createWebWorker<T extends object>(opts: IWebWorkerOptions): MonacoWebWorker<T>
+
+
+monaco.languages 
+১. ল্যাঙ্গুয়েজ রেজিস্ট্রেশন ও কনফিগারেশন (Registration & Setup)
+
+• register(language: ILanguageExtensionPoint): void
+• getLanguages(): ILanguageExtensionPoint[]
+• getEncodedLanguageId(languageId: string): number
+• onLanguage(languageId: string, callback: () => void): IDisposable
+• onLanguageEncountered(languageId: string, callback: () => void): IDisposable
+• setLanguageConfiguration(languageId: string, configuration: LanguageConfiguration): IDisposable
+• setMonarchTokensProvider(languageId: string, languageDef: IMonarchLanguage | Thenable<IMonarchLanguage>): IDisposable
+• setTokensProvider(languageId: string, provider: TokensProvider | EncodedTokensProvider | Thenable<TokensProvider | EncodedTokensProvider>): IDisposable
+• setColorMap(colorMap: string[] | null): void
+
+২. ইন্টেলিসেন্স ও এডিটিং প্রোভাইডার (IntelliSense & Editing Providers)
+
+• registerCompletionItemProvider(languageSelector: LanguageSelector, provider: CompletionItemProvider): IDisposable
+• registerInlineCompletionsProvider(languageSelector: LanguageSelector, provider: InlineCompletionsProvider): IDisposable
+• registerInlineEditProvider(languageSelector: LanguageSelector, provider: InlineEditProvider): IDisposable
+• registerHoverProvider(languageSelector: LanguageSelector, provider: HoverProvider): IDisposable
+• registerSignatureHelpProvider(languageSelector: LanguageSelector, provider: SignatureHelpProvider): IDisposable
+• registerCodeActionProvider(languageSelector: LanguageSelector, provider: CodeActionProvider, metadata?: CodeActionProviderMetadata): IDisposable
+• registerCodeLensProvider(languageSelector: LanguageSelector, provider: CodeLensProvider): IDisposable
+• registerInlayHintsProvider(languageSelector: LanguageSelector, provider: InlayHintsProvider): IDisposable
+• registerColorProvider(languageSelector: LanguageSelector, provider: DocumentColorProvider): IDisposable
+• registerLinkProvider(languageSelector: LanguageSelector, provider: LinkProvider): IDisposable
+• registerLinkedEditingRangeProvider(languageSelector: LanguageSelector, provider: LinkedEditingRangeProvider): IDisposable
+
+৩. নেভিগেশন ও সিম্বল প্রোভাইডার (Navigation & Symbol Providers)
+
+• registerDefinitionProvider(languageSelector: LanguageSelector, provider: DefinitionProvider): IDisposable
+• registerDeclarationProvider(languageSelector: LanguageSelector, provider: DeclarationProvider): IDisposable
+• registerTypeDefinitionProvider(languageSelector: LanguageSelector, provider: TypeDefinitionProvider): IDisposable
+• registerImplementationProvider(languageSelector: LanguageSelector, provider: ImplementationProvider): IDisposable
+• registerReferenceProvider(languageSelector: LanguageSelector, provider: ReferenceProvider): IDisposable
+• registerDocumentHighlightProvider(languageSelector: LanguageSelector, provider: DocumentHighlightProvider): IDisposable
+• registerDocumentSymbolProvider(languageSelector: LanguageSelector, provider: DocumentSymbolProvider): IDisposable
+• registerRenameProvider(languageSelector: LanguageSelector, provider: RenameProvider): IDisposable
+• registerNewSymbolNamesProvider(languageSelector: LanguageSelector, provider: NewSymbolNamesProvider): IDisposable
+
+৪. ফরম্যাটিং, ফোল্ডিং ও সেমান্টিক টোকেন (Formatting, Folding & Semantics)
+
+• registerDocumentFormattingEditProvider(languageSelector: LanguageSelector, provider: DocumentFormattingEditProvider): IDisposable
+• registerDocumentRangeFormattingEditProvider(languageSelector: LanguageSelector, provider: DocumentRangeFormattingEditProvider): IDisposable
+• registerOnTypeFormattingEditProvider(languageSelector: LanguageSelector, provider: OnTypeFormattingEditProvider): IDisposable
+• registerFoldingRangeProvider(languageSelector: LanguageSelector, provider: FoldingRangeProvider): IDisposable
+• registerSelectionRangeProvider(languageSelector: LanguageSelector, provider: SelectionRangeProvider): IDisposable
+• registerDocumentSemanticTokensProvider(languageSelector: LanguageSelector, provider: DocumentSemanticTokensProvider): IDisposable
+• registerDocumentRangeSemanticTokensProvider(languageSelector: LanguageSelector, provider: DocumentRangeSemanticTokensProvider): IDisposable
+• registerDocumentDropEditProvider(languageSelector: LanguageSelector, provider: DocumentDropEditProvider): IDisposable
+• registerDocumentPasteEditProvider(languageSelector: LanguageSelector, provider: DocumentPasteEditProvider): IDisposable
+
+
+
+
+mobile editor er jegulo akebare oproyojonio jodi erokom kono api ba instance theke thake segulo baad deuay bhalo 
+
+plan banao ja ja completed ar partial ar still not implemented  tick ralhbe 

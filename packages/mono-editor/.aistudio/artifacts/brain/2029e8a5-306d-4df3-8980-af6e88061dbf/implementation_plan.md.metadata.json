@@ -1,0 +1,6 @@
+{
+  "summary":  "Comprehensive Mono Editor capability audit checklist (Completed / Partial / Missing / Mobile-Pruned) and modular implementation plan covering Color Bullet hover-off default API, VS Code/Monaco-faithful Hover Docs & live Signature Help popups, Markdown heading Sticky Scroll + Outline model, Universal Multiline Wrap-Aware Ghost Text (Copilot/Codex-ready) & Inlay Hints, and mobile-first LSP provider completion.",
+  "updatedAt":  "2026-11-23T14:02:23.731682147Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

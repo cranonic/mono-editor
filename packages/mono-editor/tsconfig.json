@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "erasableSyntaxOnly": true,
+    "paths": {
+      "@common/*": ["./src/common/*"],
+      "@platform/*": ["./src/platform/*"],
+      "@browser/*": ["./src/browser/*"],
+      "@contrib/*": ["./src/contrib/*"],
+      "@api/*": ["./src/api/*"]
+    }
+  },
+  "include": ["src", "dev"],
+  "exclude": ["src/react", "src/platform/haptic/haptic.ts"]
+}

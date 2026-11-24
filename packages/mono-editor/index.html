@@ -1,0 +1,1009 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Mono Editor Playground</title>
+    <meta name="description" content="Standalone canvas-rendered code editor playground with live feature controls." />
+    <meta property="og:title" content="Mono Editor Playground" />
+    <meta property="og:description" content="Standalone canvas-rendered code editor playground with live feature controls." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --pg-bg: #18181b;
+        --pg-surface: #1f1f23;
+        --pg-surface-2: #27272c;
+        --pg-border: #2e2e34;
+        --pg-text: #e4e4e7;
+        --pg-muted: #9ca3af;
+        --pg-accent: #0ea5e9;
+        --pg-accent-fg: #ffffff;
+        --pg-control-bg: #27272c;
+        --pg-control-border: #3a3a42;
+        --pg-switch-off: #3f3f46;
+        --pg-backdrop: rgba(0, 0, 0, 0.45);
+      }
+
+      [data-theme-mode="light"] {
+        --pg-bg: #f8fafc;
+        --pg-surface: #ffffff;
+        --pg-surface-2: #f1f5f9;
+        --pg-border: #e2e8f0;
+        --pg-text: #0f172a;
+        --pg-muted: #64748b;
+        --pg-accent: #0284c7;
+        --pg-accent-fg: #ffffff;
+        --pg-control-bg: #ffffff;
+        --pg-control-border: #cbd5e1;
+        --pg-switch-off: #cbd5e1;
+        --pg-backdrop: rgba(15, 23, 42, 0.28);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: var(--pg-bg);
+        color: var(--pg-text);
+        font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      #app {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+      }
+
+      /* ── Top Workbench Bar (3 Zones) ──────────────────────────── */
+      #topbar {
+        height: 44px;
+        flex: 0 0 44px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 12px;
+        background: var(--pg-surface);
+        border-bottom: 1px solid var(--pg-border);
+        user-select: none;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      #topbar::-webkit-scrollbar {
+        display: none;
+      }
+
+      .bar-zone {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 700;
+        font-size: 13.5px;
+        letter-spacing: -0.02em;
+        color: var(--pg-text);
+      }
+
+      .brand-mark {
+        width: 20px;
+        height: 20px;
+        border-radius: 5px;
+        background: var(--pg-accent);
+        color: var(--pg-accent-fg);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 11px;
+        font-weight: 700;
+        flex-shrink: 0;
+      }
+
+      .bar-select,
+      .bar-btn {
+        height: 28px;
+        padding: 0 9px;
+        border-radius: 5px;
+        border: 1px solid var(--pg-control-border);
+        background: var(--pg-control-bg);
+        color: var(--pg-text);
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+        transition: border-color 120ms ease, background 120ms ease;
+      }
+
+      .bar-select:hover,
+      .bar-btn:hover {
+        border-color: var(--pg-accent);
+      }
+
+      .bar-btn.active {
+        background: var(--pg-accent);
+        border-color: var(--pg-accent);
+        color: var(--pg-accent-fg);
+      }
+
+      .bar-btn svg {
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+      }
+
+      /* ── Multi-Model Tab Strip ────────────────────────────────── */
+      #model-tabs {
+        height: 32px;
+        flex: 0 0 32px;
+        display: flex;
+        align-items: stretch;
+        gap: 0;
+        background: var(--pg-bg);
+        border-bottom: 1px solid var(--pg-border);
+        padding: 0 8px;
+        user-select: none;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      #model-tabs::-webkit-scrollbar {
+        display: none;
+      }
+
+      .model-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 12px;
+        border: none;
+        border-bottom: 2px solid transparent;
+        background: transparent;
+        color: var(--pg-muted);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 11.5px;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+      }
+
+      .model-tab:hover {
+        color: var(--pg-text);
+        background: var(--pg-surface);
+      }
+
+      .model-tab.active {
+        color: var(--pg-text);
+        border-bottom-color: var(--pg-accent);
+        background: var(--pg-surface);
+      }
+
+      .model-tab-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--pg-accent);
+        opacity: 0.75;
+      }
+
+      /* ── Main Workspace (Canvas + Collapsible Feature Sidebar) ── */
+      #workspace {
+        position: relative;
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        width: 100%;
+        overflow: hidden;
+      }
+
+      #editor-host {
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 0;
+        height: 100%;
+      }
+
+      #preview-host {
+        display: none;
+        flex: 1 1 50%;
+        min-width: 0;
+        min-height: 0;
+        height: 100%;
+        border-left: 1px solid var(--pg-border);
+        background: var(--pg-surface);
+        overflow: hidden;
+      }
+
+      #workspace.preview-split #editor-host {
+        flex: 1 1 50%;
+      }
+
+      #workspace.preview-split #preview-host {
+        display: block;
+      }
+
+      #md-mobile-tabs {
+        display: none;
+        height: 32px;
+        flex: 0 0 32px;
+        align-items: center;
+        gap: 6px;
+        padding: 0 10px;
+        background: var(--pg-surface);
+        border-bottom: 1px solid var(--pg-border);
+        user-select: none;
+      }
+
+      .md-mode-btn {
+        height: 24px;
+        padding: 0 12px;
+        border-radius: 4px;
+        border: 1px solid var(--pg-control-border);
+        background: transparent;
+        color: var(--pg-muted);
+        font-family: inherit;
+        font-size: 11.5px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .md-mode-btn.active {
+        background: var(--pg-accent);
+        border-color: var(--pg-accent);
+        color: var(--pg-accent-fg);
+      }
+
+      #drawer-backdrop {
+        display: none;
+      }
+
+      #sidebar {
+        width: 272px;
+        flex: 0 0 272px;
+        height: 100%;
+        background: var(--pg-surface);
+        border-left: 1px solid var(--pg-border);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        transition: width 160ms ease, flex-basis 160ms ease;
+      }
+
+      #sidebar.collapsed {
+        width: 0;
+        flex-basis: 0;
+        border-left-width: 0;
+      }
+
+      .sidebar-header {
+        height: 36px;
+        flex: 0 0 36px;
+        padding: 0 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--pg-border);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--pg-muted);
+      }
+
+      .sidebar-close {
+        border: none;
+        background: transparent;
+        color: var(--pg-muted);
+        cursor: pointer;
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+      }
+
+      .sidebar-close:hover {
+        background: var(--pg-surface-2);
+        color: var(--pg-text);
+      }
+
+      .sidebar-scroll {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        padding: 10px 12px 18px;
+      }
+
+      .ctrl-group {
+        margin-bottom: 16px;
+      }
+
+      .ctrl-group-title {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--pg-muted);
+        margin: 0 0 8px 0;
+      }
+
+      .ctrl-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 30px;
+        padding: 3px 0;
+        font-size: 12.5px;
+        color: var(--pg-text);
+      }
+
+      .ctrl-row label {
+        flex: 1 1 auto;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .ctrl-select {
+        height: 24px;
+        padding: 0 6px;
+        border-radius: 4px;
+        border: 1px solid var(--pg-control-border);
+        background: var(--pg-control-bg);
+        color: var(--pg-text);
+        font-family: inherit;
+        font-size: 11.5px;
+        cursor: pointer;
+      }
+
+      /* Accessible Toggle Switch */
+      .switch {
+        position: relative;
+        width: 32px;
+        height: 18px;
+        flex: 0 0 32px;
+        display: inline-block;
+      }
+
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+        position: absolute;
+      }
+
+      .switch-track {
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        background: var(--pg-switch-off);
+        cursor: pointer;
+        transition: background 140ms ease;
+      }
+
+      .switch-track::after {
+        content: "";
+        position: absolute;
+        left: 2px;
+        top: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #ffffff;
+        transition: transform 140ms ease;
+      }
+
+      .switch input:checked + .switch-track {
+        background: var(--pg-accent);
+      }
+
+      .switch input:checked + .switch-track::after {
+        transform: translateX(14px);
+      }
+
+      .action-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+
+      .action-btn {
+        height: 28px;
+        padding: 0 8px;
+        border-radius: 5px;
+        border: 1px solid var(--pg-control-border);
+        background: var(--pg-surface-2);
+        color: var(--pg-text);
+        font-family: inherit;
+        font-size: 11.5px;
+        font-weight: 500;
+        cursor: pointer;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        transition: border-color 120ms ease, background 120ms ease;
+      }
+
+      .action-btn:hover {
+        border-color: var(--pg-accent);
+      }
+
+      .action-btn.active {
+        background: var(--pg-accent);
+        border-color: var(--pg-accent);
+        color: var(--pg-accent-fg);
+      }
+
+      .ctrl-divider {
+        height: 1px;
+        background: var(--pg-border);
+        margin: 12px 0;
+      }
+
+      /* ── Bottom Status Strip ──────────────────────────────────── */
+      #statusbar {
+        height: 26px;
+        flex: 0 0 26px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 12px;
+        background: var(--pg-surface);
+        border-top: 1px solid var(--pg-border);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        color: var(--pg-muted);
+        user-select: none;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      #statusbar::-webkit-scrollbar {
+        display: none;
+      }
+
+      .status-group {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        white-space: nowrap;
+      }
+
+      .status-item strong {
+        font-weight: 500;
+        color: var(--pg-text);
+      }
+
+      /* ── Mobile Drawer & Markdown Tab-Toggle Mode (< 840px) ───── */
+      @media (max-width: 840px) {
+        #md-mobile-tabs.visible {
+          display: flex;
+        }
+
+        #workspace.preview-split #editor-host,
+        #workspace.preview-split #preview-host {
+          flex: 1 1 100%;
+          border-left: none;
+        }
+
+        #workspace.mobile-view-code #preview-host {
+          display: none;
+        }
+
+        #workspace.mobile-view-preview #editor-host {
+          display: none;
+        }
+
+        #workspace.mobile-view-preview #preview-host {
+          display: block;
+        }
+
+        #sidebar {
+          position: absolute;
+          top: 0;
+          right: 0;
+          bottom: 0;
+          width: min(290px, 86vw);
+          z-index: 60;
+          transform: translateX(0);
+          transition: transform 180ms ease;
+          box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+        }
+
+        #sidebar.collapsed {
+          width: min(290px, 86vw);
+          flex-basis: auto;
+          border-left-width: 1px;
+          transform: translateX(100%);
+          pointer-events: none;
+        }
+
+        #drawer-backdrop {
+          display: block;
+          position: absolute;
+          inset: 0;
+          background: var(--pg-backdrop);
+          z-index: 50;
+          opacity: 1;
+          transition: opacity 160ms ease;
+        }
+
+        #drawer-backdrop.hidden {
+          opacity: 0;
+          pointer-events: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app" data-theme-mode="dark">
+      <header id="topbar">
+        <div class="bar-zone">
+          <span class="brand">
+            <span class="brand-mark">M</span>
+            Mono Editor
+          </span>
+        </div>
+
+        <div class="bar-zone">
+          <select id="lang-select" class="bar-select" aria-label="Language">
+            <option value="javascript" selected>JavaScript</option>
+            <option value="typescript">TypeScript</option>
+            <option value="json">JSON</option>
+            <option value="css">CSS</option>
+            <option value="html">HTML</option>
+            <option value="java">Java</option>
+            <option value="python">Python</option>
+            <option value="markdown">Markdown</option>
+            <option value="yaml">YAML</option>
+            <option value="shell">Shell</option>
+            <option value="sql">SQL</option>
+            <option value="c">C</option>
+            <option value="cpp">C++</option>
+            <option value="plaintext">Plain Text</option>
+          </select>
+
+          <select id="theme-select" class="bar-select" aria-label="Theme">
+            <option value="mscode-dark" selected>Dark+</option>
+            <option value="mscode-light">Light+</option>
+            <option value="mscode-amoled">AMOLED</option>
+            <option value="solarized-dark">Solarized Dark</option>
+            <option value="solarized-light">Solarized Light</option>
+          </select>
+        </div>
+
+        <div class="bar-zone">
+          <button id="btn-preview" class="bar-btn" type="button" title="Toggle Markdown Preview" style="display:none">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+              <path d="M8 2.5v11" />
+            </svg>
+            Preview
+          </button>
+          <button id="btn-find" class="bar-btn" type="button" title="Find / Replace (Ctrl+F)">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="7" cy="7" r="4.5" />
+              <path d="M10.5 10.5L14 14" stroke-linecap="round" />
+            </svg>
+            Find
+          </button>
+          <button id="btn-features" class="bar-btn active" type="button" title="Toggle Feature Controls">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M2.5 4h11M2.5 8h11M2.5 12h11" stroke-linecap="round" />
+              <circle cx="5.5" cy="4" r="1.3" fill="currentColor" />
+              <circle cx="10.5" cy="8" r="1.3" fill="currentColor" />
+              <circle cx="7" cy="12" r="1.3" fill="currentColor" />
+            </svg>
+            Features
+          </button>
+        </div>
+      </header>
+
+      <nav id="model-tabs" aria-label="Open Models">
+        <button class="model-tab active" data-model-key="app.js" type="button">
+          <span class="model-tab-dot" style="background:#f59e0b"></span>app.js
+        </button>
+        <button class="model-tab" data-model-key="palette.html" type="button">
+          <span class="model-tab-dot" style="background:#f43f5e"></span>palette.html
+        </button>
+        <button class="model-tab" data-model-key="styles.css" type="button">
+          <span class="model-tab-dot" style="background:#38bdf8"></span>styles.css
+        </button>
+        <button class="model-tab" data-model-key="notes.md" type="button">
+          <span class="model-tab-dot" style="background:#a78bfa"></span>notes.md
+        </button>
+      </nav>
+
+      <div id="md-mobile-tabs" aria-label="Markdown View Mode">
+        <button id="btn-md-code" class="md-mode-btn active" type="button">Code</button>
+        <button id="btn-md-preview" class="md-mode-btn" type="button">Preview</button>
+      </div>
+
+      <main id="workspace">
+        <div id="editor-host"></div>
+        <div id="preview-host" aria-label="Markdown Preview"></div>
+        <div id="drawer-backdrop" class="hidden"></div>
+
+        <aside id="sidebar" aria-label="Editor Feature Controls">
+          <div class="sidebar-header">
+            <span>Feature Controls</span>
+            <button id="btn-sidebar-close" class="sidebar-close" type="button" aria-label="Close Feature Controls">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="sidebar-scroll">
+            <section class="ctrl-group">
+              <h2 class="ctrl-group-title">View &amp; Layout</h2>
+
+              <div class="ctrl-row">
+                <label for="opt-word-wrap">Word Wrap</label>
+                <span class="switch">
+                  <input id="opt-word-wrap" type="checkbox" />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-wrap-indent">Wrapping Indent</label>
+                <select id="opt-wrap-indent" class="ctrl-select">
+                  <option value="same" selected>Same</option>
+                  <option value="indent">Indent</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-folding">Code Folding</label>
+                <span class="switch">
+                  <input id="opt-folding" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-guides">Indent Guides</label>
+                <span class="switch">
+                  <input id="opt-guides" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-active-guide">Active Indent Guide</label>
+                <span class="switch">
+                  <input id="opt-active-guide" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-brackets">Bracket Matching</label>
+                <span class="switch">
+                  <input id="opt-brackets" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-rainbow-brackets">Rainbow Brackets</label>
+                <span class="switch">
+                  <input id="opt-rainbow-brackets" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-rainbow-levels">Rainbow Levels</label>
+                <select id="opt-rainbow-levels" class="ctrl-select">
+                  <option value="2">2 levels</option>
+                  <option value="3">3 levels</option>
+                  <option value="4">4 levels</option>
+                  <option value="5" selected>5 levels</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-rainbow-independent">Independent Pools</label>
+                <span class="switch">
+                  <input id="opt-rainbow-independent" type="checkbox" />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-occurrences">Word Occurrences</label>
+                <span class="switch">
+                  <input id="opt-occurrences" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-scrollbar">Overlay Scrollbar</label>
+                <select id="opt-scrollbar" class="ctrl-select">
+                  <option value="auto" selected>Auto</option>
+                  <option value="visible">Always</option>
+                  <option value="hidden">Hidden</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-hide-vscroll">Hide V-Scroll on Stop</label>
+                <span class="switch">
+                  <input id="opt-hide-vscroll" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-hide-hscroll">Hide H-Scroll on Stop</label>
+                <span class="switch">
+                  <input id="opt-hide-hscroll" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-dynamic-caret">Dynamic Caret Color</label>
+                <span class="switch">
+                  <input id="opt-dynamic-caret" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-line-numbers">Line Numbers</label>
+                <span class="switch">
+                  <input id="opt-line-numbers" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-line-min-chars" title="lineNumbersMinChars — minimum digit columns reserved in the gutter">Gutter Min Digits</label>
+                <select id="opt-line-min-chars" class="ctrl-select">
+                  <option value="1">1</option>
+                  <option value="2" selected>2 (compact)</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5 (Monaco)</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-minimap-side">Minimap Side</label>
+                <select id="opt-minimap-side" class="ctrl-select">
+                  <option value="right" selected>Right</option>
+                  <option value="left">Left</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-sticky-scroll">Sticky Scroll</label>
+                <span class="switch">
+                  <input id="opt-sticky-scroll" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-minimap">Code Minimap</label>
+                <span class="switch">
+                  <input id="opt-minimap" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-color-bullets">Color Bullets &amp; Picker</label>
+                <span class="switch">
+                  <input id="opt-color-bullets" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-color-comments">Colors in Comments</label>
+                <span class="switch">
+                  <input id="opt-color-comments" type="checkbox" />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-color-style">Colors in &lt;style&gt;</label>
+                <span class="switch">
+                  <input id="opt-color-style" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-color-script">Colors in &lt;script&gt;</label>
+                <span class="switch">
+                  <input id="opt-color-script" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-scroll-beyond">Scroll Beyond Last Line</label>
+                <span class="switch">
+                  <input id="opt-scroll-beyond" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+            </section>
+
+            <div class="ctrl-divider"></div>
+
+            <section class="ctrl-group">
+              <h2 class="ctrl-group-title">Editing &amp; Suggest</h2>
+
+              <div class="ctrl-row">
+                <label for="opt-quick-suggest">Quick Suggestions</label>
+                <span class="switch">
+                  <input id="opt-quick-suggest" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-auto-brackets">Auto-Close Brackets</label>
+                <span class="switch">
+                  <input id="opt-auto-brackets" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-auto-quotes">Auto-Close Quotes</label>
+                <span class="switch">
+                  <input id="opt-auto-quotes" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-auto-surround">Auto-Surround</label>
+                <span class="switch">
+                  <input id="opt-auto-surround" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-auto-indent">Smart Auto-Indent</label>
+                <span class="switch">
+                  <input id="opt-auto-indent" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-read-only">Read-Only Mode</label>
+                <span class="switch">
+                  <input id="opt-read-only" type="checkbox" />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-tab-size">Tab Size</label>
+                <select id="opt-tab-size" class="ctrl-select">
+                  <option value="2" selected>2 spaces</option>
+                  <option value="4">4 spaces</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-font-size">Font Size</label>
+                <select id="opt-font-size" class="ctrl-select">
+                  <option value="13">13 px</option>
+                  <option value="14">14 px</option>
+                  <option value="15" selected>15 px</option>
+                  <option value="16">16 px</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-eol">End of Line (EOL)</label>
+                <select id="opt-eol" class="ctrl-select">
+                  <option value="LF" selected>LF (\n)</option>
+                  <option value="CRLF">CRLF (\r\n)</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-undo-group" title="undoGroupIdleMs — pause that closes a typing burst into one undo step">Undo Grouping</label>
+                <select id="opt-undo-group" class="ctrl-select">
+                  <option value="0">Per keystroke</option>
+                  <option value="500">500 ms</option>
+                  <option value="1500" selected>1.5 s (default)</option>
+                  <option value="3000">3 s</option>
+                </select>
+              </div>
+            </section>
+
+            <div class="ctrl-divider"></div>
+
+            <section class="ctrl-group">
+              <h2 class="ctrl-group-title">Quick Actions &amp; LSP</h2>
+              <div class="action-grid">
+                <button id="act-comment-line" class="action-btn" type="button">Line Comment</button>
+                <button id="act-comment-block" class="action-btn" type="button">Block Comment</button>
+                <button id="act-fold-all" class="action-btn" type="button">Fold All</button>
+                <button id="act-unfold-all" class="action-btn" type="button">Unfold All</button>
+                <button id="act-format" class="action-btn" type="button" title="Format Document (Shift+Alt+F)">Format Doc</button>
+                <button id="act-rename" class="action-btn" type="button" title="Rename Symbol (F2)">Rename (F2)</button>
+                <button id="act-references" class="action-btn" type="button" title="Find References (Shift+F12)">References</button>
+                <button id="act-quickfix" class="action-btn" type="button" title="Quick Fix (Ctrl+.)">Quick Fix</button>
+                <button id="act-next-match" class="action-btn" type="button" title="Add Next Match (Ctrl+D)">Next Match</button>
+                <button id="act-cursor-below" class="action-btn" type="button" title="Add Cursor Below (Ctrl+Alt+Down)">+ Cursor</button>
+                <button id="act-sighelp" class="action-btn" type="button" title="Parameter Hints (Ctrl+Shift+Space)">Param Hints</button>
+                <button id="act-undo" class="action-btn" type="button" title="Undo (Ctrl+Z)">Undo</button>
+                <button id="act-redo" class="action-btn" type="button" title="Redo (Ctrl+Shift+Z)">Redo</button>
+                <button id="act-suggest" class="action-btn" type="button" title="Trigger Suggest (Ctrl+Space)">Suggest</button>
+                <button id="act-definition" class="action-btn" type="button" title="Go to Definition (F12)">Definition</button>
+                <button id="act-replace" class="action-btn" type="button" title="Find &amp; Replace (Ctrl+H)">Replace</button>
+                <button id="act-select-all-occ" class="action-btn" type="button" title="Select All Occurrences (Ctrl+Shift+L)">Select All Occ.</button>
+                <button id="act-sample-10" class="action-btn" type="button" title="10-line file — gutter must stay narrow">10-line File</button>
+                <button id="act-sample-1000" class="action-btn" type="button" title="1000 lines with nested scopes — test Sticky Scroll + Find">1000-line File</button>
+                <button id="act-diagnostics" class="action-btn" type="button">Diagnostics</button>
+                <button id="act-reset" class="action-btn" type="button">Reset Sample</button>
+              </div>
+            </section>
+          </div>
+        </aside>
+      </main>
+
+      <footer id="statusbar">
+        <div class="status-group">
+          <span class="status-item" id="st-pos">Ln <strong>1</strong>, Col <strong>1</strong></span>
+          <span class="status-item" id="st-folded">Folded: <strong>0</strong></span>
+          <span class="status-item" id="st-diag">Markers: <strong>0</strong></span>
+        </div>
+        <div class="status-group">
+          <span class="status-item" id="st-eol"><strong>LF</strong></span>
+          <span class="status-item" id="st-spaces">Spaces: <strong>2</strong></span>
+          <span class="status-item" id="st-wrap">Wrap: <strong>Off</strong></span>
+          <span class="status-item" id="st-lang"><strong>JavaScript</strong></span>
+        </div>
+      </footer>
+    </div>
+    <script type="module" src="/dev/main.ts"></script>
+  </body>
+</html>
