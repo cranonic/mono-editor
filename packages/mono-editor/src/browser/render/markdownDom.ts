@@ -87,6 +87,7 @@ function appendInlineMarkdown(
   parent: HTMLElement,
   text: string,
   theme: ResolvedWidgetTheme,
+  codeFontFamily: string,
 ): void {
   // Match inline code (`...`), bold (**...**), italic (*...*), or links ([label](url))
   const tokenRe = /`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)/g;
@@ -101,7 +102,7 @@ function appendInlineMarkdown(
       const code = document.createElement('code');
       code.textContent = match[1];
       Object.assign(code.style, {
-        fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+        fontFamily: codeFontFamily,
         fontSize: '0.92em',
         padding: '1px 4px',
         borderRadius: '3px',
@@ -148,7 +149,11 @@ export interface MarkdownRenderOptions {
    * (matches VS Code's `.monaco-hover .hover-row` signature header look).
    */
   flatCodeBlocks?: boolean;
+  /** Optional monospace font family matching the active editor fontFamily. */
+  codeFontFamily?: string;
 }
+
+const DEFAULT_CODE_FONT = '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
 
 /**
  * Safely renders Markdown into DOM elements (zero `innerHTML` usage).
@@ -164,6 +169,7 @@ export function renderMarkdownToDom(
 ): void {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const flatCode = Boolean(options?.flatCodeBlocks);
+  const codeFontFamily = options?.codeFontFamily || DEFAULT_CODE_FONT;
   let i = 0;
 
   while (i < lines.length) {
@@ -190,8 +196,8 @@ export function renderMarkdownToDom(
               background: 'transparent',
               border: 'none',
               overflowX: 'auto',
-              fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-              fontSize: '12px',
+              fontFamily: codeFontFamily,
+              fontSize: '0.94em',
               lineHeight: '1.45',
               color: theme.foreground,
               whiteSpace: 'pre-wrap',
@@ -204,8 +210,8 @@ export function renderMarkdownToDom(
               background: theme.codeBackground,
               border: `1px solid ${theme.border}`,
               overflowX: 'auto',
-              fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-              fontSize: '12px',
+              fontFamily: codeFontFamily,
+              fontSize: '0.92em',
               lineHeight: '1.45',
               color: theme.foreground,
               whiteSpace: 'pre',
@@ -238,11 +244,11 @@ export function renderMarkdownToDom(
       const h = document.createElement('div');
       Object.assign(h.style, {
         fontWeight: '600',
-        fontSize: level === 1 ? '14px' : level === 2 ? '13px' : '12px',
+        fontSize: level === 1 ? '1.12em' : level === 2 ? '1.04em' : '0.96em',
         margin: '4px 0 2px',
         color: theme.foreground,
       });
-      appendInlineMarkdown(h, heading[2]!, theme);
+      appendInlineMarkdown(h, heading[2]!, theme, codeFontFamily);
       container.appendChild(h);
       i++;
       continue;
@@ -258,7 +264,7 @@ export function renderMarkdownToDom(
       while (i < lines.length && /^\s*[-*]\s+/.test(lines[i]!)) {
         const li = document.createElement('li');
         li.style.margin = '2px 0';
-        appendInlineMarkdown(li, lines[i]!.replace(/^\s*[-*]\s+/, ''), theme);
+        appendInlineMarkdown(li, lines[i]!.replace(/^\s*[-*]\s+/, ''), theme, codeFontFamily);
         ul.appendChild(li);
         i++;
       }
@@ -290,7 +296,7 @@ export function renderMarkdownToDom(
       margin: '3px 0',
       lineHeight: '1.45',
     });
-    appendInlineMarkdown(p, paraLines.join(' '), theme);
+    appendInlineMarkdown(p, paraLines.join(' '), theme, codeFontFamily);
     container.appendChild(p);
   }
 }

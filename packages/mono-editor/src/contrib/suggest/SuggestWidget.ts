@@ -7,7 +7,6 @@ import {
   BORDER,
   ensureSuggestStyle,
   kindLabel,
-  LABEL_OFFSET,
   labelOfItem,
   matchIndexes,
   resolveSuggestPalette,
@@ -213,8 +212,16 @@ export class SuggestWidget {
     this.onSelectionChange?.(item);
   }
 
+  private iconSize(): number {
+    return Math.max(12, Math.round((this.opts.fontSize ?? 14) * 1.1));
+  }
+
+  private labelOffset(): number {
+    return 4 + 2 + this.iconSize() + 4;
+  }
+
   private rowHeight(): number {
-    return this.opts.rowHeight ?? Math.max(22, Math.round((this.opts.fontSize ?? 14) * 1.5));
+    return this.opts.rowHeight ?? Math.max(20, Math.round((this.opts.fontSize ?? 14) * 1.55));
   }
 
   private build(): void {
@@ -291,7 +298,7 @@ export class SuggestWidget {
     const h = this.el.offsetHeight;
     const w = this.el.offsetWidth;
     const top = placeBelow ? y + gap : Math.max(4, lineTop - gap - h);
-    let left = x - LABEL_OFFSET - BORDER;
+    let left = x - this.labelOffset() - BORDER;
     left = Math.min(left, hostW - w - 4);
     left = Math.max(4, left);
 
@@ -375,10 +382,13 @@ export class SuggestWidget {
       } as CSSStyleDeclaration);
       (row.style as unknown as { webkitUserSelect: string }).webkitUserSelect = 'none';
 
-      const icon = createIcon(kindToCodicon(item.kind), 16);
+      const iconPx = this.iconSize();
+      const icon = createIcon(kindToCodicon(item.kind), iconPx);
       Object.assign(icon.style, {
-        width: '16px',
-        height: '16px',
+        width: `${iconPx}px`,
+        height: `${iconPx}px`,
+        lineHeight: `${iconPx}px`,
+        fontSize: `${iconPx}px`,
         flexShrink: '0',
         margin: '0 4px 0 2px',
         color: p.icon(item.kind),
@@ -444,8 +454,11 @@ export class SuggestWidget {
         infoBtn.className = 'mono-sg-info-btn';
         infoBtn.title = 'Read More (Ctrl+Space)';
         infoBtn.setAttribute('aria-label', 'Toggle Documentation');
-        const infoIcon = createIcon('info', 14);
-        infoIcon.style.lineHeight = '14px';
+        const infoIconPx = Math.max(12, Math.round((this.opts.fontSize ?? 14) * 0.96));
+        const infoBtnPx = Math.max(18, infoIconPx + 4);
+        const infoIcon = createIcon('info', infoIconPx);
+        infoIcon.style.lineHeight = `${infoIconPx}px`;
+        infoIcon.style.fontSize = `${infoIconPx}px`;
         infoBtn.appendChild(infoIcon);
         Object.assign(infoBtn.style, {
           display: 'none',
@@ -453,8 +466,8 @@ export class SuggestWidget {
           justifyContent: 'center',
           flexShrink: '0',
           marginLeft: '4px',
-          width: '18px',
-          height: '18px',
+          width: `${infoBtnPx}px`,
+          height: `${infoBtnPx}px`,
           borderRadius: '3px',
           border: 'none',
           background: 'transparent',

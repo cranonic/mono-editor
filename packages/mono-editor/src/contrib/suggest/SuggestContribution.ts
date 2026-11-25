@@ -42,7 +42,10 @@ export class SuggestContribution implements IEditorContribution {
         host.emitContent();
         host.emitCursorEvents('suggest');
       },
-      undefined,
+      {
+        fontFamily: host.getFontFamily(),
+        fontSize: host.getFontSize(),
+      },
       {
         quickSuggestions: opts.quickSuggestions,
         quickSuggestionsDelay: opts.quickSuggestionsDelay,

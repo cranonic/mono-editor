@@ -15,6 +15,8 @@ import { SignatureHelpWidget } from './SignatureHelpWidget';
 export interface SignatureHelpControllerOptions {
   enabled?: boolean;
   trigger?: 'auto' | 'manual';
+  fontSize?: number;
+  fontFamily?: string;
   getLanguageIdAtPosition?: (lineNumber: number, column: number) => string;
   getAvoidRect?: () => WidgetBoxRect | null;
   isSuggestVisible?: () => boolean;
@@ -52,15 +54,21 @@ export class SignatureHelpController {
     this.model = model;
     this.selection = selection;
     this.view = view;
+    this.widget = new SignatureHelpWidget(
+      host,
+      {
+        onPrev: () => this.prevSignature(),
+        onNext: () => this.nextSignature(),
+      },
+      typeof optionsOrLangGetter === 'object'
+        ? { fontSize: optionsOrLangGetter.fontSize, fontFamily: optionsOrLangGetter.fontFamily }
+        : undefined,
+    );
     if (typeof optionsOrLangGetter === 'function') {
       this.getLanguageIdAtPosition = optionsOrLangGetter;
     } else if (optionsOrLangGetter) {
       this.setOptions(optionsOrLangGetter);
     }
-    this.widget = new SignatureHelpWidget(host, {
-      onPrev: () => this.prevSignature(),
-      onNext: () => this.nextSignature(),
-    });
   }
 
   setOptions(opts: SignatureHelpControllerOptions): void {
@@ -69,6 +77,9 @@ export class SignatureHelpController {
       if (!this.enabled) this.hide();
     }
     if (opts.trigger !== undefined) this.triggerMode = opts.trigger;
+    if (opts.fontSize !== undefined || opts.fontFamily !== undefined) {
+      this.widget.setOptions({ fontSize: opts.fontSize, fontFamily: opts.fontFamily });
+    }
     if (opts.getLanguageIdAtPosition !== undefined) this.getLanguageIdAtPosition = opts.getLanguageIdAtPosition;
     if (opts.getAvoidRect !== undefined) this.getAvoidRect = opts.getAvoidRect;
     if (opts.isSuggestVisible !== undefined) this.isSuggestVisible = opts.isSuggestVisible;
@@ -192,6 +203,23 @@ export class SignatureHelpController {
       return;
     }
     await this.trigger(undefined, false);
+  }
+
+  /**
+   * Auto-triggers Signature Help when accepting a completion (e.g. call snippet like `greetAll("Mono", "bn")`)
+   * lands the caret inside a function call argument list.
+   */
+  async onCompletionAccepted(): Promise<void> {
+    if (this.disposed || !this.enabled || this.triggerMode !== 'auto') return;
+    const pos = this.selection.active;
+    const lang = this.getLanguageIdAtPosition?.(pos.lineNumber, pos.column) ?? this.model.getLanguageId();
+    const modelLike = this.buildModelLike(lang);
+    const callCtx = analyzeCallContext(modelLike, pos);
+    if (!callCtx) {
+      if (this.isOpen()) this.hide();
+      return;
+    }
+    await this.trigger('(', false);
   }
 
   syncCursor(): void {

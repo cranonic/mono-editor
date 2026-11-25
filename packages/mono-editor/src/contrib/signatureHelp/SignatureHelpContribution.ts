@@ -13,9 +13,11 @@ import { SignatureHelpController } from './SignatureHelpController';
 
 export class SignatureHelpContribution implements IEditorContribution {
   readonly id = ContributionIds.SignatureHelp;
+  private readonly host: IEditorContributionHost;
   private readonly controller: SignatureHelpController;
 
   constructor(host: IEditorContributionHost) {
+    this.host = host;
     const sigOpts = host.initialOptions.signatureHelp;
     this.controller = new SignatureHelpController(
       host.root,
@@ -25,6 +27,8 @@ export class SignatureHelpContribution implements IEditorContribution {
       {
         enabled: sigOpts?.enabled ?? true,
         trigger: sigOpts?.trigger ?? 'auto',
+        fontSize: host.getFontSize(),
+        fontFamily: host.getFontFamily(),
         getLanguageIdAtPosition: (ln, col) => host.getLanguageIdAtPosition(ln, col),
         getAvoidRect: () => host.getSuggestWidgetRect(),
         isSuggestVisible: () => host.isSuggestVisible(),
@@ -65,12 +69,21 @@ export class SignatureHelpContribution implements IEditorContribution {
   }
 
   onCursorChange(source: string): void {
-    if (source === 'mouse' || source === 'api' || source === 'keyboard') {
+    if (source === 'suggest') {
+      void this.controller.onCompletionAccepted();
+    } else if (source === 'snippet') {
+      if (this.controller.isOpen()) this.controller.syncCursor();
+      else void this.controller.onCompletionAccepted();
+    } else if (source === 'mouse' || source === 'api' || source === 'keyboard') {
       this.controller.syncCursor();
     }
   }
 
   onScroll(): void {
+    if (this.controller.isOpen()) this.controller.updatePosition();
+  }
+
+  onLayout(): void {
     if (this.controller.isOpen()) this.controller.updatePosition();
   }
 
@@ -87,6 +100,12 @@ export class SignatureHelpContribution implements IEditorContribution {
   }
 
   onOptionsChange(patch: Partial<MonoEditorOptions>): void {
+    if (patch.fontSize != null || patch.fontFamily != null) {
+      this.controller.setOptions({
+        fontSize: this.host.getFontSize(),
+        fontFamily: this.host.getFontFamily(),
+      });
+    }
     if (!patch.signatureHelp) return;
     this.controller.setOptions({
       enabled: patch.signatureHelp.enabled,

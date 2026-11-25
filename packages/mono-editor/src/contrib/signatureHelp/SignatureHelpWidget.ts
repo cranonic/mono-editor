@@ -14,6 +14,11 @@ export interface SignatureHelpAnchor {
   avoidRect?: WidgetBoxRect | null;
 }
 
+export interface SignatureHelpWidgetOptions {
+  fontSize?: number;
+  fontFamily?: string;
+}
+
 export function computeSignaturePlacement(
   anchor: { x: number; y: number; top?: number },
   widgetSize: { width: number; height: number },
@@ -125,15 +130,38 @@ export class SignatureHelpWidget {
   private host: HTMLElement;
   private el: HTMLDivElement | null = null;
   private theme: ResolvedWidgetTheme | null = null;
+  private fontSize = 14;
+  private fontFamily = '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
   private lastHelp: SignatureHelp | null = null;
   private lastAnchor: SignatureHelpAnchor | null = null;
   private onPrev: () => void;
   private onNext: () => void;
 
-  constructor(host: HTMLElement, handlers: { onPrev: () => void; onNext: () => void }) {
+  constructor(
+    host: HTMLElement,
+    handlers: { onPrev: () => void; onNext: () => void },
+    options?: SignatureHelpWidgetOptions,
+  ) {
     this.host = host;
     this.onPrev = handlers.onPrev;
     this.onNext = handlers.onNext;
+    if (options?.fontSize != null) this.fontSize = options.fontSize;
+    if (options?.fontFamily) this.fontFamily = options.fontFamily;
+  }
+
+  setOptions(options: SignatureHelpWidgetOptions): void {
+    let changed = false;
+    if (options.fontSize != null && options.fontSize !== this.fontSize) {
+      this.fontSize = options.fontSize;
+      changed = true;
+    }
+    if (options.fontFamily && options.fontFamily !== this.fontFamily) {
+      this.fontFamily = options.fontFamily;
+      changed = true;
+    }
+    if (changed && this.el && this.lastHelp && this.lastAnchor) {
+      this.show(this.lastHelp, this.lastAnchor);
+    }
   }
 
   applyTheme(theme: ResolvedWidgetTheme): void {
@@ -175,19 +203,26 @@ export class SignatureHelpWidget {
     const activeParamColor = isDark ? '#1a85ff' : '#0066bf';
     const vsShadow = isDark ? '0 2px 8px rgba(0, 0, 0, 0.36)' : '0 2px 8px rgba(0, 0, 0, 0.16)';
 
+    const editorSize = Math.max(10, Math.round(this.fontSize || 14));
+    const docFontSize = Math.max(10, Math.round(editorSize * 0.92));
+    const codeFontSize = Math.max(10, Math.round(editorSize * 0.92));
+    const navFontSize = Math.max(10, Math.round(editorSize * 0.82));
+    const navIconSize = Math.max(11, Math.round(editorSize * 0.88));
+    const compactMaxW = Math.round(340 * Math.max(1, editorSize / 14));
+
     const el = document.createElement('div');
     el.className = 'mono-signature-help-widget';
     Object.assign(el.style, {
       position: 'absolute',
       zIndex: '46',
-      maxWidth: `${Math.min(340, Math.max(200, (this.host.clientWidth || 600) - 16))}px`,
+      maxWidth: `${Math.min(compactMaxW, Math.max(200, (this.host.clientWidth || 600) - 16))}px`,
       background: bg,
       border: `1px solid ${border}`,
       borderRadius: '3px',
       boxShadow: vsShadow,
       color: fg,
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      fontSize: '12.5px',
+      fontSize: `${docFontSize}px`,
       lineHeight: '1.45',
       pointerEvents: 'auto',
       overflow: 'hidden',
@@ -201,8 +236,8 @@ export class SignatureHelpWidget {
       alignItems: 'flex-start',
       gap: '6px',
       padding: '5px 8px',
-      fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-      fontSize: '12px',
+      fontFamily: this.fontFamily,
+      fontSize: `${codeFontSize}px`,
       wordBreak: 'break-word',
     });
 
@@ -216,7 +251,7 @@ export class SignatureHelpWidget {
         flexShrink: '0',
         color: muted,
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-        fontSize: '11px',
+        fontSize: `${navFontSize}px`,
         fontVariantNumeric: 'tabular-nums',
         userSelect: 'none',
         paddingRight: '4px',
@@ -241,7 +276,7 @@ export class SignatureHelpWidget {
           justifyContent: 'center',
           borderRadius: '3px',
         });
-        b.appendChild(createIcon(iconId, 12));
+        b.appendChild(createIcon(iconId, navIconSize));
         b.addEventListener('pointerdown', (e) => e.stopPropagation());
         b.addEventListener('mousedown', (e) => e.preventDefault());
         b.addEventListener('click', (e) => {
@@ -316,14 +351,14 @@ export class SignatureHelpWidget {
         const pWrap = document.createElement('div');
         pWrap.className = 'mono-sig-param-doc';
         pWrap.style.marginBottom = sigDoc ? '4px' : '0';
-        renderMarkdownToDom(pWrap, paramDoc, resolved);
+        renderMarkdownToDom(pWrap, paramDoc, resolved, undefined, { codeFontFamily: this.fontFamily });
         body.appendChild(pWrap);
       }
       if (sigDoc) {
         const sWrap = document.createElement('div');
         sWrap.className = 'mono-sig-overview-doc';
         sWrap.style.color = muted;
-        renderMarkdownToDom(sWrap, sigDoc, resolved);
+        renderMarkdownToDom(sWrap, sigDoc, resolved, undefined, { codeFontFamily: this.fontFamily });
         body.appendChild(sWrap);
       }
       el.appendChild(body);
@@ -336,7 +371,7 @@ export class SignatureHelpWidget {
     this.el = el;
 
     const hostW = this.host.clientWidth || 600;
-    const hostH = this.host.clientHeight || 400;
+    const hostH = this.getVisibleHostHeight();
     const pos = computeSignaturePlacement(
       anchor,
       { width: el.offsetWidth, height: el.offsetHeight },
@@ -345,6 +380,17 @@ export class SignatureHelpWidget {
     );
     el.style.left = `${pos.left}px`;
     el.style.top = `${pos.top}px`;
+  }
+
+  private getVisibleHostHeight(): number {
+    const rawH = this.host.clientHeight || 400;
+    if (typeof window === 'undefined' || !window.visualViewport) return rawH;
+    const vv = window.visualViewport;
+    const rect = this.host.getBoundingClientRect();
+    if (rect.height <= 0) return rawH;
+    const visibleBottom = vv.offsetTop + vv.height;
+    const overlap = Math.max(0, Math.round(rect.bottom - visibleBottom));
+    return overlap > 40 ? Math.max(120, rawH - overlap) : rawH;
   }
 
   hide(): void {

@@ -25,6 +25,7 @@ export interface HoverWidgetOptions {
   focusBorder?: string;
   shadow?: string;
   fontSize?: number;
+  fontFamily?: string;
   className?: string;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
@@ -75,7 +76,8 @@ export class HoverWidget {
       codeBackground: this.resolvedTheme.codeBackground,
       focusBorder: this.resolvedTheme.focusBorder,
       shadow: this.resolvedTheme.shadow,
-      fontSize: 13,
+      fontSize: 14,
+      fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       className: '',
       ...options,
     };
@@ -137,6 +139,13 @@ export class HoverWidget {
     const vsLinkColor = isDark ? '#3794ff' : '#006ab1';
     const vsStatusBarBg = isDark ? '#2c2c2d' : '#e7e7e7';
 
+    const baseFontSize = Math.max(10, Math.round(this.opts.fontSize || 14));
+    const uiFontSize = Math.max(10, Math.round(baseFontSize * 0.93));
+    const actionFontSize = Math.max(10, uiFontSize - 1);
+    const iconSize = Math.max(12, Math.round(uiFontSize * 1.08));
+    const scaledMaxWidth = Math.round(this.opts.maxWidth * Math.max(1, baseFontSize / 14));
+    const visibleHostH = this.getVisibleHostHeight();
+
     const el = document.createElement('div');
     el.className = `mono-hover-widget ${this.opts.className}`.trim();
     el.setAttribute('role', 'tooltip');
@@ -145,8 +154,8 @@ export class HoverWidget {
       left: `${Math.max(4, anchor.x)}px`,
       top: `${Math.max(4, anchor.y)}px`,
       zIndex: '47',
-      maxWidth: `${Math.min(this.opts.maxWidth, Math.max(220, (this.host.clientWidth || 600) - 16))}px`,
-      maxHeight: `${Math.min(340, Math.max(140, (this.host.clientHeight || 400) - 24))}px`,
+      maxWidth: `${Math.min(scaledMaxWidth, Math.max(220, (this.host.clientWidth || 600) - 16))}px`,
+      maxHeight: `${Math.min(340, Math.max(120, visibleHostH - 20))}px`,
       display: 'flex',
       flexDirection: 'column',
       background: vsBg,
@@ -154,7 +163,7 @@ export class HoverWidget {
       borderRadius: '3px',
       boxShadow: vsShadow,
       color: this.opts.foreground,
-      fontSize: `${this.opts.fontSize}px`,
+      fontSize: `${uiFontSize}px`,
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       lineHeight: '1.45',
       wordBreak: 'break-word',
@@ -210,7 +219,7 @@ export class HoverWidget {
         iconWrap.style.marginTop = '2px';
         iconWrap.style.display = 'inline-flex';
         iconWrap.setAttribute('aria-label', sevLabel);
-        iconWrap.appendChild(createIcon(iconName, 14));
+        iconWrap.appendChild(createIcon(iconName, iconSize));
         row.appendChild(iconWrap);
 
         const textWrap = document.createElement('div');
@@ -242,7 +251,10 @@ export class HoverWidget {
       if (!trimmed) continue;
       const isCodeOnly = trimmed.startsWith('```') && trimmed.endsWith('```') && trimmed.indexOf('```', 3) === trimmed.length - 3;
       const docSec = appendSection(isCodeOnly);
-      renderMarkdownToDom(docSec, part, this.resolvedTheme, undefined, { flatCodeBlocks: isCodeOnly });
+      renderMarkdownToDom(docSec, part, this.resolvedTheme, undefined, {
+        flatCodeBlocks: isCodeOnly,
+        codeFontFamily: this.opts.fontFamily,
+      });
     }
 
     el.appendChild(scrollBody);
@@ -276,7 +288,7 @@ export class HoverWidget {
           cursor: 'pointer',
           padding: '2px 0',
           minHeight: '22px',
-          fontSize: '12px',
+          fontSize: `${actionFontSize}px`,
           fontWeight: '400',
           fontFamily: 'inherit',
           whiteSpace: 'nowrap',
@@ -308,10 +320,32 @@ export class HoverWidget {
 
     this.host.appendChild(el);
     this.el = el;
+    this.placeAt(anchor);
+  }
 
+  reposition(anchor: { x: number; y: number; top?: number }): void {
+    this.lastAnchor = anchor;
+    if (!this.el) return;
+    this.placeAt(anchor);
+  }
+
+  private getVisibleHostHeight(): number {
+    const rawH = this.host.clientHeight || 400;
+    if (typeof window === 'undefined' || !window.visualViewport) return rawH;
+    const vv = window.visualViewport;
+    const rect = this.host.getBoundingClientRect();
+    if (rect.height <= 0) return rawH;
+    const visibleBottom = vv.offsetTop + vv.height;
+    const overlap = Math.max(0, Math.round(rect.bottom - visibleBottom));
+    return overlap > 40 ? Math.max(120, rawH - overlap) : rawH;
+  }
+
+  private placeAt(anchor: { x: number; y: number; top?: number }): void {
+    const el = this.el;
+    if (!el) return;
     // Position above the target line by default (like VS Code/Monaco), flipping below if tight at top
     const hostW = this.host.clientWidth || 600;
-    const hostH = this.host.clientHeight || 400;
+    const hostH = this.getVisibleHostHeight();
     const w = el.offsetWidth;
     const h = el.offsetHeight;
     const lineTop = anchor.top ?? Math.max(0, anchor.y - 22);

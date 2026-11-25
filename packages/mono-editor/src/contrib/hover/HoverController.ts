@@ -47,6 +47,7 @@ export class HoverController {
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
   private seq = 0;
   private activeRange: IRange | null = null;
+  private activeAnchorPos: { lineNumber: number; column: number } | null = null;
   private sticky = true;
   private cb: HoverControllerCallbacks;
 
@@ -149,10 +150,21 @@ export class HoverController {
     this.cancelTimer();
     this.cancelHideTimer();
     this.widget.hide();
+    this.activeAnchorPos = null;
     if (this.activeRange !== null) {
       this.activeRange = null;
       this.cb.onRangeChange?.(null);
     }
+  }
+
+  reposition(): void {
+    if (!this.isOpen() || !this.activeAnchorPos) return;
+    const pos = this.view.screenPosOf(this.activeAnchorPos.lineNumber, this.activeAnchorPos.column);
+    this.widget.reposition({
+      x: Math.max(0, pos.x),
+      y: Math.max(0, pos.y + pos.h),
+      top: Math.max(0, pos.y),
+    });
   }
 
   async showAt(line: number, column: number, scope?: HoverShowScope): Promise<boolean> {
@@ -260,6 +272,7 @@ export class HoverController {
 
     const anchorCol = resolvedRange ? resolvedRange.startColumn : column;
     const anchorLine = resolvedRange ? resolvedRange.startLineNumber : line;
+    this.activeAnchorPos = { lineNumber: anchorLine, column: anchorCol };
     const pos = this.view.screenPosOf(anchorLine, anchorCol);
     this.widget.showCard(
       { diagnostics, contents: parts, actions },

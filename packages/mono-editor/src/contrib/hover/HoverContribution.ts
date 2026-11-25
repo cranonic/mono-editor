@@ -73,7 +73,10 @@ export class HoverContribution implements IEditorContribution {
       host.getModel(),
       host.selection,
       host.view,
-      undefined,
+      {
+        fontSize: host.getFontSize(),
+        fontFamily: host.getFontFamily(),
+      },
       {
         getLanguageIdAtPosition: (ln, col) => host.getLanguageIdAtPosition(ln, col),
         getMarkers: () => host.getMarkers(),
@@ -144,9 +147,16 @@ export class HoverContribution implements IEditorContribution {
 
   onScroll(): void {
     // Soft-keyboard open or layout resize right after a tap can trigger programmatic scroll/ensureCaretVisible;
-    // keep the tap-scheduled hover alive during the short guard window (user drag/wheel scrolls go through onPointerInteract('scroll')).
-    if (Date.now() < this.tapScheduleGuardUntil) return;
+    // keep the tap-triggered hover alive and aligned during the guard window (user drag/wheel scrolls go through onPointerInteract('scroll')).
+    if (Date.now() < this.tapScheduleGuardUntil) {
+      if (this.hover.isOpen()) this.hover.reposition();
+      return;
+    }
     this.hover.hide();
+  }
+
+  onLayout(): void {
+    if (this.hover.isOpen()) this.hover.reposition();
   }
 
   onOutsidePointerDown(): void {
@@ -159,30 +169,34 @@ export class HoverContribution implements IEditorContribution {
   }
 
   onPointerInteract(kind: PointerInteractKind): void {
-    if (kind === 'scroll' || kind === 'handle' || kind === 'handleTap' || kind === 'select') {
+    if (kind === 'scroll' || kind === 'handleTap' || kind === 'select') {
       this.clearTapGuard();
       this.hover.hide();
       return;
     }
+    if (kind === 'handle') {
+      this.hover.hide();
+      if (!this.host.selection.isEmpty) {
+        this.clearTapGuard();
+        return;
+      }
+      const scope = this.resolveTapScope();
+      if (scope.includeHover || scope.includeDiagnostics) {
+        const p = this.host.selection.active;
+        this.tapScheduledKey = `${p.lineNumber}:${p.column}`;
+        this.tapScheduleGuardUntil = Date.now() + 900;
+        this.hover.schedule(p.lineNumber, p.column, 160, scope);
+      }
+      return;
+    }
     if (kind === 'tap') {
       this.hover.hide();
-      const isTouchTap = this.lastTapPointerType === 'touch' || this.lastTapPointerType === 'pen';
-      const autoHoverOnTouch =
-        this.explicitHoverTrigger === undefined && this.hoverTrigger !== 'off' && isTouchTap;
-      const autoDiagOnTouch =
-        this.explicitDiagnosticsPopup === undefined && this.diagnosticsPopup !== 'off' && isTouchTap;
-
-      const includeHover = this.hoverTrigger === 'click' || autoHoverOnTouch;
-      const includeDiagnostics = this.diagnosticsPopup === 'click' || autoDiagOnTouch;
-      if (includeHover || includeDiagnostics) {
+      const scope = this.resolveTapScope();
+      if (scope.includeHover || scope.includeDiagnostics) {
         const p = this.host.selection.active;
-        const delay = Math.min(180, Math.max(0, this.delayMs));
         this.tapScheduledKey = `${p.lineNumber}:${p.column}`;
-        this.tapScheduleGuardUntil = Date.now() + delay + 550;
-        this.hover.schedule(p.lineNumber, p.column, delay, {
-          includeHover,
-          includeDiagnostics,
-        });
+        this.tapScheduleGuardUntil = Date.now() + 900;
+        void this.hover.showAt(p.lineNumber, p.column, scope);
       }
     }
   }
@@ -199,6 +213,12 @@ export class HoverContribution implements IEditorContribution {
   }
 
   onOptionsChange(patch: Partial<MonoEditorOptions>): void {
+    if (patch.fontSize != null || patch.fontFamily != null) {
+      this.hover.setWidgetOptions({
+        fontSize: this.host.getFontSize(),
+        fontFamily: this.host.getFontFamily(),
+      });
+    }
     if (!patch.hover && !patch.diagnostics) return;
     if (patch.hover) {
       if ('trigger' in patch.hover) {
@@ -244,6 +264,18 @@ export class HoverContribution implements IEditorContribution {
     this.hover.dispose();
   }
 
+  private resolveTapScope(): { includeHover: boolean; includeDiagnostics: boolean } {
+    const isTouchTap = this.lastTapPointerType === 'touch' || this.lastTapPointerType === 'pen';
+    const autoHoverOnTouch =
+      this.explicitHoverTrigger === undefined && this.hoverTrigger !== 'off' && isTouchTap;
+    const autoDiagOnTouch =
+      this.explicitDiagnosticsPopup === undefined && this.diagnosticsPopup !== 'off' && isTouchTap;
+    return {
+      includeHover: this.hoverTrigger === 'click' || autoHoverOnTouch,
+      includeDiagnostics: this.diagnosticsPopup === 'click' || autoDiagOnTouch,
+    };
+  }
+
   private clearTapGuard(): void {
     this.tapScheduleGuardUntil = 0;
     this.tapScheduledKey = '';
@@ -251,6 +283,7 @@ export class HoverContribution implements IEditorContribution {
 
   private onRootPointerDown = (e: PointerEvent): void => {
     if (this.host.isDisposed()) return;
+    if (e.pointerType) this.lastTapPointerType = e.pointerType;
     const target = e.target as Node | null;
     if (this.hover.containsNode(target)) return;
     // Cancel any pending tap-hover if a second tap (double-tap) or new gesture starts
@@ -306,8 +339,11 @@ export class HoverContribution implements IEditorContribution {
     });
   };
 
-  private onPointerLeave = (): void => {
+  private onPointerLeave = (e: PointerEvent): void => {
+    // Touch browsers emit pointerleave immediately after every touch pointerup — never cancel tap hover on touch!
+    if (e.pointerType !== 'mouse') return;
     this.lastMousePosKey = '';
+    if (this.hoverTrigger !== 'hover' && this.diagnosticsPopup !== 'hover') return;
     this.hover.cancelTimer();
     if (this.hover.isOpen()) this.hover.scheduleHide(180);
   };

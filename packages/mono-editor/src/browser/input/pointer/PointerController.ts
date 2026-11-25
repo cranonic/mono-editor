@@ -114,8 +114,8 @@ export class PointerController {
     root.addEventListener('pointerdown', this.onDown, { passive: false });
     root.addEventListener('pointermove', this.onMove, { passive: false });
     root.addEventListener('pointerup', this.onUp);
-    root.addEventListener('pointercancel', this.onUp);
-    root.addEventListener('lostpointercapture', this.onUp);
+    root.addEventListener('pointercancel', this.onCancelOrLostCapture);
+    root.addEventListener('lostpointercapture', this.onCancelOrLostCapture);
     root.addEventListener('pointerleave', this.onLeave);
     root.addEventListener('contextmenu', this.onContextMenu);
   }
@@ -146,8 +146,8 @@ export class PointerController {
     this.root.removeEventListener('pointerdown', this.onDown);
     this.root.removeEventListener('pointermove', this.onMove);
     this.root.removeEventListener('pointerup', this.onUp);
-    this.root.removeEventListener('pointercancel', this.onUp);
-    this.root.removeEventListener('lostpointercapture', this.onUp);
+    this.root.removeEventListener('pointercancel', this.onCancelOrLostCapture);
+    this.root.removeEventListener('lostpointercapture', this.onCancelOrLostCapture);
     this.root.removeEventListener('pointerleave', this.onLeave);
     this.root.removeEventListener('contextmenu', this.onContextMenu);
   }
@@ -550,6 +550,35 @@ export class PointerController {
       return;
     }
     if (wasSelecting) this.onInteract('select');
+  };
+
+  private onCancelOrLostCapture = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch') {
+      this.touchPointers.delete(e.pointerId);
+      if (this.pinchActive && this.touchPointers.size < 2) {
+        this.pinchActive = false;
+        this.pinchStartDist = 0;
+      }
+    }
+    if (!this.active || (this.pointerId !== null && e.pointerId !== this.pointerId)) return;
+    const wasHandleDrag = Boolean(this.teardrops.handleDrag && this.teardrops.handleMoved);
+    const wasScrolling = this.scrolling;
+    this.clearLongPress();
+    this.teardrops.stopAutoScroll();
+    this.active = false;
+    this.pointerId = null;
+    this.teardrops.reset();
+    this.pendingDouble = false;
+    this.scrolling = false;
+    this.selecting = false;
+    this.scrollAxis = 'none';
+    if (wasHandleDrag) {
+      this.view.freeHandle = null;
+      this.view.schedulePaint();
+      this.onInteract(!this.selection.isEmpty ? 'select' : 'handle');
+    } else if (wasScrolling) {
+      this.onInteract('scrollEnd');
+    }
   };
 
   private clearSingleTap(): void {

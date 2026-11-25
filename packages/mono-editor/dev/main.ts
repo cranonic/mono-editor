@@ -145,33 +145,85 @@ for (const langId of JS_TS_LANGS) {
   // 2) Rich Markdown Hover Provider
   languages.registerHoverProvider(langId, {
     provideHover(model, position) {
-      const word = findIdentifierWord(model.getLineContent(position.lineNumber), position.column);
+      const line = model.getLineContent(position.lineNumber);
+      const word = findIdentifierWord(line, position.column);
       if (!word) return null;
       const map: Record<string, string[]> = {
         greetAll: [
-          '```js\nfunction greetAll(name: string, locale?: "bn" | "hi"): string\n```',
+          '```ts\nfunction greetAll(name: string, locale?: "bn" | "hi"): string\n```',
           'Greets a user in multiple Indic scripts (**বাংলা** & **हिन्दी**) and logs the message.',
         ],
         MonoDemo: [
-          '```js\nclass MonoDemo\n```',
+          '```ts\nclass MonoDemo\n```',
           'Demo runner class showcasing **Code Folding**, **Sticky Scroll**, and **Word Wrap**.',
         ],
+        run: [
+          '```ts\n(method) MonoDemo.run(repeatCount?: number): void\n```',
+          'Executes the greeting demo loop `repeatCount` times.',
+        ],
+        demo: [
+          '```ts\nconst demo: MonoDemo\n```',
+          'Active `MonoDemo` instance initialized with title `"Mono"`.',
+        ],
+        report: [
+          '```ts\nconst report: string\n```',
+          'Formatted multiline template string containing header, localized greeting, and computed JSON.',
+        ],
         greetingBn: [
-          '`const greetingBn: string`',
+          '```ts\nconst greetingBn: string\n```',
           'Bengali conjunct cluster sample (`ক্ষ`, `ক্লান্ত`) for grapheme-exact hit testing.',
         ],
         greetingHi: [
-          '`const greetingHi: string`',
+          '```ts\nconst greetingHi: string\n```',
           'Devanagari conjunct cluster sample (`प्रकृति`, `संयुक्त`) for grapheme-exact layout.',
         ],
         legacyMode: [
-          '`var legacyMode: boolean`',
+          '```ts\nvar legacyMode: boolean\n```',
           'Click the **lightbulb** or press `Ctrl+.` to convert `var` to `const`.',
         ],
-        console: ['`var console: Console`', 'Standard Web Console debugging interface.'],
+        console: [
+          '```ts\nvar console: Console\n```',
+          'Standard Web Console debugging interface.',
+        ],
+        log: [
+          '```ts\n(method) Console.log(...data: any[]): void\n```',
+          'Outputs a message to the Web Console.',
+        ],
+        info: [
+          '```ts\n(method) Console.info(...data: any[]): void\n```',
+          'Outputs an informational message to the Web Console.',
+        ],
+        toUpperCase: [
+          '```ts\n(method) String.toUpperCase(): string\n```',
+          'Converts all alphabetic characters in a string to uppercase.',
+        ],
+        stringify: [
+          '```ts\n(method) JSON.stringify(value: any, replacer?: any, space?: string | number): string\n```',
+          'Converts a JavaScript value to a JavaScript Object Notation (JSON) string.',
+        ],
+        createProfile: [
+          '```ts\nfunction createProfile(id: string, language: string): EditorProfile\n```',
+          'Creates a normalized `EditorProfile` configuration object.',
+        ],
       };
       const contents = map[word];
-      return contents ? { contents: contents.map((value) => ({ value })) } : null;
+      if (contents) return { contents: contents.map((value) => ({ value })) };
+      // Dynamic fallback for any function/class declaration in the current model
+      const count = model.getLineCount?.() ?? model.getValue().split('\n').length;
+      const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const declRe = new RegExp(`^\\s*(?:export\\s+)?(?:async\\s+)?(?:function|class|interface|const|let|var)\\s+${escaped}\\b.*$`);
+      for (let ln = 1; ln <= count; ln++) {
+        const declLine = model.getLineContent(ln);
+        if (declRe.test(declLine)) {
+          return {
+            contents: [
+              { value: `\`\`\`${langId}\n${declLine.trim().replace(/\{\s*$/, '').trim()}\n\`\`\`` },
+              { value: `Declared on line ${ln}.` },
+            ],
+          };
+        }
+      }
+      return null;
     },
   });
 
@@ -649,12 +701,15 @@ for (const langId of JS_TS_LANGS) {
         const line = model.getLineContent(ln);
         const m = /^\s*(?:export\s+)?(?:function|class)\s+([A-Za-z_$][\w$]*)/.exec(line);
         if (m) {
+          const symName = m[1]!;
+          const nameCol = line.indexOf(symName, m.index) + 1;
           lenses.push({
-            range: { startLineNumber: ln, startColumn: 1, endLineNumber: ln, endColumn: line.length + 1 },
+            range: { startLineNumber: ln, startColumn: nameCol, endLineNumber: ln, endColumn: nameCol + symName.length },
             command: {
               id: MonoCommands.ReferenceSearch,
-              title: `Find references · ${m[1]}`,
-              tooltip: `Inspect references for ${m[1]}`,
+              title: `Find references · ${symName}`,
+              tooltip: `Inspect references for ${symName}`,
+              arguments: [{ lineNumber: ln, column: nameCol }],
             },
           });
         }
@@ -2100,73 +2155,3 @@ syncMarkdownPreviewLayout();
 // Expose pure Mono globals for console inspection
 (window as any).monoEditor = editorInstance;
 (window as any).mono = { editor, languages };
-import {
-  editor,
-  languages,
-  analyzeCallContext,
-  CompletionItemKind,
-  CompletionItemInsertTextRule,
-  DocumentHighlightKind,
-  EndOfLineSequence,
-  InlayHintKind,
-  InlineCompletionTriggerKind,
-  MarkerSeverity,
-  MonoCommands,
-  MouseTargetType,
-  SymbolKind,
-  Uri,
-  BUILTIN_THEME_IDS,
-  type CursorStyleMode,
-  type DocumentSymbol,
-  type IMonoDiffEditor,
-  type IStandaloneTextModel,
-  type MonoLineNumbers,
-  type RenderWhitespaceMode,
-  type WordWrapMode,
-  type WrappingIndentMode,
-  type ScrollbarVisibility,
-} from '../src/index';
-
-// ── Phase 3 & 4 IntelliSense & LSP Demo Providers ────────────────────────────
-const JS_TS_LANGS = ['javascript', 'typescript'];
-const REF_LANGS = ['javascript', 'typescript', 'html', 'css'];
-
-function findIdentifierWord(line: string, col: number): string | null {
-  let idx = Math.max(0, Math.min(line.length, col - 1));
-  const isId = (c: string) => /[A-Za-z0-9_$]/.test(c);
-  if (idx > 0 && (idx === line.length || !isId(line[idx]!)) && isId(line[idx - 1]!)) idx--;
-  if (idx >= line.length || !isId(line[idx]!)) return null;
-  let s = idx;
-  while (s > 0 && isId(line[s - 1]!)) s--;
-  let e = idx + 1;
-  while (e < line.length && isId(line[e]!)) e++;
-  return line.slice(s, e);
-}
-
-for (const langId of JS_TS_LANGS) {
-  // 1) Rich Completions: Snippets + resolveCompletionItem + commitCharacters
-  languages.registerCompletionItemProvider(langId, {
-    triggerCharacters: ['.'],
-    provideCompletionItems(model, position, context) {
-      const line = model.getLineContent(position.lineNumber);
-      const before = line.slice(0, Math.max(0, position.column - 1));
-      if (context?.triggerCharacter === '.' || /\bconsole\.\w*$/.test(before)) {
-        return {
-          suggestions: [
-            {
-              label: 'log',
-              kind: CompletionItemKind.Method,
-              detail: 'Console.log(...data)',
-              insertText: 'log(${1:value})$0',
-              insertTextRules: CompletionItemInsertTextRule.InsertAsSnippet,
-              commitCharacters: ['('],
-            },
-            {
-              label: 'warn',
-              kind: CompletionItemKind.Method,
-              detail: 'Console.warn(...data)',
-              insertText: 'warn(${1:message})$0',
-              insertTextRules: CompletionItemInsertTextRule.InsertAsSnippet,
-            },
-            {
-              label: 'er

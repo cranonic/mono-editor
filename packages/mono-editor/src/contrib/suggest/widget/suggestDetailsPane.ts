@@ -230,14 +230,19 @@ export class SuggestDetailsPane {
       this.host.appendChild(d);
       this.docEl = d;
     }
+    const editorFontSize = Math.max(10, Math.round(opts.fontSize ?? 14));
+    const paneFontSize = Math.max(10, Math.round(editorFontSize * 0.93));
+    const headerFontSize = Math.max(10, Math.round(editorFontSize * 0.92));
+
     const d = this.docEl;
     d.style.background = pal.background;
     d.style.border = pal.border;
     d.style.color = pal.foreground;
+    d.style.fontSize = `${paneFontSize}px`;
     d.style.boxShadow = `0 2px 8px ${pal.shadow}`;
     d.style.display = 'block';
     d.style.width = 'auto';
-    d.style.maxWidth = '320px';
+    d.style.maxWidth = `${Math.round(320 * Math.max(1, editorFontSize / 14))}px`;
     d.style.maxHeight = 'none';
     d.textContent = '';
 
@@ -246,7 +251,7 @@ export class SuggestDetailsPane {
       hdr.textContent = detailText;
       hdr.style.fontFamily =
         opts.fontFamily ?? '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-      hdr.style.fontSize = '12px';
+      hdr.style.fontSize = `${headerFontSize}px`;
       hdr.style.lineHeight = '1.45';
       hdr.style.opacity = '0.92';
       hdr.style.overflowWrap = 'break-word';
@@ -278,7 +283,7 @@ export class SuggestDetailsPane {
         selectionForeground: pal.selectedForeground,
         codeBackground: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
         shadow: `0 2px 8px ${pal.shadow}`,
-      });
+      }, undefined, { codeFontFamily: opts.fontFamily });
     }
     this.position(listEl, suspended, caretLine ?? this.lastCaretLine ?? undefined, mode);
   }
