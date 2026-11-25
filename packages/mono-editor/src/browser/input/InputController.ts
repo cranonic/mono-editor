@@ -1,4 +1,5 @@
 import type { SelectionState } from '../../common/core/SelectionState';
+import type { IRange } from '../../common/core/types';
 import {
   replaceSelectionText,
   tryAutoSurroundSelection,
@@ -21,7 +22,11 @@ export type InputChangeEvent = KeyboardChangeEvent;
 
 export interface InputControllerOptions {
   tabSize?: number;
+  insertSpaces?: boolean;
+  stickyTabStops?: boolean;
+  trimAutoWhitespace?: boolean;
   readOnly?: boolean;
+  ariaLabel?: string;
   pageSize?: number;
   bracketEnterIndent?: boolean;
   autoClosingBrackets?: AutoClosingBehavior;
@@ -30,6 +35,11 @@ export interface InputControllerOptions {
   autoIndent?: AutoIndentBehavior;
   getTokenTypeAt?: (lineNumber: number, column: number) => string | null;
   onCompositionChange?: (range: CompositionRange | null) => void;
+  onCompositionStart?: () => void;
+  onCompositionEnd?: () => void;
+  onDidPaste?: (range: IRange) => void;
+  onKeyDownEvent?: (e: KeyboardEvent) => void;
+  onKeyUpEvent?: (e: KeyboardEvent) => void;
 }
 
 export class InputController {
@@ -42,6 +52,9 @@ export class InputController {
   private keybindings: KeybindingService | null = null;
   private disposed = false;
   private tabSize = 2;
+  private insertSpaces = true;
+  private stickyTabStops = false;
+  private trimAutoWhitespace = true;
   private readOnly = false;
   private pageSize = 40;
   private bracketEnterIndent = true;
@@ -50,6 +63,11 @@ export class InputController {
   private autoSurround: AutoSurroundBehavior = 'languageDefined';
   private autoIndent: AutoIndentBehavior = 'full';
   private getTokenTypeAt?: (lineNumber: number, column: number) => string | null;
+  private onCompStartCb?: () => void;
+  private onCompEndCb?: () => void;
+  private onPasteCb?: (range: IRange) => void;
+  private onKeyDownCb?: (e: KeyboardEvent) => void;
+  private onKeyUpCb?: (e: KeyboardEvent) => void;
   private goalColumn: number | null = null;
   private preKeyHandler: ((e: KeyboardEvent) => boolean) | null = null;
   private pasteInterceptor: ((text: string) => Promise<boolean> | boolean) | null = null;
@@ -65,6 +83,9 @@ export class InputController {
     this.selection = selection;
     this.onChange = onChange;
     if (options?.tabSize != null) this.tabSize = Math.max(1, options.tabSize);
+    if (options?.insertSpaces != null) this.insertSpaces = options.insertSpaces;
+    if (options?.stickyTabStops != null) this.stickyTabStops = options.stickyTabStops;
+    if (options?.trimAutoWhitespace != null) this.trimAutoWhitespace = options.trimAutoWhitespace;
     if (options?.readOnly != null) this.readOnly = options.readOnly;
     if (options?.pageSize != null) this.pageSize = Math.max(1, options.pageSize);
     if (options?.bracketEnterIndent != null) this.bracketEnterIndent = options.bracketEnterIndent;
@@ -73,13 +94,19 @@ export class InputController {
     if (options?.autoSurround != null) this.autoSurround = options.autoSurround;
     if (options?.autoIndent != null) this.autoIndent = options.autoIndent;
     this.getTokenTypeAt = options?.getTokenTypeAt;
+    this.onCompStartCb = options?.onCompositionStart;
+    this.onCompEndCb = options?.onCompositionEnd;
+    this.onPasteCb = options?.onDidPaste;
+    this.onKeyDownCb = options?.onKeyDownEvent;
+    this.onKeyUpCb = options?.onKeyUpEvent;
 
-    this.bridge = new TextAreaBridge(host, this.readOnly);
+    this.bridge = new TextAreaBridge(host, this.readOnly, options?.ariaLabel);
     this.textarea = this.bridge.textarea;
     this.composition = new CompositionHandler(options?.onCompositionChange);
 
     const ta = this.textarea;
     ta.addEventListener('keydown', this.onKeyDown);
+    ta.addEventListener('keyup', this.onKeyUp);
     ta.addEventListener('input', this.onInput);
     ta.addEventListener('paste', this.onPaste);
     ta.addEventListener('compositionstart', this.onCompositionStart);
@@ -88,7 +115,12 @@ export class InputController {
   }
 
   setTabSize(n: number): void { this.tabSize = Math.max(1, n | 0); }
+  setInsertSpaces(v: boolean): void { this.insertSpaces = v; }
+  setStickyTabStops(v: boolean): void { this.stickyTabStops = v; }
+  setTrimAutoWhitespace(v: boolean): void { this.trimAutoWhitespace = v; }
   setReadOnly(v: boolean): void { this.readOnly = v; this.bridge.setReadOnly(v); }
+  setAriaLabel(label: string): void { this.bridge.setAriaLabel(label); }
+  announce(message: string): void { this.bridge.announce(message); }
   setPageSize(n: number): void { this.pageSize = Math.max(1, n | 0); }
   setBracketEnterIndent(v: boolean): void { this.bracketEnterIndent = v; }
   setAutoClosingBrackets(v: AutoClosingBehavior): void { this.autoClosingBrackets = v; }
@@ -115,6 +147,7 @@ export class InputController {
     this.composition.reset();
     const ta = this.textarea;
     ta.removeEventListener('keydown', this.onKeyDown);
+    ta.removeEventListener('keyup', this.onKeyUp);
     ta.removeEventListener('input', this.onInput);
     ta.removeEventListener('paste', this.onPaste);
     ta.removeEventListener('compositionstart', this.onCompositionStart);
@@ -135,6 +168,7 @@ export class InputController {
   private onCompositionStart = (): void => {
     if (this.readOnly || this.disposed) return;
     this.composition.handleStart(this.model, this.selection);
+    this.onCompStartCb?.();
   };
 
   private onCompositionUpdate = (e: CompositionEvent): void => {
@@ -155,21 +189,36 @@ export class InputController {
       replaceSelectionText(this.model, this.selection, fallback, 'typing');
     });
     this.goalColumn = null;
+    this.onCompEndCb?.();
     this.onChange(res.committed ? { kind: 'type', text: res.text } : { kind: 'composition', text: '' });
   };
 
   private onPaste = (e: ClipboardEvent): void => {
-    if (this.readOnly || this.disposed || !this.pasteInterceptor) return;
+    if (this.readOnly || this.disposed) return;
     const text = e.clipboardData?.getData('text/plain') ?? '';
     if (!text) return;
     e.preventDefault();
     this.textarea.value = '';
-    const interceptor = this.pasteInterceptor;
-    void Promise.resolve(interceptor(text)).then((handled) => {
-      if (handled || this.disposed || this.readOnly) return;
+    const startPos = { ...this.selection.active };
+    const runDefaultPaste = () => {
+      if (this.disposed || this.readOnly) return;
       replaceSelectionText(this.model, this.selection, text);
+      const endPos = { ...this.selection.active };
       this.goalColumn = null;
+      this.onPasteCb?.({
+        startLineNumber: startPos.lineNumber,
+        startColumn: startPos.column,
+        endLineNumber: endPos.lineNumber,
+        endColumn: endPos.column,
+      });
       this.onChange({ kind: 'type', text });
+    };
+    if (!this.pasteInterceptor) {
+      runDefaultPaste();
+      return;
+    }
+    void Promise.resolve(this.pasteInterceptor(text)).then((handled) => {
+      if (!handled) runDefaultPaste();
     });
   };
 
@@ -210,8 +259,14 @@ export class InputController {
     this.onChange({ kind: 'type', text: data });
   };
 
+  private onKeyUp = (e: KeyboardEvent): void => {
+    if (this.disposed) return;
+    this.onKeyUpCb?.(e);
+  };
+
   private onKeyDown = (e: KeyboardEvent): void => {
     if (this.disposed) return;
+    this.onKeyDownCb?.(e);
     if (this.composition.isComposing() || e.isComposing || e.keyCode === 229) return;
     if (this.preKeyHandler?.(e)) {
       e.preventDefault();
@@ -228,6 +283,9 @@ export class InputController {
       selection: this.selection,
       readOnly: this.readOnly,
       tabSize: this.tabSize,
+      insertSpaces: this.insertSpaces,
+      stickyTabStops: this.stickyTabStops,
+      trimAutoWhitespace: this.trimAutoWhitespace,
       pageSize: this.pageSize,
       bracketEnterIndent: this.bracketEnterIndent,
       autoIndent: this.autoIndent,

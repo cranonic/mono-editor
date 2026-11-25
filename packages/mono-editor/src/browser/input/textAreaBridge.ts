@@ -1,17 +1,22 @@
 /**
- * Manages the hidden `<textarea>` bridge used for keyboard, mobile IME, and focus safety.
+ * Manages the hidden `<textarea>` bridge used for keyboard, mobile IME, ARIA/TalkBack, and focus safety.
  */
 export class TextAreaBridge {
   readonly textarea: HTMLTextAreaElement;
+  readonly liveRegion: HTMLDivElement;
   private host: HTMLElement;
   private wantFocus = false;
   private disposed = false;
   private refocusTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(host: HTMLElement, readOnly: boolean) {
+  constructor(host: HTMLElement, readOnly: boolean, ariaLabel = 'Code editor') {
     this.host = host;
     const ta = document.createElement('textarea');
-    ta.setAttribute('aria-label', 'Mono Editor input');
+    ta.setAttribute('role', 'textbox');
+    ta.setAttribute('aria-multiline', 'true');
+    ta.setAttribute('aria-roledescription', 'code editor');
+    ta.setAttribute('aria-label', ariaLabel);
+    ta.setAttribute('aria-readonly', readOnly ? 'true' : 'false');
     ta.setAttribute('autocomplete', 'off');
     ta.setAttribute('autocorrect', 'off');
     ta.setAttribute('autocapitalize', 'off');
@@ -41,12 +46,44 @@ export class TextAreaBridge {
     });
     host.appendChild(ta);
     this.textarea = ta;
+
+    const live = document.createElement('div');
+    live.setAttribute('role', 'status');
+    live.setAttribute('aria-live', 'polite');
+    live.setAttribute('aria-atomic', 'true');
+    Object.assign(live.style, {
+      position: 'absolute',
+      width: '1px',
+      height: '1px',
+      overflow: 'hidden',
+      clipPath: 'inset(50%)',
+      whiteSpace: 'nowrap',
+      pointerEvents: 'none',
+    });
+    host.appendChild(live);
+    this.liveRegion = live;
+
     if (readOnly) ta.readOnly = true;
     ta.addEventListener('blur', this.onBlur);
   }
 
   setReadOnly(v: boolean): void {
     this.textarea.readOnly = v;
+    this.textarea.setAttribute('aria-readonly', v ? 'true' : 'false');
+  }
+
+  setAriaLabel(label: string): void {
+    this.textarea.setAttribute('aria-label', label || 'Code editor');
+  }
+
+  /** Announce a brief status string to TalkBack / VoiceOver / NVDA without stealing focus. */
+  announce(message: string): void {
+    if (this.disposed) return;
+    this.liveRegion.textContent = '';
+    // Re-assign next tick so identical consecutive messages are still announced
+    queueMicrotask(() => {
+      if (!this.disposed) this.liveRegion.textContent = message;
+    });
   }
 
   moveTo(x: number, y: number, h: number): void {
@@ -83,6 +120,7 @@ export class TextAreaBridge {
     if (this.refocusTimer) clearTimeout(this.refocusTimer);
     this.textarea.removeEventListener('blur', this.onBlur);
     this.textarea.remove();
+    this.liveRegion.remove();
   }
 
   private applyFocus(deferred = false): void {

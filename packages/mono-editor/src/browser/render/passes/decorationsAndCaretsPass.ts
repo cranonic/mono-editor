@@ -1,7 +1,8 @@
 import type { FrameContext, RenderPass } from '../frameContext';
 
 /**
- * Paints diagnostic squiggles/underlines, IME composition underline, and primary/secondary carets.
+ * Paints diagnostic squiggles/underlines, IME composition underline, and primary/secondary carets
+ * across all 6 Monaco cursor styles (`line`, `block`, `underline`, `line-thin`, `block-outline`, `underline-thin`).
  */
 export const decorationsAndCaretsPass: RenderPass = {
   name: 'decorationsAndCarets',
@@ -14,6 +15,8 @@ export const decorationsAndCaretsPass: RenderPass = {
       theme,
       decorations = [],
       compositionRange = null,
+      cursorStyle = 'line',
+      cursorOpacity = 1,
     } = f.opts;
     const { lineHeight, charWidth } = metrics;
 
@@ -97,18 +100,39 @@ export const decorationsAndCaretsPass: RenderPass = {
         }
       }
 
-      for (let si = 0; si < f.orderedSelections.length; si++) {
-        const os = f.orderedSelections[si]!;
-        const showCaretForSel = si === 0 ? os.isEmpty : true;
-        if (
-          showCaretForSel &&
-          line === os.caretLine &&
-          os.caretCol >= seg.startCol &&
-          (os.caretCol < seg.endCol || seg.isLastSegment)
-        ) {
-          const cx = f.segCaretX(content, seg, os.caretCol);
-          ctx.fillStyle = f.tokenColorAt(os.caretLine, os.caretCol);
-          ctx.fillRect(cx, y + 2, 2, lineHeight - 4);
+      if (cursorOpacity > 0.01) {
+        for (let si = 0; si < f.orderedSelections.length; si++) {
+          const os = f.orderedSelections[si]!;
+          const showCaretForSel = si === 0 ? os.isEmpty : true;
+          if (
+            showCaretForSel &&
+            line === os.caretLine &&
+            os.caretCol >= seg.startCol &&
+            (os.caretCol < seg.endCol || seg.isLastSegment)
+          ) {
+            const cx = f.segCaretX(content, seg, os.caretCol);
+            const caretColor = f.tokenColorAt(os.caretLine, os.caretCol);
+            ctx.save();
+            ctx.globalAlpha = cursorOpacity;
+            ctx.fillStyle = caretColor;
+            ctx.strokeStyle = caretColor;
+            if (cursorStyle === 'block') {
+              ctx.globalAlpha = cursorOpacity * 0.42;
+              ctx.fillRect(cx, y + 1, Math.max(charWidth, 7), lineHeight - 2);
+            } else if (cursorStyle === 'block-outline') {
+              ctx.lineWidth = 1.25;
+              ctx.strokeRect(cx + 0.5, y + 1.5, Math.max(charWidth, 7) - 1, lineHeight - 3);
+            } else if (cursorStyle === 'underline') {
+              ctx.fillRect(cx, y + lineHeight - 3, Math.max(charWidth, 7), 2.5);
+            } else if (cursorStyle === 'underline-thin') {
+              ctx.fillRect(cx, y + lineHeight - 2, Math.max(charWidth, 7), 1.2);
+            } else if (cursorStyle === 'line-thin') {
+              ctx.fillRect(cx, y + 2, 1, lineHeight - 4);
+            } else {
+              ctx.fillRect(cx, y + 2, 2, lineHeight - 4);
+            }
+            ctx.restore();
+          }
         }
       }
     }

@@ -141,6 +141,13 @@ export type {
   CancellationToken,
   ModelLike,
 } from './providers/types';
+export type {
+  CodeLens,
+  CodeLensList,
+  CodeLensProvider,
+  LinkedEditingRanges,
+  LinkedEditingRangeProvider,
+} from './providers/extendedTypes';
 export {
   applySemanticTokenEdits,
   decodeModifierNames,

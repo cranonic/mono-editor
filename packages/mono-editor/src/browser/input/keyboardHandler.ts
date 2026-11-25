@@ -25,6 +25,9 @@ export interface KeyboardHandlerState {
   selection: SelectionState;
   readOnly: boolean;
   tabSize: number;
+  insertSpaces?: boolean;
+  stickyTabStops?: boolean;
+  trimAutoWhitespace?: boolean;
   pageSize: number;
   bracketEnterIndent: boolean;
   autoIndent: AutoIndentBehavior;
@@ -270,8 +273,17 @@ export function handleEditorKeyDown(e: KeyboardEvent, st: KeyboardHandlerState):
       const offset = model.getOffsetAt(lineNumber, column);
       if (offset > 0) {
         let delLen = 1;
-        if (column === 1) delLen = model.getEOL().length;
-        else if (column > 2) {
+        if (column === 1) {
+          delLen = model.getEOL().length;
+        } else if (
+          st.stickyTabStops &&
+          st.tabSize > 1 &&
+          /^[ ]+$/.test(lineText.slice(0, column - 1))
+        ) {
+          const spacesBefore = column - 1;
+          const rem = spacesBefore % st.tabSize;
+          delLen = rem === 0 ? st.tabSize : rem;
+        } else if (column > 2) {
           const lo = lineText.charCodeAt(column - 2);
           const hi = lineText.charCodeAt(column - 3);
           if (hi >= 0xd800 && hi <= 0xdbff && lo >= 0xdc00 && lo <= 0xdfff) delLen = 2;
@@ -313,7 +325,14 @@ export function handleEditorKeyDown(e: KeyboardEvent, st: KeyboardHandlerState):
     case 'Enter': {
       e.preventDefault();
       if (st.readOnly) return;
-      const inserted = applyEnterKey(model, selection, st.tabSize, st.bracketEnterIndent, st.autoIndent);
+      const inserted = applyEnterKey(
+        model,
+        selection,
+        st.tabSize,
+        st.bracketEnterIndent,
+        st.autoIndent,
+        st.trimAutoWhitespace !== false,
+      );
       st.setGoalColumn(null);
       st.onChange({ kind: 'enter', text: inserted });
       break;
@@ -326,7 +345,7 @@ export function handleEditorKeyDown(e: KeyboardEvent, st: KeyboardHandlerState):
         st.setGoalColumn(null);
         st.onChange({ kind: 'indent' });
       } else {
-        const text = indentSelectionLines(model, selection, st.tabSize);
+        const text = indentSelectionLines(model, selection, st.tabSize, st.insertSpaces !== false);
         st.onChange(text ? { kind: 'indent', text } : { kind: 'indent' });
       }
       break;

@@ -3,14 +3,32 @@ import type { MonoMenuItem, MonoMenuStyle } from '../../common/config/menuTypes'
 import type { MonoEditorTheme } from '../../common/config/themeTypes';
 import type { SelectionState } from '../../common/core/SelectionState';
 import type {
+  IContentSizeChangedEvent,
+  IContentWidget,
+  IContextKey,
+  ICursorStateComputer,
+  IDimension,
+  IEditorLayoutInfo,
+  IEditorMouseEvent,
+  IEditorViewState,
   IIdentifiedSingleEditOperation,
   IModelChangedEvent,
+  IModelContentChangedEvent,
+  IModelDecorationsChangedEvent,
+  IModelLanguageChangedEvent,
+  IModelOptionsChangedEvent,
   IMonoTextModel,
+  IMouseTarget,
+  IOverlayWidget,
+  IPasteEvent,
   IPosition,
+  IRange,
   ISelection,
+  IViewZoneChangeAccessor,
   MonoDisposable,
 } from '../../common/core/types';
 import type {
+  IEditorDecorationsCollection,
   IMarker,
   IMarkerData,
   IModelDeltaDecoration,
@@ -28,17 +46,16 @@ import type { TextModel } from '../../common/model/TextModel';
 import type { FoldingModel } from '../../common/viewModel/FoldingModel';
 import type { MonoStickyScrollOptions } from '../../common/viewModel/StickyScroll';
 import type { CommandService } from '../../platform/commands/CommandService';
-import type { MonoAction } from '../../platform/commands/types';
+import type { MonoAction, MonoCommandHandler, MonoPaletteCommandItem, MonoRegisteredCommand } from '../../platform/commands/types';
 import type { KeybindingService, MonoKeybinding } from '../../platform/keybindings/KeybindingService';
+import type { PaletteService } from '../../platform/palette/PaletteService';
 import type { ResolvedWidgetTheme } from '../../platform/theme/widgetTheme';
 import type { InputChangeEvent, InputController } from '../input/InputController';
 import type { PointerInteractKind } from '../input/pointer/PointerController';
 import type { ColorHit, InlayHintHit, LinkHit } from '../render/CanvasRenderer';
 import type { ViewController } from '../view/ViewController';
 
-export interface MonoContentChangeEvent {
-  value: string;
-}
+export type MonoContentChangeEvent = IModelContentChangedEvent;
 
 export interface ICursorPositionChangedEvent {
   position: IPosition;
@@ -74,6 +91,11 @@ export interface IMonoEditorAction {
 }
 
 export interface IMonoEditor {
+  getId(): string;
+  getEditorType(): string;
+  getDomNode(): HTMLElement | null;
+  getContainerDomNode(): HTMLElement;
+
   pushUndoStop(): boolean;
   getValue(): string;
   setValue(value: string): void;
@@ -82,87 +104,148 @@ export interface IMonoEditor {
   getModelVersionId(): number;
   getAlternativeVersionId(): number;
   getModel(): IMonoTextModel;
-  setModel?(model: IMonoTextModel | null): void;
-  onDidChangeModel?(listener: (e: IModelChangedEvent) => void): MonoDisposable;
+  setModel(model: IMonoTextModel | null): void;
+  onDidChangeModel(listener: (e: IModelChangedEvent) => void): MonoDisposable;
   executeEdits(
     source: string | null | undefined,
     edits: IIdentifiedSingleEditOperation[],
+    endCursorState?: ISelection[] | ICursorStateComputer,
   ): boolean;
+  pushEditOperations?(
+    beforeCursorState: ISelection[] | null,
+    editOperations: readonly IIdentifiedSingleEditOperation[],
+    cursorStateComputer?: ICursorStateComputer,
+  ): ISelection[] | null;
 
   getPosition(): IPosition;
   setPosition(positionOrLine: IPosition | number, column?: number): void;
   getSelection(): ISelection;
   setSelection(selection: ISelection): void;
   getSelections(): ISelection[];
-  setSelections?(selections: ISelection[]): void;
+  setSelections(selections: ISelection[]): void;
 
   revealLine(lineNumber: number, scrollType?: number): void;
-  revealLineInCenter(lineNumber: number): void;
+  revealLineInCenter(lineNumber: number, scrollType?: number): void;
+  revealLines(startLineNumber: number, endLineNumber: number, scrollType?: number): void;
+  revealLinesInCenter(startLineNumber: number, endLineNumber: number, scrollType?: number): void;
   revealPosition(position: IPosition, scrollType?: number): void;
-  revealPositionInCenter(position: IPosition): void;
-  revealRange(range: {
-    startLineNumber: number;
-    startColumn: number;
-    endLineNumber: number;
-    endColumn: number;
-  }): void;
+  revealPositionInCenter(position: IPosition, scrollType?: number): void;
+  revealRange(range: IRange, scrollType?: number): void;
+  revealRangeInCenter(range: IRange, scrollType?: number): void;
+
   getScrollTop(): number;
-  setScrollTop(scrollTop: number): void;
+  setScrollTop(scrollTop: number, scrollType?: number): void;
   getScrollLeft(): number;
-  setScrollLeft(scrollLeft: number): void;
+  setScrollLeft(scrollLeft: number, scrollType?: number): void;
+  setScrollPosition(pos: { scrollTop?: number; scrollLeft?: number }, scrollType?: number): void;
+  getScrollHeight(): number;
+  getScrollWidth(): number;
+  getContentHeight(): number;
+  getContentWidth(): number;
+
+  getVisibleRanges(): IRange[];
+  getLayoutInfo(): IEditorLayoutInfo;
+  getTargetAtClientPoint(clientX: number, clientY: number): IMouseTarget | null;
+  getScrolledVisiblePosition(position: IPosition): { top: number; left: number; height: number } | null;
+  getTopForLineNumber(lineNumber: number): number;
+  getBottomForLineNumber(lineNumber: number): number;
+  getOffsetForColumn(lineNumber: number, column: number): number;
+  setHiddenAreas(ranges: readonly IRange[]): void;
+
+  addContentWidget(widget: IContentWidget): void;
+  layoutContentWidget(widget: IContentWidget): void;
+  removeContentWidget(widget: IContentWidget): void;
+  addOverlayWidget(widget: IOverlayWidget): void;
+  layoutOverlayWidget(widget: IOverlayWidget): void;
+  removeOverlayWidget(widget: IOverlayWidget): void;
+  changeViewZones(callback: (accessor: IViewZoneChangeAccessor) => void): void;
+
+  saveViewState(): IEditorViewState | null;
+  restoreViewState(state: IEditorViewState | null): void;
 
   focus(): void;
-  blur?(): void;
+  blur(): void;
   hasTextFocus(): boolean;
-  layout(): void;
+  hasWidgetFocus(): boolean;
+  layout(dimension?: IDimension): void;
 
   updateOptions(options: Partial<MonoEditorOptions>): void;
+  getOptions(): Readonly<MonoEditorOptions>;
+  getRawOptions(): Readonly<MonoEditorOptions>;
   setTheme(theme: Partial<MonoEditorTheme> | string): void;
-  getOption?<T = unknown>(name: string): T | undefined;
+  getOption<T = unknown>(name: string): T | undefined;
 
   onDidChangeModelContent(listener: (e: MonoContentChangeEvent) => void): MonoDisposable;
+  onDidChangeModelLanguage(listener: (e: IModelLanguageChangedEvent) => void): MonoDisposable;
+  onDidChangeModelOptions(listener: (e: IModelOptionsChangedEvent) => void): MonoDisposable;
+  onDidChangeModelDecorations(listener: (e: IModelDecorationsChangedEvent) => void): MonoDisposable;
+  onDidChangeConfiguration(listener: (e: Partial<MonoEditorOptions>) => void): MonoDisposable;
+  onDidLayoutChange(listener: (e: IEditorLayoutInfo) => void): MonoDisposable;
+  onDidContentSizeChange(listener: (e: IContentSizeChangedEvent) => void): MonoDisposable;
   onDidChangeCursorPosition(listener: (e: ICursorPositionChangedEvent) => void): MonoDisposable;
   onDidChangeCursorSelection(listener: (e: ICursorSelectionChangedEvent) => void): MonoDisposable;
   onDidScrollChange(listener: (e: IScrollEvent) => void): MonoDisposable;
-  onDidFocusEditorText?(listener: () => void): MonoDisposable;
-  onDidBlurEditorText?(listener: () => void): MonoDisposable;
+  onDidFocusEditorText(listener: () => void): MonoDisposable;
+  onDidBlurEditorText(listener: () => void): MonoDisposable;
+  onDidFocusEditorWidget(listener: () => void): MonoDisposable;
+  onDidBlurEditorWidget(listener: () => void): MonoDisposable;
+  onDidPaste(listener: (e: IPasteEvent) => void): MonoDisposable;
+  onDidCompositionStart(listener: () => void): MonoDisposable;
+  onDidCompositionEnd(listener: () => void): MonoDisposable;
+  onMouseDown(listener: (e: IEditorMouseEvent) => void): MonoDisposable;
+  onMouseUp(listener: (e: IEditorMouseEvent) => void): MonoDisposable;
+  onMouseMove(listener: (e: IEditorMouseEvent) => void): MonoDisposable;
+  onMouseLeave(listener: (e: IEditorMouseEvent) => void): MonoDisposable;
+  onContextMenu(listener: (e: IEditorMouseEvent) => void): MonoDisposable;
+  onKeyDown(listener: (e: KeyboardEvent) => void): MonoDisposable;
+  onKeyUp(listener: (e: KeyboardEvent) => void): MonoDisposable;
+  onDidDispose(listener: () => void): MonoDisposable;
+  onDidChangeMarkers(listener: (markers: IMarker[]) => void): MonoDisposable;
 
-  addAction?(action: MonoAction): MonoDisposable;
+  addAction(action: MonoAction): MonoDisposable;
   getAction(id: string): IMonoEditorAction | null;
+  getSupportedActions(): IMonoEditorAction[];
+  trigger(source: string | null | undefined, handlerId: string, payload?: unknown): void;
+  createContextKey<T = boolean | string | number>(key: string, defaultValue: T): IContextKey<T>;
+  setContext(key: string, value: boolean | string | number): void;
+  registerCommand(id: string, handler: MonoCommandHandler, meta?: Omit<MonoRegisteredCommand, 'id' | 'handler'>): MonoDisposable;
+  executeCommand(id: string, ...args: unknown[]): Promise<unknown>;
+  getCommandsForPalette(filter?: string): MonoPaletteCommandItem[];
+  getPaletteService(): PaletteService;
 
   deltaDecorations(oldDecorations: string[], newDecorations: IModelDeltaDecoration[]): string[];
+  createDecorationsCollection(decorations?: IModelDeltaDecoration[]): IEditorDecorationsCollection;
   setModelMarkers(owner: string, markers: IMarkerData[]): void;
   getModelMarkers(filter?: { owner?: string; take?: number }): IMarker[];
 
-  executeCommand?(id: string, ...args: unknown[]): Promise<unknown>;
-
-  setContextMenuItems?(items: MonoMenuItem[]): void;
-  addContextMenuItem?(item: MonoMenuItem): void;
-  removeContextMenuItem?(id: string): void;
-  setContextMenuStyle?(style: MonoMenuStyle): void;
-  hideContextMenu?(): void;
-  addKeybinding?(binding: MonoKeybinding): () => void;
-  removeKeybinding?(id: string): void;
-  listKeybindings?(): MonoKeybinding[];
-  setStickyScroll?(opts: MonoStickyScrollOptions): void;
-  revealFind?(): void;
-  revealReplace?(): void;
-  getFoldedCount?(): number;
-  foldAll?(): void;
-  unfoldAll?(): void;
-  toggleFoldAtLine?(lineNumber: number): void;
+  setContextMenuItems(items: MonoMenuItem[]): void;
+  addContextMenuItem(item: MonoMenuItem): void;
+  removeContextMenuItem(id: string): void;
+  setContextMenuStyle(style: MonoMenuStyle): void;
+  hideContextMenu(): void;
+  showContextMenu(): void;
+  addKeybinding(binding: MonoKeybinding): () => void;
+  removeKeybinding(id: string): void;
+  listKeybindings(): MonoKeybinding[];
+  setStickyScroll(opts: MonoStickyScrollOptions): void;
+  revealFind(): void;
+  revealReplace(): void;
+  getFoldedCount(): number;
+  foldAll(): void;
+  unfoldAll(): void;
+  toggleFoldAtLine(lineNumber: number): void;
 
   // Direct Ghost Text / Copilot / Codex Plugin API
-  setGhostTexts?(items: readonly GhostTextItem[]): void;
-  clearGhostTexts?(owner?: string): void;
-  getGhostTexts?(owner?: string): readonly GhostTextItem[];
-  acceptGhostText?(): boolean;
-  acceptGhostTextWord?(): boolean;
-  acceptGhostTextLine?(): boolean;
-  nextGhostText?(): void;
-  prevGhostText?(): void;
-  dismissGhostText?(): void;
-  getDocumentSymbols?(): Promise<DocumentSymbol[]>;
+  setGhostTexts(items: readonly GhostTextItem[]): void;
+  clearGhostTexts(owner?: string): void;
+  getGhostTexts(owner?: string): readonly GhostTextItem[];
+  acceptGhostText(): boolean;
+  acceptGhostTextWord(): boolean;
+  acceptGhostTextLine(): boolean;
+  nextGhostText(): void;
+  prevGhostText(): void;
+  dismissGhostText(): void;
+  getDocumentSymbols(): Promise<DocumentSymbol[]>;
 
   dispose(): void;
 }
@@ -190,6 +273,10 @@ export const ContributionIds = {
   Links: 'editor.contrib.links',
   SelectionRange: 'editor.contrib.selectionRange',
   PasteEdit: 'editor.contrib.pasteEdit',
+  QuickNav: 'editor.contrib.quickNav',
+  LinkedEditing: 'editor.contrib.linkedEditing',
+  CodeLens: 'editor.contrib.codeLens',
+  MobileAccessory: 'editor.contrib.mobileAccessory',
 } as const;
 
 /** Lifecycle interface implemented by every self-contained feature in `src/contrib/`. */
@@ -209,17 +296,11 @@ export interface IEditorContribution {
   onOutsidePointerDown?(): void;
   onPaint?(): void;
   onLayout?(): void;
-  /** Return true if the contribution consumed the keydown event. */
   onKeyDown?(e: KeyboardEvent): boolean;
-  /** Return true if a wheel event targeting `target` should not scroll the parent editor. */
   shouldAllowWheelTarget?(target: Node): boolean;
-  /** Handle a click on a rendered color swatch. */
   onColorSwatchClick?(hit: ColorHit): void;
-  /** Handle a click on a rendered inlay hint chip. */
   onInlayHintClick?(hit: InlayHintHit): void;
-  /** Handle a Ctrl/Cmd+click or explicit tap on a rendered document link. */
   onLinkClick?(hit: LinkHit, e: PointerEvent): void;
-  /** Handle a click on a rendered fold chevron. */
   onFoldToggle?(lineNumber: number): void;
 }
 
@@ -267,15 +348,22 @@ export interface IEditorContributionHost {
   jumpToLocation(loc: Location): void;
   executeCommand(id: string, ...args: unknown[]): Promise<unknown>;
   getTokenTypeAt(lineNumber: number, column: number): string | null;
-  /** Resolve effective embedded language at 1-based (lineNumber, column), e.g. 'css' inside HTML <style>. */
   getLanguageIdAtPosition(lineNumber: number, column: number): string;
   modelAsFeatureLike(): ModelLike;
   wordAtPosition(lineNumber: number, column: number): { word: string; startColumn: number; endColumn: number } | null;
   createNestedEditor(container: HTMLElement, sharedModel: TextModel, extra?: Partial<MonoEditorOptions>): IMonoEditor;
   notifyLayoutChange(): void;
+  changeViewZones(callback: (accessor: IViewZoneChangeAccessor) => void): void;
+  addContentWidget(widget: IContentWidget): void;
+  layoutContentWidget(widget: IContentWidget): void;
+  removeContentWidget(widget: IContentWidget): void;
+  addOverlayWidget(widget: IOverlayWidget): void;
+  layoutOverlayWidget(widget: IOverlayWidget): void;
+  removeOverlayWidget(widget: IOverlayWidget): void;
+  announce(message: string): void;
+  getDocumentSymbols(): Promise<DocumentSymbol[]>;
 }
 
-/** Optional capability contracts queried via `editor.getContribution<T>(id)`. */
 export interface IFindContribution extends IEditorContribution {
   startFind(): void;
   startFindReplace(): void;

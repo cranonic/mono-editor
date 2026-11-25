@@ -63,6 +63,7 @@ export class MarkerService {
             ? 'rgba(204,167,0,0.15)'
             : 'rgba(55,148,255,0.12)',
         severity: m.severity,
+        tags: m.tags,
       });
     }
     return items;

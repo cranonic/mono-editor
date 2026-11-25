@@ -1,4 +1,5 @@
 import { monoThemeService } from '../ThemeService';
+import { HC_BLACK_ID, HC_BLACK_LABEL, hcBlackThemeData } from './hc-black';
 import {
   MSCODE_AMOLED_ID,
   MSCODE_AMOLED_LABEL,
@@ -51,6 +52,10 @@ export function registerBuiltinThemes(): void {
     label: SOLARIZED_LIGHT_LABEL,
     type: 'light',
   });
+  monoThemeService.defineTheme(HC_BLACK_ID, hcBlackThemeData, {
+    label: HC_BLACK_LABEL,
+    type: 'high-contrast',
+  });
   // Default active
   monoThemeService.setTheme(MSCODE_DARK_ID);
 }
@@ -61,4 +66,5 @@ export const BUILTIN_THEME_IDS = [
   MSCODE_AMOLED_ID,
   SOLARIZED_DARK_ID,
   SOLARIZED_LIGHT_ID,
+  HC_BLACK_ID,
 ] as const;

@@ -358,3 +358,45 @@ export interface DocumentPasteEditProvider {
     | undefined
     | Promise<DocumentPasteEdit | DocumentPasteEdit[] | null | undefined>;
 }
+
+// ── CodeLens ─────────────────────────────────────────────────────────────────
+
+export interface CodeLens {
+  readonly range: IRange;
+  readonly id?: string;
+  command?: CodeActionCommand;
+}
+
+export interface CodeLensList {
+  readonly lenses: readonly CodeLens[];
+  dispose?(): void;
+}
+
+export interface CodeLensProvider {
+  onDidChange?: (listener: () => void) => { dispose(): void };
+  provideCodeLenses(
+    model: ModelLike,
+    token?: CancellationToken,
+  ): CodeLensList | CodeLens[] | null | undefined | Promise<CodeLensList | CodeLens[] | null | undefined>;
+  resolveCodeLens?(
+    model: ModelLike,
+    codeLens: CodeLens,
+    token?: CancellationToken,
+  ): CodeLens | null | undefined | Promise<CodeLens | null | undefined>;
+}
+
+// ── Linked Editing (Auto-Rename HTML/JSX Tags) ───────────────────────────────
+
+export interface LinkedEditingRanges {
+  readonly ranges: readonly IRange[];
+  readonly wordPattern?: RegExp;
+}
+
+export interface LinkedEditingRangeProvider {
+  provideLinkedEditingRanges(
+    model: ModelLike,
+    position: IPosition,
+    token?: CancellationToken,
+  ): LinkedEditingRanges | null | undefined | Promise<LinkedEditingRanges | null | undefined>;
+}
+

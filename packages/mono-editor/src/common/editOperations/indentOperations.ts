@@ -9,8 +9,10 @@ export function indentSelectionLines(
   model: TextModel,
   selection: SelectionState,
   tabSize: number,
+  insertSpaces = true,
 ): string | undefined {
-  const pad = ' '.repeat(tabSize);
+  const pad = insertSpaces ? ' '.repeat(tabSize) : '\t';
+  const padLen = pad.length;
   const a = selection.anchor;
   const b = selection.active;
   const startLine = Math.min(a.lineNumber, b.lineNumber);
@@ -23,8 +25,8 @@ export function indentSelectionLines(
   const to = model.getOffsetAt(endLine, model.getLineContent(endLine).length + 1);
   const lines: string[] = [];
   for (let ln = startLine; ln <= endLine; ln++) lines.push(pad + model.getLineContent(ln));
-  const nextA = { lineNumber: a.lineNumber, column: a.column + tabSize };
-  const nextB = { lineNumber: b.lineNumber, column: b.column + tabSize };
+  const nextA = { lineNumber: a.lineNumber, column: a.column + padLen };
+  const nextB = { lineNumber: b.lineNumber, column: b.column + padLen };
   model.replaceRange(from, to, lines.join('\n'), {
     aLine: nextA.lineNumber,
     aCol: nextA.column,
@@ -92,6 +94,7 @@ export function applyEnterKey(
   tabSize: number,
   bracketEnterIndent: boolean,
   autoIndent: AutoIndentBehavior,
+  trimAutoWhitespace = true,
 ): string {
   if (selection.hasMultipleCursors) {
     replaceSelectionText(model, selection, '\n', 'other');
@@ -101,7 +104,7 @@ export function applyEnterKey(
   const b = selection.active;
   const aOff = model.getOffsetAt(a.lineNumber, a.column);
   const bOff = model.getOffsetAt(b.lineNumber, b.column);
-  const startOff = Math.min(aOff, bOff);
+  let startOff = Math.min(aOff, bOff);
   const endOff = Math.max(aOff, bOff);
   const startPos = model.getPositionAt(startOff);
   const endPos = model.getPositionAt(endOff);
@@ -123,6 +126,17 @@ export function applyEnterKey(
     tabSize,
     effectiveAutoIndent,
   );
+
+  // trimAutoWhitespace: if current line is whitespace-only before caret and nothing after, clean it on Enter
+  if (
+    trimAutoWhitespace &&
+    startPos.lineNumber === endPos.lineNumber &&
+    startPos.column > 1 &&
+    /^[ \t]+$/.test(startLineText.slice(0, startPos.column - 1)) &&
+    endLineText.slice(endPos.column - 1).length === 0
+  ) {
+    startOff = model.getOffsetAt(startPos.lineNumber, 1);
+  }
 
   const caretLine = startPos.lineNumber + result.caretLineDelta;
   const caretCol = result.caretColumn;

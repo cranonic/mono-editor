@@ -100,7 +100,11 @@ export class RenameController implements IEditorContribution {
       if (p.resolveRenameLocation) {
         try {
           const loc = await Promise.resolve(p.resolveRenameLocation(modelLike, pos, token));
-          if (loc?.rejectReason) return false;
+          if (loc?.rejectReason) {
+            this.showRejectToast(loc.rejectReason);
+            this.host.announce(loc.rejectReason);
+            return false;
+          }
           if (loc?.text) {
             initialText = loc.text;
             break;
@@ -161,12 +165,46 @@ export class RenameController implements IEditorContribution {
     });
   }
 
+  private toastEl: HTMLDivElement | null = null;
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private showRejectToast(message: string): void {
+    this.clearToast();
+    const el = document.createElement('div');
+    el.setAttribute('role', 'status');
+    el.textContent = message;
+    Object.assign(el.style, {
+      position: 'absolute',
+      top: '10px',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      padding: '6px 12px',
+      borderRadius: '6px',
+      background: '#7f1d1d',
+      color: '#fef2f2',
+      border: '1px solid #ef4444',
+      fontSize: '12px',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      zIndex: '50',
+      pointerEvents: 'none',
+    });
+    this.host.root.appendChild(el);
+    this.toastEl = el;
+    this.toastTimer = setTimeout(() => this.clearToast(), 2500);
+  }
+
+  private clearToast(): void {
+    if (this.toastTimer) { clearTimeout(this.toastTimer); this.toastTimer = null; }
+    if (this.toastEl) { this.toastEl.remove(); this.toastEl = null; }
+  }
+
   private closeDismiss(): void {
     this.anchorPos = null;
     this.widget.close(false);
   }
 
   dispose(): void {
+    this.clearToast();
     this.anchorPos = null;
     this.widget.dispose();
   }

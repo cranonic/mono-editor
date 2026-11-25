@@ -9,6 +9,11 @@ import { AXIS_LOCK_RATIO, TouchScrollPhysics, type ScrollAxis } from './touchScr
 
 export type PointerInteractKind = 'tap' | 'scroll' | 'scrollEnd' | 'select' | 'handle' | 'handleTap';
 
+export interface PointerExtraCallbacks {
+  onMouseEvent?: (kind: 'down' | 'up' | 'move' | 'leave' | 'contextmenu', e: MouseEvent) => void;
+  onPinchZoom?: (scaleRatio: number) => void;
+}
+
 const TAP_SLOP = 14;
 const SCROLL_THRESH = 10;
 const HANDLE_MOVE_THRESH = 3;
@@ -18,7 +23,8 @@ const DOUBLE_DIST = 36;
 
 /**
  * Unified touch + mouse pointer controller for the editor canvas.
- * Coordinates tap, double-tap, long-press, axis-locked touch scroll/fling, and teardrop handles.
+ * Coordinates tap, double-tap, long-press, axis-locked touch scroll/fling,
+ * two-finger pinch-to-zoom, teardrop handles, and public mouse event dispatch.
  */
 export class PointerController {
   private root: HTMLElement;
@@ -32,10 +38,16 @@ export class PointerController {
   private onColorSwatchClick?: (hit: ColorHit) => void;
   private onInlayHintClick?: (hit: InlayHintHit) => void;
   private onLinkClick?: (hit: LinkHit, e: PointerEvent) => void;
+  private extra?: PointerExtraCallbacks;
   private disposed = false;
 
   private scrollPhysics = new TouchScrollPhysics();
   private teardrops = new TeardropDragController();
+
+  // Two-finger pinch-to-zoom state
+  private touchPointers = new Map<number, { x: number; y: number }>();
+  private pinchStartDist = 0;
+  private pinchActive = false;
 
   private active = false;
   private pointerId: number | null = null;
@@ -75,6 +87,7 @@ export class PointerController {
     onColorSwatchClick?: (hit: ColorHit) => void,
     onInlayHintClick?: (hit: InlayHintHit) => void,
     onLinkClick?: (hit: LinkHit, e: PointerEvent) => void,
+    extra?: PointerExtraCallbacks,
   ) {
     this.root = root;
     this.model = model;
@@ -87,6 +100,7 @@ export class PointerController {
     this.onColorSwatchClick = onColorSwatchClick;
     this.onInlayHintClick = onInlayHintClick;
     this.onLinkClick = onLinkClick;
+    this.extra = extra;
 
     root.style.touchAction = 'none';
     root.addEventListener('pointerdown', this.onDown, { passive: false });
@@ -94,6 +108,8 @@ export class PointerController {
     root.addEventListener('pointerup', this.onUp);
     root.addEventListener('pointercancel', this.onUp);
     root.addEventListener('lostpointercapture', this.onUp);
+    root.addEventListener('pointerleave', this.onLeave);
+    root.addEventListener('contextmenu', this.onContextMenu);
   }
 
   setModel(model: TextModel): void {
@@ -102,6 +118,8 @@ export class PointerController {
     this.clearSingleTap();
     this.scrollPhysics.stop();
     this.teardrops.reset();
+    this.touchPointers.clear();
+    this.pinchActive = false;
     this.active = false;
     this.scrolling = false;
     this.selecting = false;
@@ -115,12 +133,15 @@ export class PointerController {
     this.clearSingleTap();
     this.scrollPhysics.dispose();
     this.teardrops.dispose();
+    this.touchPointers.clear();
     this.view.freeHandle = null;
     this.root.removeEventListener('pointerdown', this.onDown);
     this.root.removeEventListener('pointermove', this.onMove);
     this.root.removeEventListener('pointerup', this.onUp);
     this.root.removeEventListener('pointercancel', this.onUp);
     this.root.removeEventListener('lostpointercapture', this.onUp);
+    this.root.removeEventListener('pointerleave', this.onLeave);
+    this.root.removeEventListener('contextmenu', this.onContextMenu);
   }
 
   hitTest(clientX: number, clientY: number, round = true): { lineNumber: number; column: number } {
@@ -150,6 +171,14 @@ export class PointerController {
     this.selection.anchor = { lineNumber: pos.lineNumber, column: start + 1 };
     this.selection.active = { lineNumber: pos.lineNumber, column: end + 2 };
   }
+
+  private onLeave = (e: PointerEvent): void => {
+    this.extra?.onMouseEvent?.('leave', e);
+  };
+
+  private onContextMenu = (e: MouseEvent): void => {
+    this.extra?.onMouseEvent?.('contextmenu', e);
+  };
 
   private isWithinDoubleWindow(x: number, y: number, t: number): boolean {
     if (this.lastTapT <= 0 || t - this.lastTapT > DOUBLE_MS) return false;
@@ -225,7 +254,26 @@ export class PointerController {
     return false;
   }
 
+  private getPinchDistance(): number {
+    const pts = Array.from(this.touchPointers.values());
+    if (pts.length < 2) return 0;
+    return Math.hypot(pts[1]!.x - pts[0]!.x, pts[1]!.y - pts[0]!.y);
+  }
+
   private onDown = (e: PointerEvent): void => {
+    this.extra?.onMouseEvent?.('down', e);
+    if (e.pointerType === 'touch') {
+      this.touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.touchPointers.size === 2 && this.extra?.onPinchZoom) {
+        this.pinchActive = true;
+        this.pinchStartDist = Math.max(10, this.getPinchDistance());
+        this.active = false;
+        this.clearLongPress();
+        this.scrollPhysics.stop();
+        return;
+      }
+    }
+
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     e.preventDefault();
     this.scrollPhysics.stop();
@@ -283,6 +331,20 @@ export class PointerController {
   };
 
   private onMove = (e: PointerEvent): void => {
+    this.extra?.onMouseEvent?.('move', e);
+    if (e.pointerType === 'touch' && this.touchPointers.has(e.pointerId)) {
+      this.touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.pinchActive && this.touchPointers.size >= 2) {
+        e.preventDefault();
+        const curDist = this.getPinchDistance();
+        if (this.pinchStartDist > 0 && Math.abs(curDist - this.pinchStartDist) > 12) {
+          this.extra?.onPinchZoom?.(curDist / this.pinchStartDist);
+          this.pinchStartDist = curDist;
+        }
+        return;
+      }
+    }
+
     if (!this.active || e.pointerId !== this.pointerId) return;
     e.preventDefault();
     const now = performance.now();
@@ -348,6 +410,18 @@ export class PointerController {
   };
 
   private onUp = (e: PointerEvent): void => {
+    this.extra?.onMouseEvent?.('up', e);
+    if (e.pointerType === 'touch') {
+      this.touchPointers.delete(e.pointerId);
+      if (this.pinchActive) {
+        if (this.touchPointers.size < 2) {
+          this.pinchActive = false;
+          this.pinchStartDist = 0;
+        }
+        return;
+      }
+    }
+
     if (!this.active || (this.pointerId !== null && e.pointerId !== this.pointerId)) return;
     this.clearLongPress();
     this.teardrops.stopAutoScroll();

@@ -6,6 +6,7 @@ import {
 import type { MonoEditorOptions, RenderMetrics } from '../../common/config/editorOptions';
 import { DEFAULT_THEME } from '../../common/config/themeTypes';
 import type { SelectionState } from '../../common/core/SelectionState';
+import type { IRange } from '../../common/core/types';
 import type { DecorationsCollection } from '../../common/decorations/DecorationsCollection';
 import type { MarkerService } from '../../common/decorations/MarkerService';
 import type { Location, TextEdit, WorkspaceEdit } from '../../common/languages/providers/types';
@@ -15,13 +16,17 @@ import type { FoldingModel } from '../../common/viewModel/FoldingModel';
 import type { CommandService } from '../../platform/commands/CommandService';
 import type { KeybindingService } from '../../platform/keybindings/KeybindingService';
 import { monoThemeService } from '../../platform/theme';
-import { InputController } from '../input/InputController';
+import { InputController, type InputChangeEvent } from '../input/InputController';
+import { PointerController } from '../input/pointer/PointerController';
 import { CanvasRenderer } from '../render/CanvasRenderer';
 import { ViewController } from '../view/ViewController';
+import { EditorWidgetManager } from '../view/WidgetManagers';
 import { HandleVisibility } from '../view/viewParts/HandleVisibility';
 import { MinimapController } from '../view/viewParts/MinimapController';
 import { OverlayScrollbar } from '../view/viewParts/OverlayScrollbar';
-import { jumpEditorToLocation, type EditorOptionState } from './editorLifecycle';
+import type { EditorEventBus } from './editorEvents';
+import { dispatchPointerInteraction, jumpEditorToLocation, type EditorOptionState } from './editorLifecycle';
+import { wrapEditorMouseEvent } from './editorViewFacade';
 import {
   ContributionIds,
   type IEditorContribution,
@@ -33,16 +38,39 @@ import type { ModelController } from './modelController';
 
 export function createInitialOptionState(options: MonoEditorOptions): EditorOptionState {
   const fontSize = options.fontSize ?? 14;
+  const lineNumbersMode = options.lineNumbers ?? 'on';
   return {
     fontFamily: options.fontFamily ?? 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
     fontSize,
     lineHeight: options.lineHeight ?? Math.round(fontSize * 1.45),
-    lineNumbers: (options.lineNumbers ?? 'on') === 'on',
+    lineNumbers: lineNumbersMode !== 'off',
+    lineNumbersMode,
     lineNumbersMinChars: options.lineNumbersMinChars != null ? Math.max(1, Math.floor(options.lineNumbersMinChars)) : 2,
     tabSize: options.tabSize ?? 2,
+    insertSpaces: options.insertSpaces ?? true,
+    detectIndentation: options.detectIndentation ?? false,
+    trimAutoWhitespace: options.trimAutoWhitespace ?? true,
+    stickyTabStops: options.stickyTabStops ?? false,
+    emptySelectionClipboard: options.emptySelectionClipboard ?? true,
+    formatOnPaste: options.formatOnPaste ?? false,
     readOnly: !!options.readOnly,
     foldingEnabled: options.folding !== false,
+    glyphMargin: !!options.glyphMargin,
+    renderWhitespace: options.renderWhitespace ?? 'none',
+    rulers: options.rulers ? [...options.rulers] : [],
+    renderLineHighlight: options.renderLineHighlight ?? 'line',
+    cursorStyle: options.cursorStyle ?? 'line',
+    cursorBlinking: options.cursorBlinking ?? 'blink',
+    cursorSurroundingLines: Math.max(0, options.cursorSurroundingLines ?? 0),
+    linkedEditing: options.linkedEditing !== false,
+    codeLens: options.codeLens !== false,
+    errorLens: options.errorLens ?? false,
+    pinchZoom: options.pinchZoom !== false,
+    mobileQuickKeys: options.mobileQuickKeys ?? false,
+    ariaLabel: options.ariaLabel ?? 'Mono Code Editor',
+    accessibilitySupport: options.accessibilitySupport ?? 'auto',
     theme: { ...DEFAULT_THEME, ...monoThemeService.toPartialEditorTheme(), ...options.theme },
+    rawOptions: { ...options },
   };
 }
 
@@ -77,11 +105,15 @@ export function createEditorSubsystems(params: {
   decorations: DecorationsCollection;
   markers: MarkerService;
   contributions: Map<string, IEditorContribution>;
-  /** Receives the renderer being built — `MonoEditor.renderer` is not assigned yet while subsystems are constructed. */
   getMetrics: (renderer: CanvasRenderer) => RenderMetrics;
   onScrollCommit: (topChanged: boolean, leftChanged: boolean) => void;
   onSyncScrollbar: (activeScroll: boolean) => void;
-  onInputComplete: (ev: import('../input/InputController').InputChangeEvent) => void;
+  onInputComplete: (ev: InputChangeEvent) => void;
+  onCompositionStart?: () => void;
+  onCompositionEnd?: () => void;
+  onDidPaste?: (range: IRange) => void;
+  onKeyDownEvent?: (e: KeyboardEvent) => void;
+  onKeyUpEvent?: (e: KeyboardEvent) => void;
 }) {
   const renderer = new CanvasRenderer(params.canvas);
   const view = new ViewController(
@@ -94,6 +126,18 @@ export function createEditorSubsystems(params: {
   view.setFoldingEnabled(params.opts.foldingEnabled);
   view.setTabSize(params.opts.tabSize);
   view.setDynamicCaretColor(params.options.dynamicCaretColor !== false);
+  view.setDisplayOptions({
+    lineNumbersMode: params.opts.lineNumbersMode,
+    glyphMargin: params.opts.glyphMargin,
+    renderWhitespace: params.opts.renderWhitespace,
+    rulers: params.opts.rulers,
+    renderLineHighlight: params.opts.renderLineHighlight,
+    cursorStyle: params.opts.cursorStyle,
+    cursorBlinking: params.opts.cursorBlinking,
+    cursorSurroundingLines: params.opts.cursorSurroundingLines,
+    errorLens: params.opts.errorLens,
+  });
+  view.setMarkersProvider(() => params.markers.getModelMarkers());
   if (params.options.wordWrap || params.options.wrappingIndent) {
     view.setWordWrap(params.options.wordWrap ?? 'off', params.options.wrappingIndent ?? 'same');
   }
@@ -110,21 +154,24 @@ export function createEditorSubsystems(params: {
     params.modelCtrl.model.getLanguageId(),
   );
   view.setLineBracketsProvider(
-    (ln) =>
-      bracketColorizer.getLineBrackets(params.modelCtrl.model, ln, (lineNo) =>
-        params.tokenization.getLineTokens(params.modelCtrl.model, lineNo),
-      ),
-    (entry) =>
-      bracketColorizer.resolveColor(
-        entry,
-        params.opts.theme.rainbowBrackets ?? DEFAULT_RAINBOW_BRACKET_COLORS,
-        params.opts.theme.unexpectedBracketColor ?? DEFAULT_UNEXPECTED_BRACKET_COLOR,
-      ),
+    (ln) => bracketColorizer.getLineBrackets(params.modelCtrl.model, ln, (lineNo) => params.tokenization.getLineTokens(params.modelCtrl.model, lineNo)),
+    (entry) => bracketColorizer.resolveColor(entry, params.opts.theme.rainbowBrackets ?? DEFAULT_RAINBOW_BRACKET_COLORS, params.opts.theme.unexpectedBracketColor ?? DEFAULT_UNEXPECTED_BRACKET_COLOR),
   );
   view.setDecorationRenderProvider(() => [
     ...params.markers.toRenderItems(),
     ...params.decorations.toRenderItems(),
   ]);
+
+  const widgets = new EditorWidgetManager({
+    root: params.root,
+    getLineHeight: () => params.opts.lineHeight,
+    getContentLeft: () => view.contentLeft,
+    getCssWidth: () => view.cssWidth,
+    getCssHeight: () => view.cssHeight,
+    screenPosOf: (ln, col) => view.screenPosOf(ln, col),
+    getZoneTopForLine: (afterLn, zoneId) => view.getZoneTopForLine(afterLn, zoneId),
+    onZonesChanged: (specs) => view.setExtraViewZones(specs),
+  });
 
   const scrollbar = new OverlayScrollbar(
     params.root,
@@ -156,6 +203,7 @@ export function createEditorSubsystems(params: {
   view.setOnPaint(() => {
     params.onSyncScrollbar(false);
     minimap.paint();
+    widgets.layoutAll();
     for (const c of params.contributions.values()) c.onPaint?.();
   });
 
@@ -172,7 +220,13 @@ export function createEditorSubsystems(params: {
       params.onInputComplete(ev);
     },
     {
-      tabSize: params.opts.tabSize, readOnly: params.opts.readOnly, pageSize: 40,
+      tabSize: params.opts.tabSize,
+      insertSpaces: params.opts.insertSpaces,
+      stickyTabStops: params.opts.stickyTabStops,
+      trimAutoWhitespace: params.opts.trimAutoWhitespace,
+      readOnly: params.opts.readOnly,
+      ariaLabel: params.opts.ariaLabel,
+      pageSize: 40,
       bracketEnterIndent: params.options.bracketEnterIndent !== false,
       autoClosingBrackets: params.options.autoClosingBrackets,
       autoClosingQuotes: params.options.autoClosingQuotes,
@@ -180,16 +234,22 @@ export function createEditorSubsystems(params: {
       autoIndent: params.options.autoIndent,
       getTokenTypeAt: (ln, col) => params.modelCtrl.getTokenTypeAt(params.tokenization, ln, col),
       onCompositionChange: (range) => { view.compositionRange = range; view.paint(); },
+      onCompositionStart: params.onCompositionStart,
+      onCompositionEnd: params.onCompositionEnd,
+      onDidPaste: params.onDidPaste,
+      onKeyDownEvent: params.onKeyDownEvent,
+      onKeyUpEvent: params.onKeyUpEvent,
     },
   );
 
-  return { renderer, view, scrollbar, minimap, handleVis, input, bracketColorizer };
+  return { renderer, view, widgets, scrollbar, minimap, handleVis, input, bracketColorizer };
 }
 
 export function buildContributionHost(params: {
   editor: IMonoEditor;
   root: HTMLDivElement;
   view: ViewController;
+  widgets: EditorWidgetManager;
   input: InputController;
   selection: SelectionState;
   commands: CommandService;
@@ -239,19 +299,85 @@ export function buildContributionHost(params: {
       ),
     jumpToLocation: (loc: Location) =>
       jumpEditorToLocation(
-        loc, params.modelCtrl.modelUriKey, (m) => params.editor.setModel?.(m ?? null),
+        loc, params.modelCtrl.modelUriKey, (m) => params.editor.setModel(m ?? null),
         (p) => params.editor.setPosition(p), (p) => params.editor.revealPositionInCenter(p), () => params.editor.focus(),
       ),
-    executeCommand: (id, ...args) => params.editor.executeCommand!(id, ...args),
+    executeCommand: (id, ...args) => params.editor.executeCommand(id, ...args),
     getTokenTypeAt: (ln, col) => params.modelCtrl.getTokenTypeAt(params.tokenization, ln, col),
-    getLanguageIdAtPosition: (ln, col) =>
-      params.tokenization.getLanguageIdAtPosition(params.modelCtrl.model, ln, col),
+    getLanguageIdAtPosition: (ln, col) => params.tokenization.getLanguageIdAtPosition(params.modelCtrl.model, ln, col),
     modelAsFeatureLike: () => params.modelCtrl.asFeatureLike(),
     wordAtPosition: (ln, col) => params.modelCtrl.wordAtPosition(ln, col),
     createNestedEditor: params.createNestedEditor,
     notifyLayoutChange: () => {
       params.syncTextarea();
+      params.widgets.layoutAll();
       for (const c of params.contributions.values()) c.onLayout?.();
     },
+    changeViewZones: (cb) => params.widgets.changeViewZones(cb),
+    addContentWidget: (w) => params.widgets.addContentWidget(w),
+    layoutContentWidget: (w) => params.widgets.layoutContentWidget(w),
+    removeContentWidget: (w) => params.widgets.removeContentWidget(w),
+    addOverlayWidget: (w) => params.widgets.addOverlayWidget(w),
+    layoutOverlayWidget: (w) => params.widgets.layoutOverlayWidget(w),
+    removeOverlayWidget: (w) => params.widgets.removeOverlayWidget(w),
+    announce: (msg) => params.input.announce(msg),
+    getDocumentSymbols: () => params.editor.getDocumentSymbols(),
   };
+}
+
+export function createEditorPointer(params: {
+  root: HTMLDivElement;
+  modelCtrl: ModelController;
+  selection: SelectionState;
+  view: ViewController;
+  renderer: CanvasRenderer;
+  input: InputController;
+  commands: CommandService;
+  handleVis: HandleVisibility;
+  events: EditorEventBus;
+  opts: EditorOptionState;
+  contributions: Map<string, IEditorContribution>;
+  getMetrics: () => RenderMetrics;
+  syncTextarea: () => void;
+  emitCursorEvents: (source: string) => void;
+  onScrollDelta: () => void;
+  toggleFoldAtLine: (ln: number) => void;
+  updateFontSize: (fontSize: number) => void;
+}): PointerController {
+  return new PointerController(
+    params.root,
+    params.modelCtrl.model,
+    params.selection,
+    params.view,
+    params.getMetrics,
+    () => params.renderer.lastTeardrops,
+    (kind) => dispatchPointerInteraction(kind, {
+      view: params.view,
+      input: params.input,
+      selection: params.selection,
+      commands: params.commands,
+      handleVis: params.handleVis,
+      contributions: params.contributions.values(),
+      pushStackElement: () => params.modelCtrl.model.pushStackElement(),
+      syncTextarea: params.syncTextarea,
+      emitCursorEvents: params.emitCursorEvents,
+      onScrollDelta: params.onScrollDelta,
+    }),
+    params.toggleFoldAtLine,
+    (h) => { for (const c of params.contributions.values()) c.onColorSwatchClick?.(h); },
+    (h) => { for (const c of params.contributions.values()) c.onInlayHintClick?.(h); },
+    (h, ev) => { for (const c of params.contributions.values()) c.onLinkClick?.(h, ev); },
+    {
+      onMouseEvent: (k, e) => {
+        const r = params.root.getBoundingClientRect();
+        const target = params.view.getTargetAtLocalPoint(e.clientX - r.left, e.clientY - r.top, e.target);
+        params.events.emitMouse(k, wrapEditorMouseEvent(e, target));
+      },
+      onPinchZoom: (ratio) => {
+        if (!params.opts.pinchZoom) return;
+        const n = Math.max(10, Math.min(32, Math.round(params.opts.fontSize * ratio)));
+        if (n !== params.opts.fontSize) params.updateFontSize(n);
+      },
+    },
+  );
 }

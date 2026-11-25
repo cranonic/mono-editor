@@ -1,3 +1,5 @@
+import type { TrackedRangeStickiness } from '../core/enums';
+
 /** Monaco-compatible decorations & markers (diagnostics). */
 
 export interface IRange {
@@ -16,6 +18,15 @@ export const MarkerSeverity = {
   Error: 8 as MarkerSeverity,
 };
 
+/** Diagnostic display tags (matches Monaco MarkerTag). */
+export const MarkerTag = {
+  /** Unused / unreachable code — rendered dimmed. */
+  Unnecessary: 1,
+  /** Deprecated symbol — rendered with strikethrough. */
+  Deprecated: 2,
+} as const;
+export type MarkerTag = (typeof MarkerTag)[keyof typeof MarkerTag];
+
 export interface IMarkerData {
   severity: MarkerSeverity;
   message: string;
@@ -25,7 +36,7 @@ export interface IMarkerData {
   endColumn: number;
   source?: string;
   code?: string | { value: string; target?: string };
-  tags?: number[];
+  tags?: MarkerTag[];
   relatedInformation?: unknown[];
 }
 
@@ -35,16 +46,22 @@ export interface IMarker extends IMarkerData {
 }
 
 export interface IModelDecorationOptions {
-  /** CSS class name (ignored on canvas; used for class-based themes later) */
+  /** CSS class name (used for class-based heuristics & styling) */
   className?: string | null;
   /** Underline / squiggle */
   inlineClassName?: string | null;
   isWholeLine?: boolean;
   hoverMessage?: string | { value: string } | Array<{ value: string }>;
+  glyphMarginHoverMessage?: string | { value: string } | Array<{ value: string }>;
   overviewRuler?: { color: string; position?: number } | null;
   minimap?: { color: string; position?: number } | null;
   glyphMarginClassName?: string | null;
+  /** Mono canvas: direct glyph margin dot/badge color (e.g. `#e51400` for breakpoints). */
+  glyphMarginColor?: string;
+  /** Mono canvas: optional single-char or icon symbol in glyph margin (e.g. `●`, `◆`, `▸`). */
+  glyphMarginSymbol?: string;
   linesDecorationsClassName?: string | null;
+  stickiness?: TrackedRangeStickiness;
   zIndex?: number;
   /** Mono canvas: explicit underline style */
   monoUnderline?: 'none' | 'squiggle' | 'solid' | 'dots';
@@ -71,4 +88,18 @@ export interface DecorationRenderItem {
   background?: string;
   isWholeLine?: boolean;
   severity?: MarkerSeverity;
+  tags?: MarkerTag[];
+  glyphMarginColor?: string;
+  glyphMarginSymbol?: string;
+  glyphMarginClassName?: string | null;
+}
+
+export interface IEditorDecorationsCollection {
+  readonly length: number;
+  set(newDecorations: readonly IModelDeltaDecoration[]): string[];
+  append(newDecorations: readonly IModelDeltaDecoration[]): string[];
+  clear(): void;
+  getRange(index: number): IRange | null;
+  getRanges(): IRange[];
+  has(decoration: IModelDecoration): boolean;
 }

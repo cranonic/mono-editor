@@ -135,4 +135,37 @@ export function registerDefaultLanguageConfigurations(): void {
   });
   setLanguageConfiguration('c', C_CPP_CONFIG);
   setLanguageConfiguration('cpp', C_CPP_CONFIG);
+
+  // Phase 8 extra built-in languages
+  registerLanguage({ id: 'rust', extensions: ['.rs'], aliases: ['Rust', 'rs'] });
+  setLanguageConfiguration('rust', C_CPP_CONFIG);
+
+  registerLanguage({ id: 'go', extensions: ['.go'], aliases: ['Go', 'golang'] });
+  setLanguageConfiguration('go', C_CPP_CONFIG);
+
+  registerLanguage({ id: 'kotlin', extensions: ['.kt', '.kts'], aliases: ['Kotlin', 'kt'] });
+  setLanguageConfiguration('kotlin', JAVA_CONFIG);
+
+  registerLanguage({ id: 'swift', extensions: ['.swift'], aliases: ['Swift'] });
+  setLanguageConfiguration('swift', JAVA_CONFIG);
+
+  registerLanguage({ id: 'php', extensions: ['.php', '.phtml'], aliases: ['PHP'] });
+  setLanguageConfiguration('php', JAVA_CONFIG);
+
+  registerLanguage({ id: 'ruby', extensions: ['.rb', '.rake'], aliases: ['Ruby', 'rb'] });
+  setLanguageConfiguration('ruby', PYTHON_CONFIG);
+
+  registerLanguage({ id: 'xml', extensions: ['.xml', '.svg', '.plist'], aliases: ['XML'] });
+  setLanguageConfiguration('xml', HTML_CONFIG);
+
+  registerLanguage({ id: 'toml', extensions: ['.toml'], aliases: ['TOML'] });
+  setLanguageConfiguration('toml', YAML_CONFIG);
+
+  registerLanguage({
+    id: 'dockerfile',
+    extensions: ['.dockerfile'],
+    filenames: ['Dockerfile'],
+    aliases: ['Dockerfile', 'docker'],
+  });
+  setLanguageConfiguration('dockerfile', SHELL_CONFIG);
 }

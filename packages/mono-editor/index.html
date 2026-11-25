@@ -248,6 +248,23 @@
         display: block;
       }
 
+      #diff-host {
+        display: none;
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 0;
+        height: 100%;
+      }
+
+      #workspace.diff-mode #editor-host,
+      #workspace.diff-mode #preview-host {
+        display: none;
+      }
+
+      #workspace.diff-mode #diff-host {
+        display: block;
+      }
+
       #md-mobile-tabs {
         display: none;
         height: 32px;
@@ -590,6 +607,15 @@
             <option value="sql">SQL</option>
             <option value="c">C</option>
             <option value="cpp">C++</option>
+            <option value="rust">Rust</option>
+            <option value="go">Go</option>
+            <option value="kotlin">Kotlin</option>
+            <option value="swift">Swift</option>
+            <option value="php">PHP</option>
+            <option value="ruby">Ruby</option>
+            <option value="xml">XML</option>
+            <option value="toml">TOML</option>
+            <option value="dockerfile">Dockerfile</option>
             <option value="plaintext">Plain Text</option>
           </select>
 
@@ -597,12 +623,16 @@
             <option value="mscode-dark" selected>Dark+</option>
             <option value="mscode-light">Light+</option>
             <option value="mscode-amoled">AMOLED</option>
+            <option value="hc-black">High Contrast</option>
             <option value="solarized-dark">Solarized Dark</option>
             <option value="solarized-light">Solarized Light</option>
           </select>
         </div>
 
         <div class="bar-zone">
+          <button id="btn-diff" class="bar-btn" type="button" title="Toggle Diff Editor">
+            Diff
+          </button>
           <button id="btn-preview" class="bar-btn" type="button" title="Toggle Markdown Preview" style="display:none">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
               <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
@@ -652,6 +682,7 @@
       <main id="workspace">
         <div id="editor-host"></div>
         <div id="preview-host" aria-label="Markdown Preview"></div>
+        <div id="diff-host" aria-label="Diff Editor"></div>
         <div id="drawer-backdrop" class="hidden"></div>
 
         <aside id="sidebar" aria-label="Editor Feature Controls">
@@ -785,9 +816,65 @@
               </div>
 
               <div class="ctrl-row">
-                <label for="opt-line-numbers">Line Numbers</label>
+                <label for="opt-line-numbers-mode">Line Numbers</label>
+                <select id="opt-line-numbers-mode" class="ctrl-select">
+                  <option value="on" selected>On</option>
+                  <option value="relative">Relative</option>
+                  <option value="interval">Interval</option>
+                  <option value="off">Off</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-render-whitespace">Render Whitespace</label>
+                <select id="opt-render-whitespace" class="ctrl-select">
+                  <option value="none" selected>None</option>
+                  <option value="boundary">Boundary</option>
+                  <option value="selection">Selection</option>
+                  <option value="trailing">Trailing</option>
+                  <option value="all">All</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-cursor-style">Cursor Style</label>
+                <select id="opt-cursor-style" class="ctrl-select">
+                  <option value="line" selected>Line</option>
+                  <option value="block">Block</option>
+                  <option value="underline">Underline</option>
+                  <option value="line-thin">Line Thin</option>
+                  <option value="block-outline">Block Outline</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-glyph-margin" title="Click the left glyph gutter to toggle breakpoints">Glyph Margin (Breakpoints)</label>
                 <span class="switch">
-                  <input id="opt-line-numbers" type="checkbox" checked />
+                  <input id="opt-glyph-margin" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-error-lens">Error Lens (Inline)</label>
+                <span class="switch">
+                  <input id="opt-error-lens" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-codelens">CodeLens</label>
+                <span class="switch">
+                  <input id="opt-codelens" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-mobile-keys" title="Touch-friendly quick symbol & navigation bar">Mobile Quick-Keys Bar</label>
+                <span class="switch">
+                  <input id="opt-mobile-keys" type="checkbox" />
                   <span class="switch-track"></span>
                 </span>
               </div>
@@ -1018,6 +1105,12 @@
                 <button id="act-show-hover" class="action-btn" type="button" title="Show Unified Hover Docs (Ctrl+K)">Show Hover</button>
                 <button id="act-smart-expand" class="action-btn" type="button" title="Expand Selection (Shift+Alt+Right)">Expand Sel.</button>
                 <button id="act-smart-shrink" class="action-btn" type="button" title="Shrink Selection (Shift+Alt+Left)">Shrink Sel.</button>
+                <button id="act-goto-line" class="action-btn" type="button" title="Go to Line (Ctrl+G)">Go to Line</button>
+                <button id="act-goto-symbol" class="action-btn" type="button" title="Go to Symbol (Ctrl+Shift+O)">Go to Symbol</button>
+                <button id="act-peek-def" class="action-btn" type="button" title="Peek Definition (Alt+F12)">Peek Def</button>
+                <button id="act-sort-lines" class="action-btn" type="button" title="Sort Lines Ascending">Sort Lines</button>
+                <button id="act-join-lines" class="action-btn" type="button" title="Join Lines">Join Lines</button>
+                <button id="act-trim-ws" class="action-btn" type="button" title="Trim Trailing Whitespace">Trim Spaces</button>
                 <button id="act-diagnostics" class="action-btn" type="button">Diagnostics</button>
                 <button id="act-reset" class="action-btn" type="button">Reset Sample</button>
               </div>

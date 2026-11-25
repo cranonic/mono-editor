@@ -6,7 +6,14 @@ import {
 import type { ColorMatch } from '../../common/color/colorTypes';
 import { hexToRgba, hslToRgba, rgbaToHsl } from '../../common/color/colorParse';
 import { rgbaToHex } from '../../common/color/colorFormat';
-import type { RenderMetrics } from '../../common/config/editorOptions';
+import type {
+  CursorStyleMode,
+  MonoErrorLensOptions,
+  MonoLineNumbers,
+  RenderLineHighlightMode,
+  RenderMetrics,
+  RenderWhitespaceMode,
+} from '../../common/config/editorOptions';
 import type { MonoEditorTheme } from '../../common/config/themeTypes';
 import type { SelectionState } from '../../common/core/SelectionState';
 import type {
@@ -15,6 +22,7 @@ import type {
   OccurrenceHighlight,
 } from '../../common/editOperations/CodeFeatures';
 import type { IRange } from '../../common/core/types';
+import type { IMarker, MarkerTag } from '../../common/decorations/types';
 import { DEFAULT_TOKEN_COLORS, type MonoToken } from '../../common/languages/tokenization/tokenTypes';
 import type { SemanticTokenSpan } from '../../common/languages/semanticTokens';
 import type { TextModel } from '../../common/model/TextModel';
@@ -109,6 +117,10 @@ export interface PaintDecorationSpec {
   color: string;
   background?: string;
   isWholeLine?: boolean;
+  tags?: MarkerTag[];
+  glyphMarginColor?: string;
+  glyphMarginSymbol?: string;
+  glyphMarginClassName?: string | null;
 }
 
 export interface PaintOptions {
@@ -155,6 +167,16 @@ export interface PaintOptions {
   dynamicCaretColor?: boolean;
   topInsetPx?: number;
   viewZone?: { afterVisualRow: number; heightPx: number } | null;
+  viewZones?: readonly { afterVisualRow: number; heightPx: number }[];
+  lineNumbersMode?: MonoLineNumbers;
+  glyphMargin?: boolean;
+  renderWhitespace?: RenderWhitespaceMode;
+  rulers?: readonly number[];
+  renderLineHighlight?: RenderLineHighlightMode;
+  cursorStyle?: CursorStyleMode;
+  cursorOpacity?: number;
+  errorLens?: MonoErrorLensOptions | null;
+  markers?: readonly IMarker[];
   getLineColors?: (lineNumber: number) => readonly ColorMatch[];
   getLineBrackets?: (lineNumber: number) => readonly LineBracketColor[];
   resolveBracketColor?: (entry: LineBracketColor) => string;
@@ -170,6 +192,7 @@ export interface PaintOptions {
 export interface FrameContext {
   opts: PaintOptions;
   dark: boolean;
+  glyphMarginWidth: number;
   foldGutterWidth: number;
   gutterNumberPad: number;
   contentLeft: number;
@@ -320,29 +343,35 @@ export function buildFrameContext(
     getLineColors,
   } = opts;
   const { lineHeight, gutterWidth, paddingLeft, paddingTop } = metrics;
+  const glyphMarginWidth = opts.glyphMargin ? (metrics.glyphMarginWidth ?? 18) : 0;
   const foldGutterWidth = folding?.enabled ? (metrics.foldGutterWidth ?? 16) : 0;
   const gutterNumberPad = metrics.gutterNumberPad ?? 6;
   const dark = isDarkHex(theme.background);
 
+  const allZones = opts.viewZones && opts.viewZones.length
+    ? opts.viewZones
+    : viewZone
+      ? [viewZone]
+      : [];
+
   const totalVisualRows = projection ? projection.getVisualLineCount() : model.getLineCount();
   const rowTopY = (row: number): number => {
-    const zoneExtra = viewZone && row > viewZone.afterVisualRow ? viewZone.heightPx : 0;
+    let zoneExtra = 0;
+    for (const z of allZones) {
+      if (row > z.afterVisualRow) zoneExtra += z.heightPx;
+    }
     return topInsetPx + paddingTop + row * lineHeight + zoneExtra - scrollTop;
   };
 
   const yStartDoc = Math.max(0, scrollTop - topInsetPx - paddingTop);
-  let approxFirstRow = Math.floor(yStartDoc / lineHeight);
-  if (viewZone && approxFirstRow > viewZone.afterVisualRow) {
-    approxFirstRow = Math.max(
-      viewZone.afterVisualRow,
-      Math.floor((yStartDoc - viewZone.heightPx) / lineHeight),
-    );
-  }
+  let totalZonesH = 0;
+  for (const z of allZones) totalZonesH += z.heightPx;
+  const approxFirstRow = Math.max(0, Math.floor(Math.max(0, yStartDoc - totalZonesH) / lineHeight));
   const firstRow = Math.max(0, approxFirstRow - overscan);
-  const visibleCount = Math.ceil(cssHeight / lineHeight) + overscan * 2 + 2;
+  const visibleCount = Math.ceil((cssHeight + totalZonesH) / lineHeight) + overscan * 2 + 2;
   const lastRow = Math.min(totalVisualRows - 1, firstRow + visibleCount);
 
-  const contentLeft = showLineNumbers ? gutterWidth : 0;
+  const contentLeft = showLineNumbers || opts.glyphMargin ? gutterWidth : 0;
   const textX0 = contentLeft + paddingLeft - scrollLeft;
 
   const getVisualLine = (row: number): VisualLine => {
@@ -502,6 +531,7 @@ export function buildFrameContext(
   return {
     opts,
     dark,
+    glyphMarginWidth,
     foldGutterWidth,
     gutterNumberPad,
     contentLeft,

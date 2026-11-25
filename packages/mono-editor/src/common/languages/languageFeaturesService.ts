@@ -1,6 +1,7 @@
 import {
   CompletionItemKind,
   type CodeActionProvider,
+  type CodeLensProvider,
   type CompletionItem,
   type CompletionProvider,
   type DeclarationProvider,
@@ -18,6 +19,7 @@ import {
   type ImplementationProvider,
   type InlayHintsProvider,
   type InlineCompletionsProvider,
+  type LinkedEditingRangeProvider,
   type LinkProvider,
   type OnTypeFormattingEditProvider,
   type ReferenceProvider,
@@ -96,6 +98,18 @@ export class LanguageFeaturesRegistry {
   private documentHighlight = new Map<string, DocumentHighlightProvider[]>();
   private documentSymbol = new Map<string, DocumentSymbolProvider[]>();
   private link = new Map<string, LinkProvider[]>();
+  private changeListeners = new Set<() => void>();
+
+  onDidChange(listener: () => void): { dispose(): void } {
+    this.changeListeners.add(listener);
+    return { dispose: () => this.changeListeners.delete(listener) };
+  }
+
+  private fireChange(): void {
+    for (const l of this.changeListeners) {
+      try { l(); } catch { /* ignore */ }
+    }
+  }
   private selectionRange = new Map<string, SelectionRangeProvider[]>();
   private semanticTokens = new Map<string, DocumentSemanticTokensProvider[]>();
   private rangeSemanticTokens = new Map<string, DocumentRangeSemanticTokensProvider[]>();
@@ -103,6 +117,12 @@ export class LanguageFeaturesRegistry {
   private rename = new Map<string, RenameProvider[]>();
   private codeAction = new Map<string, CodeActionProvider[]>();
   private color = new Map<string, DocumentColorProvider[]>();
+  private codeLens = new Map<string, CodeLensProvider[]>();
+  private linkedEditing = new Map<string, LinkedEditingRangeProvider[]>();
+  private onLanguageListeners = new Map<string, Set<() => void>>();
+  private activatedLanguages = new Set<string>();
+  private encodedLanguageIds = new Map<string, number>([['plaintext', 1]]);
+  private nextEncodedLangId = 2;
 
   registerCompletionItemProvider(languageId: string, provider: CompletionProvider) {
     return registerInMap(this.completion, languageId, provider);
@@ -176,6 +196,64 @@ export class LanguageFeaturesRegistry {
   registerColorProvider(languageId: string, provider: DocumentColorProvider) {
     return registerInMap(this.color, languageId, provider);
   }
+  registerCodeLensProvider(languageId: string, provider: CodeLensProvider) {
+    const sub = registerInMap(this.codeLens, languageId, provider);
+    this.fireChange();
+    return { dispose: () => { sub.dispose(); this.fireChange(); } };
+  }
+  registerLinkedEditingRangeProvider(languageId: string, provider: LinkedEditingRangeProvider) {
+    const sub = registerInMap(this.linkedEditing, languageId, provider);
+    this.fireChange();
+    return { dispose: () => { sub.dispose(); this.fireChange(); } };
+  }
+  onLanguage(languageId: string, callback: () => void): { dispose(): void } {
+    const key = (languageId || '').toLowerCase();
+    if (this.activatedLanguages.has(key)) {
+      try {
+        callback();
+      } catch {
+        /* ignore */
+      }
+      return { dispose: () => {} };
+    }
+    let set = this.onLanguageListeners.get(key);
+    if (!set) {
+      set = new Set();
+      this.onLanguageListeners.set(key, set);
+    }
+    set.add(callback);
+    return {
+      dispose: () => {
+        set?.delete(callback);
+      },
+    };
+  }
+  fireLanguageActivated(languageId: string): void {
+    const key = (languageId || '').toLowerCase();
+    if (!key) return;
+    this.getEncodedLanguageId(key);
+    if (this.activatedLanguages.has(key)) return;
+    this.activatedLanguages.add(key);
+    const set = this.onLanguageListeners.get(key);
+    if (!set) return;
+    for (const cb of [...set]) {
+      try {
+        cb();
+      } catch {
+        /* ignore */
+      }
+    }
+    this.onLanguageListeners.delete(key);
+  }
+  getEncodedLanguageId(languageId: string): number {
+    const key = (languageId || 'plaintext').toLowerCase();
+    let id = this.encodedLanguageIds.get(key);
+    if (id == null) {
+      id = this.nextEncodedLangId++;
+      this.encodedLanguageIds.set(key, id);
+    }
+    return id;
+  }
 
   getCompletionProviders(languageId: string): CompletionProvider[] {
     return getFromMap(this.completion, languageId, true);
@@ -248,6 +326,12 @@ export class LanguageFeaturesRegistry {
   }
   getColorProviders(languageId: string): DocumentColorProvider[] {
     return getFromMap(this.color, languageId, true);
+  }
+  getCodeLensProviders(languageId: string): CodeLensProvider[] {
+    return getFromMap(this.codeLens, languageId, true);
+  }
+  getLinkedEditingRangeProviders(languageId: string): LinkedEditingRangeProvider[] {
+    return getFromMap(this.linkedEditing, languageId, true);
   }
 }
 

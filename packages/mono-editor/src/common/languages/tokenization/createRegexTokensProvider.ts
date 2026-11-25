@@ -40,13 +40,13 @@ export function createRegexTokensProvider(opts: RegexProviderOptions): MonoToken
   const keywordType = opts.keywordType ?? 'keyword';
   const initial = opts.initialState ?? 0;
 
-  const rules = opts.rules.map((r) => ({
-    ...r,
-    pattern: new RegExp(
-      r.pattern.source,
-      r.pattern.flags.includes('g') ? r.pattern.flags : r.pattern.flags + 'g',
-    ),
-  }));
+  const rules = opts.rules.map((r) => {
+    const cleanFlags = r.pattern.flags.replace(/[gy]/g, '');
+    return {
+      ...r,
+      pattern: new RegExp(r.pattern.source, cleanFlags + 'y'),
+    };
+  });
 
   return {
     languageId: opts.languageId,

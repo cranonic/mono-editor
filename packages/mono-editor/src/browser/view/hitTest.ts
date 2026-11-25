@@ -1,5 +1,7 @@
 import type { ColorMatch } from '../../common/color/colorTypes';
 import type { RenderMetrics } from '../../common/config/editorOptions';
+import { MouseTargetType } from '../../common/core/enums';
+import type { IMouseTarget } from '../../common/core/types';
 import type { TextModel } from '../../common/model/TextModel';
 import type { ViewLineProjection } from '../../common/viewModel/ViewLineProjection';
 import {
@@ -11,7 +13,12 @@ import {
   type ResolvedInlayHint,
 } from '../../common/virtualText';
 import { COLOR_SWATCH_ADVANCE, type CanvasRenderer } from '../render/CanvasRenderer';
-import { computeRowDocTop, resolveViewZoneAfterRow, type ViewZoneSpec } from './viewLayout';
+import {
+  computeRowDocTop,
+  resolveViewZoneAfterRow,
+  type ResolvedViewZone,
+  type ViewZoneSpec,
+} from './viewLayout';
 
 export interface HitTestContext {
   model: TextModel;
@@ -23,6 +30,9 @@ export interface HitTestContext {
   scrollLeft: number;
   topInsetPx: number;
   viewZone: ViewZoneSpec | null;
+  resolvedZones?: readonly ResolvedViewZone[];
+  glyphMargin?: boolean;
+  showLineNumbers?: boolean;
   getLineColors: ((lineNumber: number) => readonly ColorMatch[]) | null;
   getLineInlayHints?: ((lineNumber: number) => readonly ResolvedInlayHint[]) | null;
   getLineGhostInline?: ((lineNumber: number) => readonly InlineGhostRun[]) | null;
@@ -49,7 +59,6 @@ function elementsForLine(
   });
 }
 
-/** Line-local pixel X of 1-based column on `lineNumber` (swatches + inlay hints + inline ghost text). */
 export function measureLineColumnX(
   model: TextModel,
   renderer: CanvasRenderer,
@@ -70,7 +79,6 @@ export function measureLineColumnX(
   );
 }
 
-/** Map line-local pixel X to 1-based column on `lineNumber` (inverse of virtual layout advance). */
 export function lineColumnAtX(
   model: TextModel,
   renderer: CanvasRenderer,
@@ -95,7 +103,24 @@ export function lineColumnAtX(
   return renderer.columnAtX(content, mapped.realX, metrics, round);
 }
 
-/** Maps root-local `(localX, localY)` to 1-based `(lineNumber, column)` respecting virtual ghost rows, folds & wrap. */
+function adjustDocYForZones(
+  docY: number,
+  lineHeight: number,
+  zones: readonly ResolvedViewZone[],
+): number {
+  if (!zones.length) return docY;
+  let y = docY;
+  for (const z of zones) {
+    const zoneStart = (z.afterVisualRow + 1) * lineHeight;
+    if (y >= zoneStart + z.heightPx) {
+      y -= z.heightPx;
+    } else if (y >= zoneStart) {
+      return Math.max(0, z.afterVisualRow * lineHeight);
+    }
+  }
+  return y;
+}
+
 export function hitTestPosition(
   ctx: HitTestContext,
   localX: number,
@@ -112,18 +137,20 @@ export function hitTestPosition(
     scrollLeft,
     topInsetPx,
     viewZone,
+    resolvedZones,
     getLineColors,
     getLineInlayHints,
     getLineGhostInline,
   } = ctx;
   let y = localY + scrollTop - topInsetPx - metrics.paddingTop;
-  const afterRow = resolveViewZoneAfterRow(viewZone, model, projection);
-  if (viewZone && afterRow >= 0) {
-    const zoneStartY = (afterRow + 1) * metrics.lineHeight;
-    if (y >= zoneStartY + viewZone.heightPx) {
-      y -= viewZone.heightPx;
-    } else if (y >= zoneStartY) {
-      y = afterRow * metrics.lineHeight;
+  if (resolvedZones && resolvedZones.length) {
+    y = adjustDocYForZones(y, metrics.lineHeight, resolvedZones);
+  } else {
+    const afterRow = resolveViewZoneAfterRow(viewZone, model, projection);
+    if (viewZone && afterRow >= 0) {
+      const zoneStartY = (afterRow + 1) * metrics.lineHeight;
+      if (y >= zoneStartY + viewZone.heightPx) y -= viewZone.heightPx;
+      else if (y >= zoneStartY) y = afterRow * metrics.lineHeight;
     }
   }
   const totalRows = projection.getVisualLineCount();
@@ -136,7 +163,6 @@ export function hitTestPosition(
   const row = Math.max(0, rawRow);
   const seg = projection.getVisualLine(row);
   if (seg.isVirtualGhost) {
-    // Tapping a virtual multiline ghost continuation row lands cleanly at the end of its anchor line
     const anchorContent = model.getLineContent(seg.modelLine);
     return { lineNumber: seg.modelLine, column: Math.min(anchorContent.length + 1, Math.max(1, seg.endCol)) };
   }
@@ -145,51 +171,76 @@ export function hitTestPosition(
     seg.startCol === 1
       ? 0
       : measureLineColumnX(
-          model,
-          renderer,
-          metrics,
-          getLineColors,
-          seg.modelLine,
-          seg.startCol,
-          getLineInlayHints,
-          getLineGhostInline,
+          model, renderer, metrics, getLineColors, seg.modelLine, seg.startCol, getLineInlayHints, getLineGhostInline,
         );
   const effectiveX = Math.max(0, textX - seg.wrapIndentPx) + originPx;
   let col = lineColumnAtX(
-    model,
-    renderer,
-    metrics,
-    getLineColors,
-    seg.modelLine,
-    effectiveX,
-    round,
-    getLineInlayHints,
-    getLineGhostInline,
+    model, renderer, metrics, getLineColors, seg.modelLine, effectiveX, round, getLineInlayHints, getLineGhostInline,
   );
   const maxCol = seg.isLastSegment ? seg.endCol : Math.max(seg.startCol, seg.endCol - 1);
   col = Math.max(seg.startCol, Math.min(maxCol, col));
   return { lineNumber: seg.modelLine, column: col };
 }
 
-/** Root-local CSS position of an arbitrary line/column (caret sits LEFT of inline ghost text at `col`). */
+export function computeTargetAtLocalPoint(
+  ctx: HitTestContext,
+  localX: number,
+  localY: number,
+  cssWidth: number,
+  cssHeight: number,
+  element: unknown = null,
+): IMouseTarget {
+  if (localX < 0 || localY < 0 || localX > cssWidth || localY > cssHeight) {
+    return {
+      element,
+      type: MouseTargetType.OUTSIDE_EDITOR,
+      position: null,
+      mouseColumn: 1,
+      range: null,
+    };
+  }
+  const pos = hitTestPosition(ctx, localX, localY, true);
+  const range = {
+    startLineNumber: pos.lineNumber,
+    startColumn: pos.column,
+    endLineNumber: pos.lineNumber,
+    endColumn: pos.column,
+  };
+  const glyphW = ctx.glyphMargin ? (ctx.metrics.glyphMarginWidth ?? 18) : 0;
+  const foldW = ctx.metrics.foldGutterWidth ?? 0;
+
+  if (localX < ctx.contentLeft) {
+    if (glyphW > 0 && localX < glyphW) {
+      return { element, type: MouseTargetType.GUTTER_GLYPH_MARGIN, position: pos, mouseColumn: 1, range };
+    }
+    if (foldW > 0 && localX >= ctx.contentLeft - foldW) {
+      return { element, type: MouseTargetType.GUTTER_LINE_DECORATIONS, position: pos, mouseColumn: 1, range };
+    }
+    return { element, type: MouseTargetType.GUTTER_LINE_NUMBERS, position: pos, mouseColumn: 1, range };
+  }
+
+  const lineLen = ctx.model.getLineContent(pos.lineNumber).length;
+  const lineEndX =
+    ctx.contentLeft +
+    ctx.metrics.paddingLeft +
+    measureLineColumnX(
+      ctx.model, ctx.renderer, ctx.metrics, ctx.getLineColors, pos.lineNumber, lineLen + 1,
+      ctx.getLineInlayHints, ctx.getLineGhostInline,
+    ) -
+    ctx.scrollLeft;
+
+  const type = localX <= lineEndX + 2 ? MouseTargetType.CONTENT_TEXT : MouseTargetType.CONTENT_EMPTY;
+  return { element, type, position: pos, mouseColumn: pos.column, range };
+}
+
 export function computeScreenPosOf(
   ctx: HitTestContext,
   line: number,
   col: number,
 ): { x: number; y: number; h: number } {
   const {
-    model,
-    renderer,
-    projection,
-    metrics,
-    contentLeft,
-    scrollTop,
-    scrollLeft,
-    topInsetPx,
-    viewZone,
-    getLineColors,
-    getLineInlayHints,
-    getLineGhostInline,
+    model, renderer, projection, metrics, contentLeft, scrollTop, scrollLeft,
+    topInsetPx, viewZone, resolvedZones, getLineColors, getLineInlayHints, getLineGhostInline,
   } = ctx;
   const clampedLine = Math.max(1, Math.min(model.getLineCount(), line));
   const mapped = projection.modelToVisual(clampedLine, col);
@@ -198,29 +249,13 @@ export function computeScreenPosOf(
     seg.startCol === 1
       ? 0
       : measureLineColumnX(
-          model,
-          renderer,
-          metrics,
-          getLineColors,
-          clampedLine,
-          seg.startCol,
-          getLineInlayHints,
-          getLineGhostInline,
-          true,
+          model, renderer, metrics, getLineColors, clampedLine, seg.startCol, getLineInlayHints, getLineGhostInline, true,
         );
   const colPx = measureLineColumnX(
-    model,
-    renderer,
-    metrics,
-    getLineColors,
-    clampedLine,
-    col,
-    getLineInlayHints,
-    getLineGhostInline,
-    false,
+    model, renderer, metrics, getLineColors, clampedLine, col, getLineInlayHints, getLineGhostInline, false,
   );
   const x = contentLeft + metrics.paddingLeft + seg.wrapIndentPx + (colPx - originPx) - scrollLeft;
   const afterRow = resolveViewZoneAfterRow(viewZone, model, projection);
-  const y = computeRowDocTop(mapped.visualRow, metrics, topInsetPx, viewZone, afterRow) - scrollTop;
+  const y = computeRowDocTop(mapped.visualRow, metrics, topInsetPx, viewZone, afterRow, resolvedZones) - scrollTop;
   return { x, y, h: metrics.lineHeight };
 }

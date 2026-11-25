@@ -1,5 +1,27 @@
 import { EditStack, type UndoKind } from './EditStack';
 import { EndOfLineSequence } from '../core/enums';
+import type {
+  FindMatch,
+  IIdentifiedSingleEditOperation,
+  IModelContentChange,
+  IModelLanguageChangedEvent,
+  IModelOptionsChangedEvent,
+  IPosition,
+  IRange,
+  ITextModelResolvedOptions,
+  ITextModelUpdateOptions,
+  IWordAtPosition,
+} from '../core/types';
+import {
+  detectIndentationOnModel,
+  findMatchesOnModel,
+  findNextMatchOnModel,
+  findPreviousMatchOnModel,
+  getWordAtPositionOnModel,
+  getWordUntilPositionOnModel,
+  validatePositionOnModel,
+  validateRangeOnModel,
+} from './modelHelpers';
 
 export type { UndoKind };
 
@@ -10,11 +32,8 @@ export type ModelEdit = {
 };
 
 /**
- * What an edit touched, so listeners (tokenizer, scopes…) can update
+ * What an edit touched, so listeners (tokenizer, scopes, LSP sync…) can update
  * incrementally instead of rebuilding from line 1.
- *
- * Lines [startLine .. startLine+oldLineCount-1] (before the edit) were
- * replaced by [startLine .. startLine+newLineCount-1] (after the edit).
  */
 export type ModelChange = {
   /** 1-based first line touched */
@@ -23,6 +42,11 @@ export type ModelChange = {
   newLineCount: number;
   /** whole document replaced (setValue / setEOL) — drop every cache */
   full?: boolean;
+  /** Granular Monaco-compatible content change deltas. */
+  changes?: IModelContentChange[];
+  isUndoing?: boolean;
+  isRedoing?: boolean;
+  isFlush?: boolean;
 };
 
 export type ModelChangeListener = (versionId: number, change?: ModelChange) => void;
@@ -34,16 +58,20 @@ export class TextModel {
   private eol: '\n' | '\r\n' = '\n';
   private versionId = 1;
   private languageId = 'plaintext';
+  private options: ITextModelResolvedOptions = {
+    tabSize: 2,
+    indentSize: 2,
+    insertSpaces: true,
+    trimAutoWhitespace: true,
+  };
   private listeners = new Set<ModelChangeListener>();
+  private languageListeners = new Set<(e: IModelLanguageChangedEvent) => void>();
+  private optionsListeners = new Set<(e: IModelOptionsChangedEvent) => void>();
   readonly editStack = new EditStack();
-  /** Optional: snapshot selection before each recorded edit */
   private selCapture: (() => SelSnapshot | null) | null = null;
+  private applySource: 'normal' | 'undo' | 'redo' = 'normal';
 
-  /**
-   * Line start offsets, computed lazily and only as far as needed.
-   * starts[i] is valid for i <= startsValid. An edit on line L keeps starts[0..L]
-   * (those lines didn't move) and invalidates the rest.
-   */
+  /** Line start offsets, computed lazily and only as far as needed. */
   private starts: number[] = [0];
   private startsValid = 0;
   /** getValue() cache — one join per version, not per call */
@@ -63,7 +91,71 @@ export class TextModel {
   }
 
   setLanguageId(id: string): void {
+    if (id === this.languageId) return;
+    const oldLanguage = this.languageId;
     this.languageId = id;
+    const ev: IModelLanguageChangedEvent = { oldLanguage, newLanguage: id };
+    for (const l of this.languageListeners) {
+      try {
+        l(ev);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  onDidChangeLanguage(listener: (e: IModelLanguageChangedEvent) => void): () => void {
+    this.languageListeners.add(listener);
+    return () => this.languageListeners.delete(listener);
+  }
+
+  getOptions(): ITextModelResolvedOptions {
+    return { ...this.options };
+  }
+
+  updateOptions(newOpts: ITextModelUpdateOptions): void {
+    const ev: IModelOptionsChangedEvent = {
+      tabSize: newOpts.tabSize !== undefined && newOpts.tabSize !== this.options.tabSize,
+      indentSize: newOpts.indentSize !== undefined && newOpts.indentSize !== this.options.indentSize,
+      insertSpaces:
+        newOpts.insertSpaces !== undefined && newOpts.insertSpaces !== this.options.insertSpaces,
+      trimAutoWhitespace:
+        newOpts.trimAutoWhitespace !== undefined &&
+        newOpts.trimAutoWhitespace !== this.options.trimAutoWhitespace,
+    };
+    if (newOpts.tabSize !== undefined) this.options.tabSize = Math.max(1, newOpts.tabSize);
+    if (newOpts.indentSize !== undefined) {
+      this.options.indentSize = Math.max(1, newOpts.indentSize);
+    } else if (newOpts.tabSize !== undefined) {
+      this.options.indentSize = this.options.tabSize;
+    }
+    if (newOpts.insertSpaces !== undefined) this.options.insertSpaces = newOpts.insertSpaces;
+    if (newOpts.trimAutoWhitespace !== undefined) {
+      this.options.trimAutoWhitespace = newOpts.trimAutoWhitespace;
+    }
+    if (ev.tabSize || ev.indentSize || ev.insertSpaces || ev.trimAutoWhitespace) {
+      for (const l of this.optionsListeners) {
+        try {
+          l(ev);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+
+  onDidChangeOptions(listener: (e: IModelOptionsChangedEvent) => void): () => void {
+    this.optionsListeners.add(listener);
+    return () => this.optionsListeners.delete(listener);
+  }
+
+  detectIndentation(defaultInsertSpaces = true, defaultTabSize = 2): void {
+    const detected = detectIndentationOnModel(this, defaultInsertSpaces, defaultTabSize);
+    this.updateOptions({
+      insertSpaces: detected.insertSpaces,
+      tabSize: detected.tabSize,
+      indentSize: detected.tabSize,
+    });
   }
 
   getEOL(): '\n' | '\r\n' {
@@ -74,6 +166,8 @@ export class TextModel {
     const next: '\n' | '\r\n' =
       eol === '\r\n' || eol === EndOfLineSequence.CRLF ? '\r\n' : '\n';
     if (next === this.eol) return;
+    const prevFull = this.getFullModelRange();
+    const prevLen = this.getValue().length;
     this.eol = next;
     this.starts = [0];
     this.startsValid = 0;
@@ -84,10 +178,18 @@ export class TextModel {
       oldLineCount: this.lines.length,
       newLineCount: this.lines.length,
       full: true,
+      isFlush: true,
+      changes: [
+        {
+          range: prevFull,
+          rangeOffset: 0,
+          rangeLength: prevLen,
+          text: this.getValue(),
+        },
+      ],
     });
   }
 
-  /** Normalizes arbitrary `\r\n`, `\r`, or `\n` newlines in `text` to the model's active EOL. */
   normalizeEol(text: string): string {
     if (!text.includes('\r') && !text.includes('\n')) return text;
     const lf = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -102,6 +204,100 @@ export class TextModel {
     return this.lines[lineNumber - 1] ?? '';
   }
 
+  getLineLength(lineNumber: number): number {
+    return this.getLineContent(lineNumber).length;
+  }
+
+  getLineMinColumn(_lineNumber: number): number {
+    return 1;
+  }
+
+  getLineMaxColumn(lineNumber: number): number {
+    return this.getLineContent(lineNumber).length + 1;
+  }
+
+  getLineFirstNonWhitespaceColumn(lineNumber: number): number {
+    const line = this.getLineContent(lineNumber);
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i]!;
+      if (ch !== ' ' && ch !== '\t') return i + 1;
+    }
+    return 0;
+  }
+
+  getLineLastNonWhitespaceColumn(lineNumber: number): number {
+    const line = this.getLineContent(lineNumber);
+    for (let i = line.length - 1; i >= 0; i--) {
+      const ch = line[i]!;
+      if (ch !== ' ' && ch !== '\t') return i + 2;
+    }
+    return 0;
+  }
+
+  getLinesContent(): string[] {
+    return [...this.lines];
+  }
+
+  getFullModelRange(): IRange {
+    const lastLine = this.lines.length;
+    return {
+      startLineNumber: 1,
+      startColumn: 1,
+      endLineNumber: lastLine,
+      endColumn: this.lines[lastLine - 1]!.length + 1,
+    };
+  }
+
+  validatePosition(position: IPosition): IPosition {
+    return validatePositionOnModel(this, position);
+  }
+
+  validateRange(range: IRange): IRange {
+    return validateRangeOnModel(this, range);
+  }
+
+  modifyPosition(position: IPosition, offset: number): IPosition {
+    const valid = this.validatePosition(position);
+    const curOff = this.getOffsetAt(valid.lineNumber, valid.column);
+    return this.getPositionAt(curOff + offset);
+  }
+
+  getValueInRange(range: IRange): string {
+    const r = this.validateRange(range);
+    return this.textBetween(
+      { lineNumber: r.startLineNumber, column: r.startColumn },
+      { lineNumber: r.endLineNumber, column: r.endColumn },
+    );
+  }
+
+  getWordAtPosition(position: IPosition): IWordAtPosition | null {
+    return getWordAtPositionOnModel(this, position);
+  }
+
+  getWordUntilPosition(position: IPosition): IWordAtPosition {
+    return getWordUntilPositionOnModel(this, position);
+  }
+
+  findMatches(
+    searchString: string,
+    searchOnlyEditableRange: boolean | IRange | IRange[],
+    isRegex: boolean,
+    matchCase: boolean,
+    wordSeparators: string | null,
+    captureMatches: boolean,
+    limitResultCount?: number,
+  ): FindMatch[] {
+    return findMatchesOnModel(this, this.getValue(), searchString, searchOnlyEditableRange, isRegex, matchCase, wordSeparators, captureMatches, limitResultCount);
+  }
+
+  findNextMatch(searchString: string, searchStart: IPosition, isRegex: boolean, matchCase: boolean, wordSeparators: string | null, captureMatches: boolean): FindMatch | null {
+    return findNextMatchOnModel(this, this.getValue(), searchString, searchStart, isRegex, matchCase, wordSeparators, captureMatches);
+  }
+
+  findPreviousMatch(searchString: string, searchStart: IPosition, isRegex: boolean, matchCase: boolean, wordSeparators: string | null, captureMatches: boolean): FindMatch | null {
+    return findPreviousMatchOnModel(this, this.getValue(), searchString, searchStart, isRegex, matchCase, wordSeparators, captureMatches);
+  }
+
   getValue(): string {
     const c = this.valueCache;
     if (c && c.version === this.versionId) return c.value;
@@ -112,6 +308,8 @@ export class TextModel {
 
   setValue(value: string, clearHistory = true): void {
     const oldCount = this.lines.length;
+    const oldRange = this.getFullModelRange();
+    const oldLen = this.lines.join(this.eol).length;
     if (value.includes('\r\n')) {
       this.eol = '\r\n';
     } else if (value.includes('\n')) {
@@ -126,11 +324,21 @@ export class TextModel {
     this.valueCache = null;
     if (clearHistory) this.editStack.clear();
     else this.editStack.seal();
+    const stored = this.lines.join(this.eol);
     this.bump({
       startLine: 1,
       oldLineCount: oldCount,
       newLineCount: this.lines.length,
       full: true,
+      isFlush: true,
+      changes: [
+        {
+          range: oldRange,
+          rangeOffset: 0,
+          rangeLength: oldLen,
+          text: stored,
+        },
+      ],
     });
   }
 
@@ -153,7 +361,6 @@ export class TextModel {
     const li = Math.min(lineNumber, n) - 1;
     this.ensureStarts(li);
     const line = this.lines[li]!;
-    // Past the last line → end of document
     const col = lineNumber > n ? line.length : Math.max(0, Math.min(column - 1, line.length));
     return this.starts[li]! + col;
   }
@@ -166,7 +373,6 @@ export class TextModel {
     const total = s[n - 1]! + lastLen;
     if (offset <= 0) return { lineNumber: 1, column: 1 };
     if (offset >= total) return { lineNumber: n, column: lastLen + 1 };
-    // largest line index whose start <= offset
     let lo = 0;
     let hi = n - 1;
     while (lo < hi) {
@@ -174,13 +380,11 @@ export class TextModel {
       if (s[mid]! <= offset) lo = mid;
       else hi = mid - 1;
     }
-    // Clamp if offset landed between \r and \n of a CRLF break
     const lineLen = this.lines[lo]!.length;
     const col = Math.min(offset - s[lo]!, lineLen) + 1;
     return { lineNumber: lo + 1, column: col };
   }
 
-  /** Text between two (already clamped) positions, without building the whole value. */
   private textBetween(
     s: { lineNumber: number; column: number },
     e: { lineNumber: number; column: number },
@@ -202,20 +406,17 @@ export class TextModel {
   ): void {
     const sPos = this.getPositionAt(Math.max(0, edit.startOffset));
     const ePos = this.getPositionAt(Math.max(edit.endOffset, edit.startOffset, 0));
-    // Offsets clamped to the document — the undo stack must record what was REALLY replaced
     const startOffset = this.getOffsetAt(sPos.lineNumber, sPos.column);
     const endOffset = this.getOffsetAt(ePos.lineNumber, ePos.column);
     const replaced = this.textBetween(sPos, ePos);
     const beforeSel = record ? this.selCapture?.() ?? undefined : undefined;
 
-    // Normalize inserted text to model's active EOL
     const normLf = edit.text.includes('\r')
       ? edit.text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
       : edit.text;
     const inserted = normLf.split('\n');
     const storedText = this.eol === '\r\n' ? inserted.join('\r\n') : normLf;
 
-    // Splice only the touched lines instead of join + split of the whole document
     const head = this.lines[sPos.lineNumber - 1]!.slice(0, sPos.column - 1);
     const tail = this.lines[ePos.lineNumber - 1]!.slice(ePos.column - 1);
     const block: string[] = new Array(inserted.length);
@@ -225,25 +426,38 @@ export class TextModel {
 
     const oldLineCount = ePos.lineNumber - sPos.lineNumber + 1;
     if (block.length === oldLineCount) {
-      // same shape (typing, in-line replace) — overwrite in place, no splice
       for (let i = 0; i < block.length; i++) this.lines[sPos.lineNumber - 1 + i] = block[i]!;
     } else if (block.length <= 4096) {
       this.lines.splice(sPos.lineNumber - 1, oldLineCount, ...block);
     } else {
-      // huge paste: avoid spread-argument limits
       const before = this.lines.slice(0, sPos.lineNumber - 1);
       const after = this.lines.slice(ePos.lineNumber);
       this.lines = before.concat(block, after);
     }
 
-    // Lines before the edit didn't move → keep their cached offsets
     if (this.startsValid > sPos.lineNumber - 1) this.startsValid = sPos.lineNumber - 1;
     this.valueCache = null;
+
+    const delta: IModelContentChange = {
+      range: {
+        startLineNumber: sPos.lineNumber,
+        startColumn: sPos.column,
+        endLineNumber: ePos.lineNumber,
+        endColumn: ePos.column,
+      },
+      rangeOffset: startOffset,
+      rangeLength: endOffset - startOffset,
+      text: storedText,
+    };
 
     this.bump({
       startLine: sPos.lineNumber,
       oldLineCount,
       newLineCount: block.length,
+      changes: [delta],
+      isUndoing: this.applySource === 'undo',
+      isRedoing: this.applySource === 'redo',
+      isFlush: false,
     });
 
     if (record) {
@@ -266,18 +480,43 @@ export class TextModel {
     }
   }
 
-  /**
-   * Close the current undo step: the next edit starts a new one (Monaco `pushStackElement`).
-   * Call it when something other than an edit should separate two typing bursts.
-   */
+  /** Apply Monaco-style `IIdentifiedSingleEditOperation[]` in reverse document order as one undo step. */
+  applyEdits(operations: readonly IIdentifiedSingleEditOperation[], record = true): IIdentifiedSingleEditOperation[] {
+    const resolved = operations
+      .map((op) => {
+        const range = this.validateRange(op.range);
+        const startOffset = this.getOffsetAt(range.startLineNumber, range.startColumn);
+        const endOffset = this.getOffsetAt(range.endLineNumber, range.endColumn);
+        return { range, startOffset, endOffset, text: op.text ?? '' };
+      })
+      .sort((a, b) => b.startOffset - a.startOffset || b.endOffset - a.endOffset);
+
+    const inverses: IIdentifiedSingleEditOperation[] = [];
+    const run = () => {
+      for (const op of resolved) {
+        const oldText = this.getValueInRange(op.range);
+        this.applyEdit({ startOffset: op.startOffset, endOffset: op.endOffset, text: op.text }, record);
+        const newEnd = this.getPositionAt(op.startOffset + this.normalizeEol(op.text).length);
+        inverses.push({
+          range: {
+            startLineNumber: op.range.startLineNumber,
+            startColumn: op.range.startColumn,
+            endLineNumber: newEnd.lineNumber,
+            endColumn: newEnd.column,
+          },
+          text: oldText,
+        });
+      }
+    };
+    if (record) this.transact(run);
+    else run();
+    return inverses;
+  }
+
   pushStackElement(): void {
     this.editStack.seal();
   }
 
-  /**
-   * Run several edits as ONE undo step (Replace All, multi-cursor style API edits, formatters…).
-   * Nestable. Undo restores everything and the selection from before the first edit.
-   */
   transact<T>(fn: () => T): T {
     this.editStack.beginGroup();
     try {
@@ -291,13 +530,22 @@ export class TextModel {
     this.selCapture = fn;
   }
 
-  /** Undo and return stack entry (for selection restore). */
   undoEntry() {
-    return this.editStack.undo(this);
+    this.applySource = 'undo';
+    try {
+      return this.editStack.undo(this);
+    } finally {
+      this.applySource = 'normal';
+    }
   }
 
   redoEntry() {
-    return this.editStack.redo(this);
+    this.applySource = 'redo';
+    try {
+      return this.editStack.redo(this);
+    } finally {
+      this.applySource = 'normal';
+    }
   }
 
   undo(): boolean {
@@ -308,9 +556,6 @@ export class TextModel {
     return this.redoEntry() != null;
   }
 
-  /**
-   * Replace [start, end) with `text` as ONE undo step.
-   */
   replaceRange(
     startOffset: number,
     endOffset: number,
@@ -322,12 +567,10 @@ export class TextModel {
     this.applyEdit({ startOffset, endOffset, text }, true, afterSel, kind);
   }
 
-  /** `kind: 'typing'` lets consecutive keystrokes merge into one undo step. */
   insert(offset: number, text: string, kind: UndoKind = 'other'): void {
     this.applyEdit({ startOffset: offset, endOffset: offset, text }, true, undefined, kind);
   }
 
-  /** `kind: 'deleteLeft' | 'deleteRight'` lets consecutive Backspace / Delete merge. */
   delete(startOffset: number, endOffset: number, kind: UndoKind = 'other'): void {
     if (endOffset <= startOffset) return;
     this.applyEdit({ startOffset, endOffset, text: '' }, true, undefined, kind);

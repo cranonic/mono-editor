@@ -9,6 +9,12 @@ export interface ViewZoneSpec {
   heightPx: number;
 }
 
+export interface ResolvedViewZone {
+  id: string;
+  afterVisualRow: number;
+  heightPx: number;
+}
+
 export interface MaxCharsCache {
   version: number;
   lines: number;
@@ -22,9 +28,44 @@ export function resolveViewZoneAfterRow(
   projection: ViewLineProjection,
 ): number {
   if (!viewZone) return -1;
+  if (viewZone.afterLineNumber <= 0) return -1;
   const line = Math.max(1, Math.min(model.getLineCount(), viewZone.afterLineNumber));
   const lineLen = model.getLineContent(line).length;
   return projection.modelToVisual(line, lineLen + 1).visualRow;
+}
+
+export function resolveAllViewZones(
+  zones: readonly ViewZoneSpec[],
+  model: TextModel,
+  projection: ViewLineProjection,
+): ResolvedViewZone[] {
+  if (!zones.length) return [];
+  const out: ResolvedViewZone[] = [];
+  for (const z of zones) {
+    if (z.heightPx <= 0) continue;
+    const afterVisualRow =
+      z.afterLineNumber <= 0
+        ? -1
+        : resolveViewZoneAfterRow(z, model, projection);
+    out.push({ id: z.id, afterVisualRow, heightPx: z.heightPx });
+  }
+  out.sort((a, b) => a.afterVisualRow - b.afterVisualRow);
+  return out;
+}
+
+export function sumViewZonesAboveRow(row: number, zones: readonly ResolvedViewZone[]): number {
+  if (!zones.length) return 0;
+  let total = 0;
+  for (const z of zones) {
+    if (row > z.afterVisualRow) total += z.heightPx;
+  }
+  return total;
+}
+
+export function totalViewZonesHeight(zones: readonly { heightPx: number }[]): number {
+  let total = 0;
+  for (const z of zones) total += Math.max(0, z.heightPx);
+  return total;
 }
 
 export function computeRowDocTop(
@@ -33,8 +74,14 @@ export function computeRowDocTop(
   topInsetPx: number,
   viewZone: ViewZoneSpec | null,
   afterRow: number,
+  extraZones?: readonly ResolvedViewZone[],
 ): number {
-  const zoneExtra = viewZone && afterRow >= 0 && row > afterRow ? viewZone.heightPx : 0;
+  let zoneExtra = 0;
+  if (extraZones && extraZones.length) {
+    zoneExtra = sumViewZonesAboveRow(row, extraZones);
+  } else if (viewZone && afterRow >= 0 && row > afterRow) {
+    zoneExtra = viewZone.heightPx;
+  }
   return topInsetPx + metrics.paddingTop + row * metrics.lineHeight + zoneExtra;
 }
 
@@ -45,9 +92,16 @@ export function computeScrollHeight(
   viewZone: ViewZoneSpec | null,
   scrollBeyondLastLine: boolean,
   cssHeight: number,
+  allZones?: readonly ViewZoneSpec[],
+  bottomInsetPx = 0,
 ): number {
-  const zoneH = viewZone ? viewZone.heightPx : 0;
-  const contentH = topInsetPx + visualLineCount * metrics.lineHeight + metrics.paddingTop + zoneH;
+  const zoneH = allZones && allZones.length
+    ? totalViewZonesHeight(allZones)
+    : viewZone
+      ? viewZone.heightPx
+      : 0;
+  const contentH =
+    topInsetPx + visualLineCount * metrics.lineHeight + metrics.paddingTop + zoneH + bottomInsetPx;
   if (!scrollBeyondLastLine || cssHeight <= 0) return contentH;
   const extra = Math.max(0, cssHeight - metrics.lineHeight - metrics.paddingTop - topInsetPx);
   return contentH + extra;

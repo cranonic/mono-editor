@@ -1,4 +1,5 @@
 import { rgbaToCss } from '../../../common/color/colorFormat';
+import { MarkerSeverity, MarkerTag, type IMarker } from '../../../common/decorations/types';
 import type { SemanticTokenSpan } from '../../../common/languages/semanticTokens';
 import { INLAY_CHIP_PAD_X } from '../../../common/virtualText';
 import {
@@ -16,6 +17,7 @@ interface StyledSpan {
   bold?: boolean;
   strikethrough?: boolean;
   underline?: boolean;
+  dimmed?: boolean;
 }
 
 function buildFontString(size: number, family: string, italic?: boolean, bold?: boolean): string {
@@ -23,10 +25,6 @@ function buildFontString(size: number, family: string, italic?: boolean, bold?: 
   return `${prefix}${size}px ${family}`;
 }
 
-/**
- * Merges optional LSP semantic token spans over Monarch syntax tokens on a line.
- * Semantic tokens override color and add font-style modifiers (bold, italic, strikethrough).
- */
 function resolveLineSpans(
   contentLen: number,
   tokens: readonly { startColumn: number; endColumn: number; type: string }[],
@@ -50,10 +48,8 @@ function resolveLineSpans(
     }
     if (col <= contentLen) base.push({ start: col, end: contentLen + 1, color: defaultFg });
   }
-
   if (!semantics.length) return base;
 
-  // Split base spans around semantic overrides
   let spans = base;
   for (const sem of semantics) {
     const semColor = tokenColors[sem.tokenType] ?? defaultFg;
@@ -63,9 +59,7 @@ function resolveLineSpans(
         next.push(sp);
         continue;
       }
-      if (sem.startColumn > sp.start) {
-        next.push({ ...sp, end: sem.startColumn });
-      }
+      if (sem.startColumn > sp.start) next.push({ ...sp, end: sem.startColumn });
       const oStart = Math.max(sp.start, sem.startColumn);
       const oEnd = Math.min(sp.end, sem.endColumn);
       if (oEnd > oStart) {
@@ -79,32 +73,157 @@ function resolveLineSpans(
           underline: sem.underline,
         });
       }
-      if (sem.endColumn < sp.end) {
-        next.push({ ...sp, start: sem.endColumn });
-      }
+      if (sem.endColumn < sp.end) next.push({ ...sp, start: sem.endColumn });
     }
     spans = next;
   }
   return spans;
 }
 
+function applyMarkerTags(
+  spans: StyledSpan[],
+  line: number,
+  contentLen: number,
+  markers: readonly IMarker[],
+): StyledSpan[] {
+  let out = spans;
+  for (const mk of markers) {
+    if (!mk.tags?.length) continue;
+    if (line < mk.startLineNumber || line > mk.endLineNumber) continue;
+    const isUnnecessary = mk.tags.includes(MarkerTag.Unnecessary);
+    const isDeprecated = mk.tags.includes(MarkerTag.Deprecated);
+    if (!isUnnecessary && !isDeprecated) continue;
+    const sCol = line === mk.startLineNumber ? mk.startColumn : 1;
+    const eCol = line === mk.endLineNumber ? mk.endColumn : contentLen + 1;
+    const next: StyledSpan[] = [];
+    for (const sp of out) {
+      if (eCol <= sp.start || sCol >= sp.end) {
+        next.push(sp);
+        continue;
+      }
+      if (sCol > sp.start) next.push({ ...sp, end: sCol });
+      const oStart = Math.max(sp.start, sCol);
+      const oEnd = Math.min(sp.end, eCol);
+      if (oEnd > oStart) {
+        next.push({
+          ...sp,
+          start: oStart,
+          end: oEnd,
+          dimmed: sp.dimmed || isUnnecessary,
+          strikethrough: sp.strikethrough || isDeprecated,
+        });
+      }
+      if (eCol < sp.end) next.push({ ...sp, start: eCol });
+    }
+    out = next;
+  }
+  return out;
+}
+
+function paintWhitespaceChars(
+  ctx: CanvasRenderingContext2D,
+  f: FrameContext,
+  content: string,
+  seg: ReturnType<FrameContext['getVisualLine']>,
+  y: number,
+  lineHeight: number,
+): void {
+  const mode = f.opts.renderWhitespace ?? 'none';
+  if (mode === 'none' || !content.length) return;
+  const line = seg.modelLine;
+  const trailingStart = content.replace(/[ \t]+$/, '').length;
+  let leadingEnd = 0;
+  while (leadingEnd < content.length && (content[leadingEnd] === ' ' || content[leadingEnd] === '\t')) {
+    leadingEnd++;
+  }
+
+  ctx.fillStyle = f.dark ? 'rgba(255, 255, 255, 0.24)' : 'rgba(15, 23, 42, 0.24)';
+  ctx.strokeStyle = ctx.fillStyle;
+  ctx.lineWidth = 1;
+  const midY = Math.round(y + lineHeight / 2) + 0.5;
+
+  for (let i = seg.startCol - 1; i < Math.min(content.length, seg.endCol - 1); i++) {
+    const ch = content[i]!;
+    if (ch !== ' ' && ch !== '\t') continue;
+    const col = i + 1;
+    let draw = false;
+    if (mode === 'all') {
+      draw = true;
+    } else if (mode === 'trailing') {
+      draw = i >= trailingStart;
+    } else if (mode === 'boundary') {
+      const isLeadOrTrail = i < leadingEnd || i >= trailingStart;
+      const isDoubleSpace = ch === ' ' && (content[i - 1] === ' ' || content[i + 1] === ' ');
+      draw = isLeadOrTrail || ch === '\t' || isDoubleSpace;
+    } else if (mode === 'selection') {
+      draw = f.orderedSelections.some((os) => {
+        if (os.isEmpty) return false;
+        if (line < os.startLine || line > os.endLine) return false;
+        if (line === os.startLine && col < os.startCol) return false;
+        if (line === os.endLine && col >= os.endCol) return false;
+        return true;
+      });
+    }
+    if (!draw) continue;
+
+    const x1 = f.segX(content, seg, col);
+    const x2 = f.segX(content, seg, col + 1);
+    if (ch === ' ') {
+      ctx.beginPath();
+      ctx.arc((x1 + x2) / 2, midY, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      const arrowEnd = Math.max(x1 + 4, x2 - 3);
+      ctx.beginPath();
+      ctx.moveTo(x1 + 2, midY);
+      ctx.lineTo(arrowEnd, midY);
+      ctx.moveTo(arrowEnd - 3, midY - 2.5);
+      ctx.lineTo(arrowEnd, midY);
+      ctx.lineTo(arrowEnd - 3, midY + 2.5);
+      ctx.stroke();
+    }
+  }
+}
+
 /**
- * Paints syntax-highlighted text runs (Monarch + Semantic Token overlay),
- * inline & multiline wrap-aware Ghost Text, Inlay Hint chips, inline Color Swatches,
- * clickable Link underlines, and collapsed fold placeholder badges.
+ * Paints syntax-highlighted text runs (Monarch + Semantic Token overlay + MarkerTags),
+ * whitespace glyphs, inline & multiline Ghost Text, Inlay Hints, Color Swatches,
+ * Error Lens suffixes, clickable Link underlines, and collapsed fold badges.
  */
 export const textPass: RenderPass = {
   name: 'text',
   paint(ctx: CanvasRenderingContext2D, f: FrameContext): void {
-    const { model, cssWidth, cssHeight, metrics, theme, getLineTokens, folding, ghostTextItalic } = f.opts;
+    const {
+      model,
+      cssWidth,
+      cssHeight,
+      metrics,
+      theme,
+      getLineTokens,
+      folding,
+      ghostTextItalic,
+      markers = [],
+      errorLens,
+    } = f.opts;
     const { lineHeight, fontSize, fontFamily } = metrics;
     const baseFont = `${fontSize}px ${fontFamily}`;
     const ghostFg =
       theme.ghostTextForeground ??
       (f.dark ? 'rgba(156, 163, 175, 0.56)' : 'rgba(100, 116, 139, 0.62)');
     const inlayFg = theme.inlayHintForeground ?? (f.dark ? '#969696' : '#64748b');
-    const inlayBg = theme.inlayHintBackground ?? (f.dark ? 'rgba(128,128,128,0.15)' : 'rgba(100,116,139,0.10)');
+    const inlayBg =
+      theme.inlayHintBackground ?? (f.dark ? 'rgba(128,128,128,0.15)' : 'rgba(100,116,139,0.10)');
     const linkFg = theme.linkForeground ?? (f.dark ? '#3794ff' : '#006ab1');
+
+    // Index strongest marker per line for Error Lens when enabled
+    let lensByLine: Map<number, IMarker> | null = null;
+    if (errorLens?.enabled && markers.length) {
+      lensByLine = new Map();
+      for (const mk of markers) {
+        const cur = lensByLine.get(mk.startLineNumber);
+        if (!cur || mk.severity > cur.severity) lensByLine.set(mk.startLineNumber, mk);
+      }
+    }
 
     ctx.save();
     ctx.beginPath();
@@ -117,7 +236,6 @@ export const textPass: RenderPass = {
       const seg = f.getVisualLine(row);
       const textY = y + (lineHeight - fontSize) / 2;
 
-      // ── Virtual multiline Ghost Text continuation row (blank gutter) ──
       if (seg.isVirtualGhost) {
         const gText = seg.ghostText ?? '';
         if (gText) {
@@ -151,7 +269,6 @@ export const textPass: RenderPass = {
         ? lineBrackets.filter((b) => b.column + 1 >= seg.startCol && b.column + 1 < seg.endCol)
         : [];
 
-      // Collect all split columns where virtual inline elements cause X jumps
       const splitCols: number[] = [];
       for (const cm of segColors) splitCols.push(cm.startColumn);
       for (const h of segInlays) splitCols.push(h.column);
@@ -162,11 +279,18 @@ export const textPass: RenderPass = {
         a0: number,
         b0: number,
         colorStyle: string,
-        styleFlags?: { italic?: boolean; bold?: boolean; strikethrough?: boolean; underline?: boolean },
+        styleFlags?: {
+          italic?: boolean;
+          bold?: boolean;
+          strikethrough?: boolean;
+          underline?: boolean;
+          dimmed?: boolean;
+        },
       ) => {
         if (b0 <= a0) return;
         const customFont = styleFlags?.italic || styleFlags?.bold;
         if (customFont) ctx.font = buildFontString(fontSize, fontFamily, styleFlags?.italic, styleFlags?.bold);
+        if (styleFlags?.dimmed) ctx.globalAlpha = 0.5;
 
         const drawRun = (fromCol: number, toCol: number) => {
           const slice = content.slice(fromCol - 1, toCol - 1);
@@ -206,6 +330,7 @@ export const textPass: RenderPass = {
           if (cur < b0) drawRun(cur, b0);
         }
 
+        if (styleFlags?.dimmed) ctx.globalAlpha = 1;
         if (customFont) ctx.font = baseFont;
       };
 
@@ -214,8 +339,14 @@ export const textPass: RenderPass = {
         const b0 = Math.min(sp.end, seg.endCol);
         if (b0 <= a0) return;
         const flags =
-          sp.italic || sp.bold || sp.strikethrough || sp.underline
-            ? { italic: sp.italic, bold: sp.bold, strikethrough: sp.strikethrough, underline: sp.underline }
+          sp.italic || sp.bold || sp.strikethrough || sp.underline || sp.dimmed
+            ? {
+                italic: sp.italic,
+                bold: sp.bold,
+                strikethrough: sp.strikethrough,
+                underline: sp.underline,
+                dimmed: sp.dimmed,
+              }
             : undefined;
         if (!segBrackets.length) {
           paintPlainSlice(a0, b0, sp.color, flags);
@@ -233,10 +364,14 @@ export const textPass: RenderPass = {
         if (cur < b0) paintPlainSlice(cur, b0, sp.color, flags);
       };
 
-      const spans = resolveLineSpans(content.length, tokens, semantics, f.tokenColors, theme.foreground);
+      let spans = resolveLineSpans(content.length, tokens, semantics, f.tokenColors, theme.foreground);
+      if (markers.length) spans = applyMarkerTags(spans, line, content.length, markers);
       for (const sp of spans) emitSpan(sp);
 
-      // ── Inline Color Swatches ──
+      // Whitespace rendering (dots & tab arrows)
+      paintWhitespaceChars(ctx, f, content, seg, y, lineHeight);
+
+      // Inline Color Swatches
       if (segColors.length) {
         const swatchY = Math.round(y + (lineHeight - COLOR_SWATCH_SIZE) / 2);
         for (const cm of segColors) {
@@ -268,7 +403,7 @@ export const textPass: RenderPass = {
         }
       }
 
-      // ── Inline Inlay Hint Chips ──
+      // Inline Inlay Hint Chips
       if (segInlays.length) {
         const hintFontSize = Math.max(10, Math.round(fontSize * 0.86));
         const hintFont = `${hintFontSize}px ${fontFamily}`;
@@ -292,18 +427,12 @@ export const textPass: RenderPass = {
           ctx.fillStyle = inlayFg;
           ctx.fillText(hint.text, startX + INLAY_CHIP_PAD_X, hintTextY);
 
-          f.inlayHits.push({
-            hint,
-            x: startX,
-            y: chipY,
-            w: hint.chipWidthPx,
-            h: chipH,
-          });
+          f.inlayHits.push({ hint, x: startX, y: chipY, w: hint.chipWidthPx, h: chipH });
         }
         ctx.font = baseFont;
       }
 
-      // ── Inline Ghost Text Runs (any column: mid-line or end-of-line) ──
+      // Inline Ghost Text Runs
       if (segGhosts.length) {
         const sameColCount = new Map<number, number>();
         for (const g of segGhosts) {
@@ -318,7 +447,31 @@ export const textPass: RenderPass = {
         }
       }
 
-      // ── Document Links (subtle underline + hit rect) ──
+      // Inline Error Lens diagnostic suffix at end of line
+      if (lensByLine && seg.isLastSegment) {
+        const mk = lensByLine.get(line);
+        if (mk) {
+          const maxLen = errorLens?.maxLength ?? 90;
+          const msg =
+            mk.message.length > maxLen ? mk.message.slice(0, maxLen - 1) + '…' : mk.message;
+          const endX = f.segX(content, seg, seg.endCol) + 18;
+          if (endX < cssWidth - 20) {
+            const lensColor =
+              mk.severity >= MarkerSeverity.Error
+                ? (f.dark ? 'rgba(248, 113, 113, 0.84)' : 'rgba(220, 38, 38, 0.84)')
+                : mk.severity >= MarkerSeverity.Warning
+                  ? (f.dark ? 'rgba(251, 191, 36, 0.84)' : 'rgba(180, 83, 9, 0.84)')
+                  : (f.dark ? 'rgba(96, 165, 250, 0.82)' : 'rgba(37, 99, 235, 0.82)');
+            const lensFontSize = Math.max(11, fontSize - 1);
+            ctx.font = `italic ${lensFontSize}px ${fontFamily}`;
+            ctx.fillStyle = lensColor;
+            ctx.fillText(`  ${msg}`, endX, y + (lineHeight - lensFontSize) / 2);
+            ctx.font = baseFont;
+          }
+        }
+      }
+
+      // Document Links
       const lineLinks = f.linksForLine(line);
       if (lineLinks.length) {
         const ulY = Math.round(y + lineHeight - 2.5) + 0.5;
@@ -346,7 +499,7 @@ export const textPass: RenderPass = {
         }
       }
 
-      // ── Collapsed Fold Placeholder Badge ──
+      // Collapsed Fold Placeholder Badge
       if (folding?.enabled && seg.isLastSegment && folding.isCollapsed(line)) {
         const badgeX = f.segX(content, seg, seg.endCol) + 6;
         const badgeW = 24;
@@ -367,7 +520,6 @@ export const textPass: RenderPass = {
           ctx.arc(badgeX + badgeW / 2 + di * 5, dotY, 1.25, 0, Math.PI * 2);
           ctx.fill();
         }
-
         f.foldHits.push({
           lineNumber: line,
           x: badgeX - 2,

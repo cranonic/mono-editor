@@ -251,4 +251,26 @@ export const languages = {
   registerColorProvider(languageId: string, provider: DocumentColorProvider): MonoDisposable {
     return languageFeatures.registerColorProvider(languageId, provider);
   },
+
+  registerCodeLensProvider(
+    languageId: string,
+    provider: import('../common/languages/providers/extendedTypes').CodeLensProvider,
+  ): MonoDisposable {
+    return languageFeatures.registerCodeLensProvider(languageId, provider);
+  },
+
+  registerLinkedEditingRangeProvider(
+    languageId: string,
+    provider: import('../common/languages/providers/extendedTypes').LinkedEditingRangeProvider,
+  ): MonoDisposable {
+    return languageFeatures.registerLinkedEditingRangeProvider(languageId, provider);
+  },
+
+  onLanguage(languageId: string, callback: () => void): MonoDisposable {
+    return languageFeatures.onLanguage(languageId, callback);
+  },
+
+  getEncodedLanguageId(languageId: string): number {
+    return languageFeatures.getEncodedLanguageId(languageId);
+  },
 };

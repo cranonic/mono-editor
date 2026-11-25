@@ -17,11 +17,11 @@ export function createYamlTokensProvider(languageId = 'yaml'): MonoTokensProvide
       { pattern: /[&*][A-Za-z0-9_-]+/, type: 'type' },
       // tags (e.g. !!str)
       { pattern: /!!?[A-Za-z0-9_/-]+/, type: 'attribute' },
-      // strings
-      { pattern: /"(?:\\.|[^"\\])*"/, type: 'string' },
-      { pattern: /'(?:''|[^'])*'/, type: 'string' },
+      // strings (unclosed-safe to prevent O(N^2) backtracking)
+      { pattern: /"(?:\\.|[^"\\])*"?/, type: 'string' },
+      { pattern: /'(?:''|[^'])*'?/, type: 'string' },
       // mapping keys before colon
-      { pattern: /[A-Za-z0-9_.-]+(?=\s*:(?:\s|$))/, type: 'property' },
+      { pattern: /[A-Za-z0-9_.-]+(?=[ \t]*:(?:\s|$))/, type: 'property' },
       // numbers / ISO dates
       { pattern: /\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?\b/, type: 'number' },
       { pattern: /0[xX][0-9a-fA-F]+/, type: 'number' },

@@ -1,38 +1,72 @@
 import type { BracketColorizer } from '../../common/brackets';
-import type { MonoEditorOptions } from '../../common/config/editorOptions';
+import type {
+  CursorBlinkingMode,
+  CursorStyleMode,
+  MonoEditorOptions,
+  MonoErrorLensOptions,
+  MonoLineNumbers,
+  MonoMobileQuickKeysOptions,
+  RenderLineHighlightMode,
+  RenderWhitespaceMode,
+} from '../../common/config/editorOptions';
 import type { MonoEditorTheme } from '../../common/config/themeTypes';
-import type { TokenizationSupport } from '../../common/languages/tokenization/TokenizationSupport';
-import { getRegisteredStandaloneModel } from '../../common/model/modelRegistry';
+import type { SelectionState } from '../../common/core/SelectionState';
 import type { Location } from '../../common/languages/providers/types';
+import type { TokenizationSupport } from '../../common/languages/tokenization/TokenizationSupport';
+import type { TextModel } from '../../common/model/TextModel';
+import { getRegisteredStandaloneModel } from '../../common/model/modelRegistry';
+import type { FoldingModel } from '../../common/viewModel/FoldingModel';
+import type { CommandService } from '../../platform/commands/CommandService';
 import { monoThemeService, registerBuiltinThemes, resolveWidgetTheme } from '../../platform/theme';
 import type { ResolvedWidgetTheme } from '../../platform/theme/widgetTheme';
 import type { InputController } from '../input/InputController';
+import type { PointerInteractKind } from '../input/pointer/PointerController';
 import type { ViewController } from '../view/ViewController';
+import type { HandleVisibility } from '../view/viewParts/HandleVisibility';
 import type { MinimapController } from '../view/viewParts/MinimapController';
 import type { OverlayScrollbar } from '../view/viewParts/OverlayScrollbar';
-import type { CommandService } from '../../platform/commands/CommandService';
 import type { IEditorContribution } from './editorTypes';
-import type { ModelController } from './modelController';
+import type { ModelController, SavedModelViewState } from './modelController';
 
 export interface EditorOptionState {
   fontFamily: string;
   fontSize: number;
   lineHeight: number;
   lineNumbers: boolean;
+  lineNumbersMode: MonoLineNumbers;
   lineNumbersMinChars: number;
   tabSize: number;
+  insertSpaces: boolean;
+  detectIndentation: boolean;
+  trimAutoWhitespace: boolean;
+  stickyTabStops: boolean;
+  emptySelectionClipboard: boolean;
+  formatOnPaste: boolean;
   readOnly: boolean;
   foldingEnabled: boolean;
+  glyphMargin: boolean;
+  renderWhitespace: RenderWhitespaceMode;
+  rulers: number[];
+  renderLineHighlight: RenderLineHighlightMode;
+  cursorStyle: CursorStyleMode;
+  cursorBlinking: CursorBlinkingMode;
+  cursorSurroundingLines: number;
+  linkedEditing: boolean;
+  codeLens: boolean;
+  errorLens: boolean | MonoErrorLensOptions;
+  pinchZoom: boolean;
+  mobileQuickKeys: boolean | MonoMobileQuickKeysOptions;
+  ariaLabel: string;
+  accessibilitySupport: 'auto' | 'on' | 'off';
   theme: MonoEditorTheme;
+  rawOptions: MonoEditorOptions;
 }
 
 export function resolveEditorWidgetTheme(editorTheme: MonoEditorTheme): ResolvedWidgetTheme {
   let colors: Record<string, string> = {};
   try {
     colors = monoThemeService.resolve().colors;
-  } catch {
-    /* no theme registered */
-  }
+  } catch { /* no theme registered */ }
   return resolveWidgetTheme(editorTheme, colors);
 }
 
@@ -80,9 +114,8 @@ export function applyEditorOptionsPatch(
     notifyContributions: (patch: Partial<MonoEditorOptions>) => void;
   },
 ): void {
-  if (options.undoGroupIdleMs != null) {
-    deps.modelCtrl.model.editStack.groupIdleMs = Math.max(0, options.undoGroupIdleMs);
-  }
+  state.rawOptions = { ...state.rawOptions, ...options };
+  if (options.undoGroupIdleMs != null) deps.modelCtrl.model.editStack.groupIdleMs = Math.max(0, options.undoGroupIdleMs);
   if (options.fontFamily != null) state.fontFamily = options.fontFamily;
   if (options.fontSize != null) {
     state.fontSize = options.fontSize;
@@ -93,15 +126,77 @@ export function applyEditorOptionsPatch(
     state.tabSize = options.tabSize;
     deps.input.setTabSize(options.tabSize);
     deps.view.setTabSize(options.tabSize);
+    deps.modelCtrl.model.updateOptions({ tabSize: options.tabSize });
   }
+  if (options.insertSpaces != null) {
+    state.insertSpaces = options.insertSpaces;
+    deps.input.setInsertSpaces(options.insertSpaces);
+    deps.modelCtrl.model.updateOptions({ insertSpaces: options.insertSpaces });
+  }
+  if (options.detectIndentation != null) state.detectIndentation = options.detectIndentation;
+  if (options.trimAutoWhitespace != null) {
+    state.trimAutoWhitespace = options.trimAutoWhitespace;
+    deps.input.setTrimAutoWhitespace(options.trimAutoWhitespace);
+    deps.modelCtrl.model.updateOptions({ trimAutoWhitespace: options.trimAutoWhitespace });
+  }
+  if (options.stickyTabStops != null) {
+    state.stickyTabStops = options.stickyTabStops;
+    deps.input.setStickyTabStops(options.stickyTabStops);
+  }
+  if (options.emptySelectionClipboard != null) state.emptySelectionClipboard = options.emptySelectionClipboard;
+  if (options.formatOnPaste != null) state.formatOnPaste = options.formatOnPaste;
   if (options.lineNumbers != null) {
-    state.lineNumbers = options.lineNumbers === 'on';
+    state.lineNumbersMode = options.lineNumbers;
+    state.lineNumbers = options.lineNumbers !== 'off';
+    deps.view.setDisplayOptions({ lineNumbersMode: options.lineNumbers });
     deps.view.projection.invalidate();
   }
   if (options.lineNumbersMinChars != null) {
     state.lineNumbersMinChars = Math.max(1, Math.floor(options.lineNumbersMinChars));
     deps.view.projection.invalidate();
   }
+  if (options.glyphMargin != null) {
+    state.glyphMargin = options.glyphMargin;
+    deps.view.setDisplayOptions({ glyphMargin: options.glyphMargin });
+  }
+  if (options.renderWhitespace != null) {
+    state.renderWhitespace = options.renderWhitespace;
+    deps.view.setDisplayOptions({ renderWhitespace: options.renderWhitespace });
+  }
+  if (options.rulers != null) {
+    state.rulers = [...options.rulers];
+    deps.view.setDisplayOptions({ rulers: state.rulers });
+  }
+  if (options.renderLineHighlight != null) {
+    state.renderLineHighlight = options.renderLineHighlight;
+    deps.view.setDisplayOptions({ renderLineHighlight: options.renderLineHighlight });
+  }
+  if (options.cursorStyle != null) {
+    state.cursorStyle = options.cursorStyle;
+    deps.view.setDisplayOptions({ cursorStyle: options.cursorStyle });
+  }
+  if (options.cursorBlinking != null) {
+    state.cursorBlinking = options.cursorBlinking;
+    deps.view.setDisplayOptions({ cursorBlinking: options.cursorBlinking });
+  }
+  if (options.cursorSurroundingLines != null) {
+    state.cursorSurroundingLines = Math.max(0, options.cursorSurroundingLines);
+    deps.view.setDisplayOptions({ cursorSurroundingLines: state.cursorSurroundingLines });
+  }
+  if (options.linkedEditing != null) state.linkedEditing = options.linkedEditing;
+  if (options.codeLens != null) state.codeLens = options.codeLens;
+  if (options.errorLens !== undefined) {
+    state.errorLens = options.errorLens;
+    deps.view.setDisplayOptions({ errorLens: options.errorLens });
+  }
+  if (options.pinchZoom != null) state.pinchZoom = options.pinchZoom;
+  if (options.mobileQuickKeys !== undefined) state.mobileQuickKeys = options.mobileQuickKeys;
+  if (options.ariaLabel != null) {
+    state.ariaLabel = options.ariaLabel;
+    deps.input.setAriaLabel(options.ariaLabel);
+  }
+  if (options.accessibilitySupport != null) state.accessibilitySupport = options.accessibilitySupport;
+
   if (options.readOnly != null) {
     state.readOnly = options.readOnly;
     deps.input.setReadOnly(options.readOnly);
@@ -138,9 +233,7 @@ export function applyEditorOptionsPatch(
   if (options.maxTokenizationLineLength != null) {
     deps.tokenization?.setLimits({ maxTokenizationLineLength: options.maxTokenizationLineLength });
   }
-  if (options.bracketPairColorization !== undefined) {
-    deps.bracketColorizer?.setOptions(options.bracketPairColorization);
-  }
+  if (options.bracketPairColorization !== undefined) deps.bracketColorizer?.setOptions(options.bracketPairColorization);
 
   deps.notifyContributions(options);
 
@@ -190,9 +283,7 @@ export function attachRootDomListeners(params: {
 
   const onDocPointerDown = (e: PointerEvent) => {
     const target = e.target as Node | null;
-    if (target && !params.root.contains(target)) {
-      params.onOutsidePointerDown();
-    }
+    if (target && !params.root.contains(target)) params.onOutsidePointerDown();
   };
 
   const onWheel = (e: WheelEvent) => {
@@ -240,11 +331,11 @@ export function jumpEditorToLocation(
 }
 
 export function restoreModelViewState(params: {
-  saved: import('./modelController').SavedModelViewState | undefined;
-  model: import('../../common/model/TextModel').TextModel;
-  folding: import('../../common/viewModel/FoldingModel').FoldingModel;
+  saved: SavedModelViewState | undefined;
+  model: TextModel;
+  folding: FoldingModel;
   view: ViewController;
-  selection: import('../../common/core/SelectionState').SelectionState;
+  selection: SelectionState;
   clampPos: (ln: number, col: number) => { lineNumber: number; column: number };
 }): void {
   if (params.saved) {
@@ -264,13 +355,13 @@ export function restoreModelViewState(params: {
 }
 
 export function dispatchPointerInteraction(
-  kind: import('../input/pointer/PointerController').PointerInteractKind,
+  kind: PointerInteractKind,
   deps: {
     view: ViewController;
     input: InputController;
-    selection: import('../../common/core/SelectionState').SelectionState;
+    selection: SelectionState;
     commands: CommandService;
-    handleVis: import('../view/viewParts/HandleVisibility').HandleVisibility;
+    handleVis: HandleVisibility;
     contributions: Iterable<IEditorContribution>;
     pushStackElement: () => void;
     syncTextarea: () => void;

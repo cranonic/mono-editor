@@ -2,27 +2,64 @@ export {
   createMonoEditor,
   editor,
   getActiveMonoEditors,
+  MonoDiffEditor,
   MonoEditor,
+  type ICodeEditorOpener,
+  type IDiffEditorModel,
+  type IMonoDiffEditor,
   type IStandaloneTextModel,
+  type MonoDiffEditorOptions,
 } from './api/editor.api';
 export { languages } from './api/languages.api';
 
 // Core geometry, URI & erasable enum constants
 export {
   CompletionTriggerKind,
+  ContentWidgetPositionPreference,
   EndOfLineSequence,
   IndentAction,
   KeyCode,
   KeyMod,
+  MouseTargetType,
+  OverlayWidgetPositionPreference,
   Position,
   Range,
+  ScrollType,
   Selection,
   SelectionDirection,
+  TrackedRangeStickiness,
   Uri,
 } from './common/core';
-export type { UriComponents } from './common/core';
+export type {
+  IContentSizeChangedEvent,
+  IContentWidget,
+  IContentWidgetPosition,
+  IContextKey,
+  ICursorStateComputer,
+  IDimension,
+  IEditorLayoutInfo,
+  IEditorMouseEvent,
+  IEditorViewState,
+  IModelContentChange,
+  IModelContentChangedEvent,
+  IModelDecorationsChangedEvent,
+  IModelLanguageChangedEvent,
+  IModelOptionsChangedEvent,
+  IMouseTarget,
+  IOverlayWidget,
+  IOverlayWidgetPosition,
+  IPasteEvent,
+  ITextModelResolvedOptions,
+  ITextModelUpdateOptions,
+  IViewZone,
+  IViewZoneChangeAccessor,
+  IWordAtPosition,
+  UriComponents,
+} from './common/core';
 
 export type {
+  CursorBlinkingMode,
+  CursorStyleMode,
   ICursorPositionChangedEvent,
   ICursorSelectionChangedEvent,
   IEditorContribution,
@@ -38,7 +75,11 @@ export type {
   MonoDisposable,
   MonoEditorOptions,
   MonoEditorTheme,
+  MonoErrorLensOptions,
   MonoLineNumbers,
+  MonoMobileQuickKeysOptions,
+  RenderLineHighlightMode,
+  RenderWhitespaceMode,
 } from './api/types';
 export { DEFAULT_THEME } from './api/types';
 
@@ -100,7 +141,7 @@ export type {
   LineTokensLookup,
 } from './common/brackets';
 
-// Daily editing operations (comment toggle, line move/duplicate/delete/insert)
+// Daily editing operations (comment toggle, line move/duplicate/delete/insert + line transforms)
 export {
   deleteLines,
   duplicateLines,
@@ -109,6 +150,26 @@ export {
   toggleBlockComment,
   toggleLineComment,
 } from './common/editOperations/EditOperations';
+export {
+  convertIndentation,
+  deleteDuplicateLines,
+  joinLines,
+  sortLines,
+  transformCase,
+  transposeCharacters,
+  trimTrailingWhitespace,
+} from './common/editOperations/lineTransforms';
+export { computeLineDiff } from './common/diff/myersDiff';
+export type {
+  DiffChangeHunk,
+  DiffHunk,
+  DiffInlineRow,
+  DiffRowKind,
+  DiffSideBySideRow,
+  InlineDiffRow,
+  LineDiffResult,
+  SideBySideDiffRow,
+} from './common/diff/myersDiff';
 
 export { DEFAULT_STICKY_SCROLL } from './common/viewModel/StickyScroll';
 export { MarkdownScopeFinder, OutlineScopeFinder } from './common/viewModel/markdownSticky';
@@ -274,6 +335,7 @@ export { attachPressFeedback, haptic } from './platform/haptic/haptic';
 // Theme (Monaco-level defineTheme / setTheme)
 export {
   BUILTIN_THEME_IDS,
+  HC_BLACK_ID,
   isDarkColor,
   monoThemeService,
   MonoThemeService,
@@ -299,8 +361,10 @@ export {
   DecorationsCollection,
   MarkerService,
   MarkerSeverity,
+  MarkerTag,
 } from './common/decorations';
 export type {
+  IEditorDecorationsCollection,
   IMarker,
   IMarkerData,
   IModelDecorationOptions,
@@ -330,6 +394,9 @@ export type {
   CodeActionContext,
   CodeActionList,
   CodeActionProvider,
+  CodeLens,
+  CodeLensList,
+  CodeLensProvider,
   CompletionItem,
   CompletionList,
   CompletionProvider,
@@ -366,6 +433,8 @@ export type {
   InlineCompletionList,
   InlineCompletionsProvider,
   IWorkspaceTextEdit,
+  LinkedEditingRangeProvider,
+  LinkedEditingRanges,
   LinkProvider,
   Location,
   LocationLink,

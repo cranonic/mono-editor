@@ -10,11 +10,16 @@ import {
   InlineCompletionTriggerKind,
   MarkerSeverity,
   MonoCommands,
+  MouseTargetType,
   SymbolKind,
   Uri,
   BUILTIN_THEME_IDS,
+  type CursorStyleMode,
   type DocumentSymbol,
+  type IMonoDiffEditor,
   type IStandaloneTextModel,
+  type MonoLineNumbers,
+  type RenderWhitespaceMode,
   type WordWrapMode,
   type WrappingIndentMode,
   type ScrollbarVisibility,
@@ -634,6 +639,29 @@ for (const langId of JS_TS_LANGS) {
       return { data: new Uint32Array(data) };
     },
   });
+
+  // 14) Phase 7: CodeLens Provider (shows reference counts above functions & classes)
+  languages.registerCodeLensProvider(langId, {
+    provideCodeLenses(model) {
+      const lenses = [];
+      const count = model.getLineCount?.() ?? model.getValue().split('\n').length;
+      for (let ln = 1; ln <= count; ln++) {
+        const line = model.getLineContent(ln);
+        const m = /^\s*(?:export\s+)?(?:function|class)\s+([A-Za-z_$][\w$]*)/.exec(line);
+        if (m) {
+          lenses.push({
+            range: { startLineNumber: ln, startColumn: 1, endLineNumber: ln, endColumn: line.length + 1 },
+            command: {
+              id: MonoCommands.ReferenceSearch,
+              title: `Find references · ${m[1]}`,
+              tooltip: `Inspect references for ${m[1]}`,
+            },
+          });
+        }
+      }
+      return { lenses };
+    },
+  });
 }
 
 // Also enable Find References in HTML & CSS tabs for live inline peek testing
@@ -1037,6 +1065,125 @@ int main() {
 }
 `,
   },
+  rust: {
+    label: 'Rust',
+    code: `// Mono Editor — Rust Sample
+#[derive(Debug)]
+struct Point { x: f64, y: f64 }
+
+impl Point {
+  fn distance(&self) -> f64 {
+    (self.x * self.x + self.y * self.y).sqrt()
+  }
+}
+
+fn main() {
+  let origin = Point { x: 3.0, y: 4.0 };
+  println!("Distance = {}", origin.distance());
+}
+`,
+  },
+  go: {
+    label: 'Go',
+    code: `// Mono Editor — Go Sample
+package main
+
+import "fmt"
+
+type User struct {
+  Name string
+  Role string
+}
+
+func main() {
+  u := User{Name: "Mono", Role: "Editor"}
+  fmt.Printf("Hello %s (%s)\\n", u.Name, u.Role)
+}
+`,
+  },
+  kotlin: {
+    label: 'Kotlin',
+    code: `// Mono Editor — Kotlin Sample
+data class Session(val id: String, val mobile: Boolean = true)
+
+fun main() {
+  val s = Session("mono-kt")
+  println("Session \${s.id} mobile=\${s.mobile}")
+}
+`,
+  },
+  swift: {
+    label: 'Swift',
+    code: `// Mono Editor — Swift Sample
+struct Theme {
+  let name: String
+  let isHighContrast: Bool
+}
+
+let active = Theme(name: "hc-black", isHighContrast: true)
+print("Active theme: \\(active.name)")
+`,
+  },
+  php: {
+    label: 'PHP',
+    code: `<?php
+// Mono Editor — PHP Sample
+function greet(string $name): string {
+  return "Welcome, {$name}!";
+}
+echo greet("Mono");
+`,
+  },
+  ruby: {
+    label: 'Ruby',
+    code: `# Mono Editor — Ruby Sample
+class Editor
+  attr_reader :name
+  def initialize(name)
+    @name = name
+  end
+  def hello
+    puts "Hello from #{@name}"
+  end
+end
+
+Editor.new("Mono").hello
+`,
+  },
+  xml: {
+    label: 'XML',
+    code: `<?xml version="1.0" encoding="UTF-8"?>
+<workspace name="mono-editor">
+  <feature id="mobile" enabled="true" />
+  <feature id="diff" mode="auto" />
+</workspace>
+`,
+  },
+  toml: {
+    label: 'TOML',
+    code: `# Mono Editor — TOML Config
+[package]
+name = "mono-editor"
+version = "1.0.0"
+
+[mobile]
+pinch_zoom = true
+quick_keys = true
+`,
+  },
+  dockerfile: {
+    label: 'Dockerfile',
+    code: `# Mono Editor — Dockerfile Sample
+FROM node:22-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+EXPOSE 3000
+CMD ["npm", "run", "preview"]
+`,
+  },
   plaintext: {
     label: 'Plain Text',
     code: `Mono Editor Plain Text Mode
@@ -1115,6 +1262,11 @@ const editorInstance = editor.create(host, {
   dynamicCaretColor: true,
   minimap: { enabled: true, side: 'right', showSlider: 'always' },
   colorDecorators: true,
+  glyphMargin: true,
+  errorLens: true,
+  codeLens: true,
+  linkedEditing: true,
+  rulers: [80],
   scrollbar: {
     vertical: 'auto',
     horizontal: 'auto',
@@ -1154,7 +1306,15 @@ const optScrollbar = document.getElementById('opt-scrollbar') as HTMLSelectEleme
 const optHideVScroll = document.getElementById('opt-hide-vscroll') as HTMLInputElement;
 const optHideHScroll = document.getElementById('opt-hide-hscroll') as HTMLInputElement;
 const optDynamicCaret = document.getElementById('opt-dynamic-caret') as HTMLInputElement;
-const optLineNumbers = document.getElementById('opt-line-numbers') as HTMLInputElement;
+const optLineNumbersMode = document.getElementById('opt-line-numbers-mode') as HTMLSelectElement;
+const optRenderWhitespace = document.getElementById('opt-render-whitespace') as HTMLSelectElement;
+const optCursorStyle = document.getElementById('opt-cursor-style') as HTMLSelectElement;
+const optGlyphMargin = document.getElementById('opt-glyph-margin') as HTMLInputElement;
+const optErrorLens = document.getElementById('opt-error-lens') as HTMLInputElement;
+const optCodeLens = document.getElementById('opt-codelens') as HTMLInputElement;
+const optMobileKeys = document.getElementById('opt-mobile-keys') as HTMLInputElement;
+const btnDiff = document.getElementById('btn-diff') as HTMLButtonElement;
+const diffHost = document.getElementById('diff-host')!;
 const optStickyScroll = document.getElementById('opt-sticky-scroll') as HTMLInputElement;
 const optMinimap = document.getElementById('opt-minimap') as HTMLInputElement;
 const optColorBullets = document.getElementById('opt-color-bullets') as HTMLInputElement;
@@ -1459,8 +1619,72 @@ optDynamicCaret.addEventListener('change', () => {
   editorInstance.updateOptions({ dynamicCaretColor: optDynamicCaret.checked });
 });
 
-optLineNumbers.addEventListener('change', () => {
-  editorInstance.updateOptions({ lineNumbers: optLineNumbers.checked ? 'on' : 'off' });
+optLineNumbersMode.addEventListener('change', () => {
+  editorInstance.updateOptions({ lineNumbers: optLineNumbersMode.value as MonoLineNumbers });
+});
+
+optRenderWhitespace.addEventListener('change', () => {
+  editorInstance.updateOptions({ renderWhitespace: optRenderWhitespace.value as RenderWhitespaceMode });
+});
+
+optCursorStyle.addEventListener('change', () => {
+  editorInstance.updateOptions({ cursorStyle: optCursorStyle.value as CursorStyleMode });
+});
+
+optGlyphMargin.addEventListener('change', () => {
+  editorInstance.updateOptions({ glyphMargin: optGlyphMargin.checked });
+});
+
+optErrorLens.addEventListener('change', () => {
+  editorInstance.updateOptions({ errorLens: optErrorLens.checked });
+});
+
+optCodeLens.addEventListener('change', () => {
+  editorInstance.updateOptions({ codeLens: optCodeLens.checked });
+});
+
+optMobileKeys.addEventListener('change', () => {
+  editorInstance.updateOptions({ mobileQuickKeys: optMobileKeys.checked });
+});
+
+// Click left glyph margin to toggle red breakpoint circles
+const breakpoints = new Set<number>([10]);
+const bpCollection = editorInstance.createDecorationsCollection();
+const syncBreakpoints = () => {
+  bpCollection.set(
+    [...breakpoints].map((ln) => ({
+      range: { startLineNumber: ln, startColumn: 1, endLineNumber: ln, endColumn: 1 },
+      options: { glyphMarginColor: '#ef4444', isWholeLine: true },
+    })),
+  );
+};
+syncBreakpoints();
+editorInstance.onMouseDown((ev) => {
+  if (ev.target.type === MouseTargetType.GUTTER_GLYPH_MARGIN && ev.target.position) {
+    const ln = ev.target.position.lineNumber;
+    if (breakpoints.has(ln)) breakpoints.delete(ln);
+    else breakpoints.add(ln);
+    syncBreakpoints();
+  }
+});
+
+// Responsive Diff Editor toggle (auto inline < 720px, side-by-side >= 720px)
+let diffOpen = false;
+let diffEditor: IMonoDiffEditor | null = null;
+btnDiff.addEventListener('click', () => {
+  diffOpen = !diffOpen;
+  btnDiff.classList.toggle('active', diffOpen);
+  workspaceEl.classList.toggle('diff-mode', diffOpen);
+  if (diffOpen) {
+    if (!diffEditor) diffEditor = editor.createDiffEditor(diffHost);
+    const langId = editorInstance.getLanguageId();
+    const baseText = (LANGUAGE_SAMPLES[langId] ?? LANGUAGE_SAMPLES.javascript!).code;
+    const origModel = editor.createModel(baseText, langId);
+    diffEditor.setModel({ original: origModel, modified: editorInstance.getModel() });
+    requestAnimationFrame(() => diffEditor?.layout());
+  } else {
+    requestAnimationFrame(() => editorInstance.layout());
+  }
 });
 
 optStickyScroll.addEventListener('change', () => {
@@ -1737,6 +1961,12 @@ actSelectAllOcc.addEventListener('click', () => runCommand(MonoCommands.SelectHi
 actReplace.addEventListener('click', () => {
   editorInstance.revealReplace?.();
 });
+document.getElementById('act-goto-line')?.addEventListener('click', () => runCommand(MonoCommands.GoToLine));
+document.getElementById('act-goto-symbol')?.addEventListener('click', () => runCommand(MonoCommands.GoToSymbol));
+document.getElementById('act-peek-def')?.addEventListener('click', () => runCommand(MonoCommands.PeekDefinition));
+document.getElementById('act-sort-lines')?.addEventListener('click', () => runCommand(MonoCommands.SortLinesAscending));
+document.getElementById('act-join-lines')?.addEventListener('click', () => runCommand(MonoCommands.JoinLines));
+document.getElementById('act-trim-ws')?.addEventListener('click', () => runCommand(MonoCommands.TrimTrailingWhitespace));
 
 /** 1000 lines of nested classes/functions: exercises Sticky Scroll headers while Find is open. */
 function buildLongSample(): string {

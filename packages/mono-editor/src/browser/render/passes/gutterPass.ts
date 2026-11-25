@@ -1,4 +1,22 @@
-import type { FrameContext, RenderPass } from '../frameContext';
+import type { MonoLineNumbers } from '../../../common/config/editorOptions';
+import type { FrameContext, PaintDecorationSpec, RenderPass } from '../frameContext';
+
+function formatLineNumber(
+  mode: MonoLineNumbers,
+  line: number,
+  caretLine: number,
+): string | null {
+  if (mode === 'off') return null;
+  if (typeof mode === 'function') return mode(line);
+  if (mode === 'relative') {
+    return line === caretLine ? String(line) : String(Math.abs(line - caretLine));
+  }
+  if (mode === 'interval') {
+    if (line === caretLine || line === 1 || line % 10 === 0) return String(line);
+    return '';
+  }
+  return String(line);
+}
 
 export const gutterPass: RenderPass = {
   name: 'gutter',
@@ -7,20 +25,44 @@ export const gutterPass: RenderPass = {
       opts,
       firstRow,
       lastRow,
+      glyphMarginWidth,
       foldGutterWidth,
       gutterNumberPad,
       orderedSelections,
+      caretLine,
       rowTopY,
       getVisualLine,
       foldHits,
     } = frame;
-    const { cssHeight, metrics, theme, showLineNumbers, folding } = opts;
-    if (!showLineNumbers) return;
+    const {
+      cssHeight,
+      metrics,
+      theme,
+      showLineNumbers,
+      lineNumbersMode = showLineNumbers ? 'on' : 'off',
+      glyphMargin = false,
+      renderLineHighlight = 'line',
+      decorations = [],
+      folding,
+    } = opts;
+    if (!showLineNumbers && !glyphMargin) return;
 
     const { lineHeight, fontSize, gutterWidth } = metrics;
     ctx.fillStyle = theme.gutterBackground;
     ctx.fillRect(0, 0, gutterWidth, cssHeight);
     const numRightX = gutterWidth - foldGutterWidth - gutterNumberPad;
+    const highlightGutter = renderLineHighlight === 'gutter' || renderLineHighlight === 'all';
+
+    // Pre-index glyph margin decorations by start line for O(1) lookup
+    let glyphByLine: Map<number, PaintDecorationSpec> | null = null;
+    if (glyphMargin && decorations.length) {
+      for (const d of decorations) {
+        if (d.glyphMarginColor || d.glyphMarginSymbol || d.glyphMarginClassName) {
+          if (!glyphByLine) glyphByLine = new Map();
+          glyphByLine.set(d.range.startLineNumber, d);
+        }
+      }
+    }
 
     for (let row = firstRow; row <= lastRow; row++) {
       const y = rowTopY(row);
@@ -30,13 +72,44 @@ export const gutterPass: RenderPass = {
 
       const line = seg.modelLine;
       const isActiveLine = orderedSelections.some((os) => os.caretLine === line);
-      ctx.fillStyle = isActiveLine ? theme.foreground : theme.gutterForeground;
-      ctx.globalAlpha = isActiveLine ? 0.9 : 1;
-      ctx.textAlign = 'right';
-      ctx.fillText(String(line), numRightX, y + (lineHeight - fontSize) / 2);
-      ctx.globalAlpha = 1;
 
-      if (folding?.enabled && folding.isFoldable(line)) {
+      if (highlightGutter && isActiveLine) {
+        ctx.fillStyle = theme.lineHighlight;
+        ctx.fillRect(0, y, gutterWidth, lineHeight);
+      }
+
+      // Glyph margin column (breakpoints, bookmarks, custom icons)
+      if (glyphMargin && glyphByLine) {
+        const gd = glyphByLine.get(line);
+        if (gd) {
+          const gcx = Math.round(glyphMarginWidth / 2);
+          const gcy = Math.round(y + lineHeight / 2);
+          const color = gd.glyphMarginColor ?? '#e51400';
+          if (gd.glyphMarginSymbol) {
+            ctx.fillStyle = color;
+            ctx.textAlign = 'center';
+            ctx.fillText(gd.glyphMarginSymbol, gcx, y + (lineHeight - fontSize) / 2);
+          } else {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(gcx, gcy, Math.min(5, Math.max(3.5, lineHeight * 0.24)), 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      if (showLineNumbers) {
+        const label = formatLineNumber(lineNumbersMode, line, caretLine);
+        if (label) {
+          ctx.fillStyle = isActiveLine ? theme.foreground : theme.gutterForeground;
+          ctx.globalAlpha = isActiveLine ? 0.92 : 1;
+          ctx.textAlign = 'right';
+          ctx.fillText(label, numRightX, y + (lineHeight - fontSize) / 2);
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      if (showLineNumbers && folding?.enabled && folding.isFoldable(line)) {
         const collapsed = folding.isCollapsed(line);
         const cx = gutterWidth - foldGutterWidth / 2 - 1;
         const cy = y + lineHeight / 2;
@@ -59,7 +132,6 @@ export const gutterPass: RenderPass = {
         ctx.stroke();
         ctx.restore();
 
-        // Touch target stays >= 18px wide even when the visible fold column is narrow
         const foldHitW = Math.max(18, foldGutterWidth + 2);
         foldHits.push({
           lineNumber: line,

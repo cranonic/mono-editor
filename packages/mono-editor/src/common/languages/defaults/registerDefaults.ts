@@ -12,6 +12,17 @@ import { createMarkdownTokensProvider } from './markdown';
 import { createYamlTokensProvider } from './yaml';
 import { createShellTokensProvider } from './shell';
 import { createSqlTokensProvider } from './sql';
+import {
+  createDockerfileTokensProvider,
+  createGoTokensProvider,
+  createKotlinTokensProvider,
+  createPhpTokensProvider,
+  createRubyTokensProvider,
+  createRustTokensProvider,
+  createSwiftTokensProvider,
+  createTomlTokensProvider,
+  createXmlTokensProvider,
+} from './extraLanguages';
 
 let registered = false;
 
@@ -44,4 +55,18 @@ export function registerDefaultLanguages(): void {
   languages.registerTokensProvider(createShellTokensProvider('bash'));
   languages.registerTokensProvider(createShellTokensProvider('sh'));
   languages.registerTokensProvider(createSqlTokensProvider('sql'));
+  // Phase 8 extra languages
+  languages.registerTokensProvider(createRustTokensProvider('rust'));
+  languages.registerTokensProvider(createRustTokensProvider('rs'));
+  languages.registerTokensProvider(createGoTokensProvider('go'));
+  languages.registerTokensProvider(createGoTokensProvider('golang'));
+  languages.registerTokensProvider(createKotlinTokensProvider('kotlin'));
+  languages.registerTokensProvider(createKotlinTokensProvider('kt'));
+  languages.registerTokensProvider(createSwiftTokensProvider('swift'));
+  languages.registerTokensProvider(createPhpTokensProvider('php'));
+  languages.registerTokensProvider(createRubyTokensProvider('ruby'));
+  languages.registerTokensProvider(createRubyTokensProvider('rb'));
+  languages.registerTokensProvider(createXmlTokensProvider('xml'));
+  languages.registerTokensProvider(createTomlTokensProvider('toml'));
+  languages.registerTokensProvider(createDockerfileTokensProvider('dockerfile'));
 }

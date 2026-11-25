@@ -11,9 +11,27 @@ import type { MonoStickyScrollOptions } from '../viewModel/StickyScroll';
 import type { WordWrapMode, WrappingIndentMode } from '../viewModel/ViewLineProjection';
 import type { MonoEditorTheme } from './themeTypes';
 
-export type MonoLineNumbers = 'on' | 'off';
+export type MonoLineNumbers =
+  | 'on'
+  | 'off'
+  | 'relative'
+  | 'interval'
+  | ((lineNumber: number) => string);
 
-// ── Gutter layout (CSS px): [ left pad | line numbers | pad | fold chevron | border ] ──
+export type RenderWhitespaceMode = 'none' | 'boundary' | 'selection' | 'trailing' | 'all';
+export type RenderLineHighlightMode = 'none' | 'gutter' | 'line' | 'all';
+export type CursorStyleMode =
+  | 'line'
+  | 'block'
+  | 'underline'
+  | 'line-thin'
+  | 'block-outline'
+  | 'underline-thin';
+export type CursorBlinkingMode = 'blink' | 'smooth' | 'phase' | 'expand' | 'solid';
+
+// ── Gutter layout (CSS px): [ glyph margin | left pad | line numbers | pad | fold chevron | border ] ──
+/** Space reserved on the far left for breakpoints / bookmarks when `glyphMargin` is true. */
+export const GUTTER_GLYPH_MARGIN_WIDTH = 18;
 /** Space left of the line numbers. */
 export const GUTTER_LEFT_PAD = 6;
 /** Numbers → right border when there is no fold column. */
@@ -28,6 +46,8 @@ export interface RenderMetrics {
   fontSize: number;
   lineHeight: number;
   gutterWidth: number;
+  /** Reserved width on the left edge of the gutter for breakpoints/glyphs (0 when glyphMargin is off). */
+  glyphMarginWidth?: number;
   /** Reserved width on the right edge of the gutter for fold chevrons (0 when folding is off). */
   foldGutterWidth?: number;
   /** Space between the right edge of the line numbers and the fold chevron area (default 6). */
@@ -41,25 +61,31 @@ export interface RenderMetrics {
 export function computeGutterLayout(params: {
   lineNumbers: boolean;
   foldingEnabled: boolean;
+  glyphMargin?: boolean;
   lineNumbersMinChars: number;
   lineCount: number;
   charWidth: number;
-}): { gutterWidth: number; foldGutterWidth: number; gutterNumberPad: number } {
+}): {
+  gutterWidth: number;
+  glyphMarginWidth: number;
+  foldGutterWidth: number;
+  gutterNumberPad: number;
+} {
+  const glyphMarginWidth = params.glyphMargin ? GUTTER_GLYPH_MARGIN_WIDTH : 0;
   const foldGutterWidth = params.lineNumbers && params.foldingEnabled ? GUTTER_FOLD_WIDTH : 0;
   const gutterNumberPad = foldGutterWidth > 0 ? GUTTER_NUMBER_PAD_FOLD : GUTTER_NUMBER_PAD;
   const digits = Math.max(params.lineNumbersMinChars, String(Math.max(1, params.lineCount)).length);
-  const gutterWidth = params.lineNumbers
+  const numbersWidth = params.lineNumbers
     ? Math.ceil(GUTTER_LEFT_PAD + digits * params.charWidth + gutterNumberPad) + foldGutterWidth
     : 0;
-  return { gutterWidth, foldGutterWidth, gutterNumberPad };
+  const gutterWidth = glyphMarginWidth + numbersWidth;
+  return { gutterWidth, glyphMarginWidth, foldGutterWidth, gutterNumberPad };
 }
 
 export interface OverlayScrollbarOptions {
   vertical?: 'auto' | 'visible' | 'hidden';
   horizontal?: 'auto' | 'visible' | 'hidden';
-  /** Completely hide vertical scrollbar (opacity 0, non-interactive) when scrolling stops. Default `true`. */
   hideVerticalOnScrollEnd?: boolean;
-  /** Completely hide horizontal scrollbar (opacity 0, non-interactive) when scrolling stops. Default `true`. */
   hideHorizontalOnScrollEnd?: boolean;
   verticalScrollbarSize?: number;
   horizontalScrollbarSize?: number;
@@ -67,18 +93,23 @@ export interface OverlayScrollbarOptions {
 }
 
 export interface MonoMinimapOptions {
-  /** Enable code overview minimap. Default `false`. */
   enabled?: boolean;
-  /** Dock side. Default `'right'`. */
   side?: 'right' | 'left';
-  /** Fixed pixel width of the minimap strip. Default `80`. */
   width?: number;
-  /** Max characters per line sampled. Default `120`. */
   maxColumn?: number;
-  /** Slider visibility behavior. Default `'mouseover'`. */
   showSlider?: 'always' | 'mouseover';
-  /** Render token-colored miniature bars instead of solid muted blocks. Default `true`. */
   renderCharacters?: boolean;
+}
+
+export interface MonoErrorLensOptions {
+  enabled?: boolean;
+  maxLength?: number;
+}
+
+export interface MonoMobileQuickKeysOptions {
+  enabled?: boolean;
+  /** Custom key definitions overriding default mobile coding bar. */
+  keys?: readonly { label: string; insert?: string; command?: string }[];
 }
 
 export interface MonoEditorOptions {
@@ -89,13 +120,28 @@ export interface MonoEditorOptions {
   fontSize?: number;
   lineHeight?: number;
   tabSize?: number;
+  insertSpaces?: boolean;
+  detectIndentation?: boolean;
+  trimAutoWhitespace?: boolean;
+  stickyTabStops?: boolean;
+  emptySelectionClipboard?: boolean;
+  formatOnPaste?: boolean;
   lineNumbers?: MonoLineNumbers;
-  /**
-   * Minimum digit columns reserved for line numbers (Monaco `lineNumbersMinChars`).
-   * The gutter width follows the real line count (10 lines → 2 digits, 1000 lines → 4); this only sets the floor.
-   * Default `2`.
-   */
   lineNumbersMinChars?: number;
+  glyphMargin?: boolean;
+  renderWhitespace?: RenderWhitespaceMode;
+  rulers?: readonly number[];
+  renderLineHighlight?: RenderLineHighlightMode;
+  cursorStyle?: CursorStyleMode;
+  cursorBlinking?: CursorBlinkingMode;
+  cursorSurroundingLines?: number;
+  linkedEditing?: boolean;
+  codeLens?: boolean;
+  errorLens?: boolean | MonoErrorLensOptions;
+  pinchZoom?: boolean;
+  mobileQuickKeys?: boolean | MonoMobileQuickKeysOptions;
+  ariaLabel?: string;
+  accessibilitySupport?: 'auto' | 'on' | 'off';
   theme?: Partial<MonoEditorTheme>;
   overscan?: number;
   undoGroupIdleMs?: number;
@@ -127,13 +173,8 @@ export interface MonoEditorOptions {
   scrollbar?: OverlayScrollbarOptions;
   dynamicCaretColor?: boolean;
   colorDecorators?: boolean;
-  /**
-   * Whether hovering a color swatch with a mouse opens the Color Picker automatically.
-   * Defaults to `false` so mobile scrolling / resting fingers never accidentally trigger popups.
-   */
   colorDecoratorsOpenOnHover?: boolean;
   colorDecoratorsRules?: ColorDecoratorRules;
-  /** Monaco-style Hover Docs popup options. */
   hover?: {
     enabled?: boolean;
     delay?: number;
@@ -141,29 +182,23 @@ export interface MonoEditorOptions {
     above?: boolean;
     openOnMouseHover?: boolean;
   };
-  /** LSP Inlay Hints options (parameter & type annotations). */
   inlayHints?: {
     enabled?: boolean;
     fontSize?: number;
     fontFamily?: string;
     padding?: boolean;
   };
-  /** Multiline Ghost Text / AI Inline Completions options. */
   inlineSuggest?: {
     enabled?: boolean;
     debounceMs?: number;
     showToolbar?: 'always' | 'touch' | 'onHover' | 'never';
     italic?: boolean;
   };
-  /** LSP Semantic Token highlighting overlay options. */
   semanticHighlighting?: {
     enabled?: boolean;
   };
-  /** Enable clickable document links (default `true`). */
   links?: boolean;
-  /** Theme-aware 5-level Rainbow Bracket Pair Colorization config. */
   bracketPairColorization?: Partial<BracketPairColorizationOptions>;
-  /** Safety cap: lines longer than this skip full regex tokenization (default 20_000). */
   maxTokenizationLineLength?: number;
   minimap?: MonoMinimapOptions;
   model?: IMonoTextModel;
@@ -175,10 +210,6 @@ export interface MonoEditorOptions {
 
 export type EditorOptionKey = keyof MonoEditorOptions;
 
-/**
- * Computes which option keys are explicitly provided in an `updateOptions(patch)` call,
- * allowing subsystems to react cleanly without sprawling imperative if-chains.
- */
 export function diffEditorOptions(patch: Partial<MonoEditorOptions>): Set<EditorOptionKey> {
   const changed = new Set<EditorOptionKey>();
   for (const k of Object.keys(patch) as EditorOptionKey[]) {

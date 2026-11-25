@@ -1,8 +1,11 @@
 import type { SelectionState } from '../../common/core/SelectionState';
 import type {
+  ICursorStateComputer,
   IIdentifiedSingleEditOperation,
   IMonoTextModel,
   IPosition,
+  IRange,
+  ISelection,
 } from '../../common/core/types';
 import { Uri } from '../../common/core/uri';
 import type {
@@ -43,6 +46,7 @@ export class ModelController {
   modelUriKey = 'inmemory://editor/default';
   readonly ownsModel: boolean;
   private viewStates = new Map<string, SavedModelViewState>();
+  private disposed = false;
 
   constructor(opts: {
     sharedTextModel?: TextModel;
@@ -50,6 +54,10 @@ export class ModelController {
     value?: string;
     language?: string;
     undoGroupIdleMs?: number;
+    tabSize?: number;
+    insertSpaces?: boolean;
+    trimAutoWhitespace?: boolean;
+    detectIndentation?: boolean;
   }) {
     if (opts.sharedTextModel) {
       this.model = opts.sharedTextModel;
@@ -71,20 +79,26 @@ export class ModelController {
     if (opts.undoGroupIdleMs != null) {
       this.model.editStack.groupIdleMs = Math.max(0, opts.undoGroupIdleMs);
     }
+    if (opts.tabSize != null || opts.insertSpaces != null || opts.trimAutoWhitespace != null) {
+      this.model.updateOptions({
+        tabSize: opts.tabSize,
+        insertSpaces: opts.insertSpaces,
+        trimAutoWhitespace: opts.trimAutoWhitespace,
+      });
+    }
+    if (opts.detectIndentation && this.model.getValue().length > 0) {
+      this.model.detectIndentation(opts.insertSpaces ?? true, opts.tabSize ?? 2);
+    }
   }
 
   attachSelectionCapture(selection: SelectionState): void {
     if (!this.ownsModel) return;
-    this.model.setSelectionCapture(() => {
-      const a = selection.anchor;
-      const b = selection.active;
-      return {
-        aLine: a.lineNumber,
-        aCol: a.column,
-        bLine: b.lineNumber,
-        bCol: b.column,
-      };
-    });
+    this.model.setSelectionCapture(() => ({
+      aLine: selection.anchor.lineNumber,
+      aCol: selection.anchor.column,
+      bLine: selection.active.lineNumber,
+      bCol: selection.active.column,
+    }));
   }
 
   saveViewState(scrollTop: number, scrollLeft: number, selection: SelectionState, folding: FoldingModel): void {
@@ -128,22 +142,44 @@ export class ModelController {
       uri: Uri.parse(uriKey),
       uriString: uriKey,
       getValue: () => model.getValue(),
-      setValue: (v: string) => {
-        model.setValue(v);
-        onSetValue();
-      },
+      setValue: (v: string) => { model.setValue(v); onSetValue(); },
+      getValueInRange: (r: IRange) => model.getValueInRange(r),
       getLineCount: () => model.getLineCount(),
       getLineContent: (ln: number) => model.getLineContent(ln),
+      getLineLength: (ln: number) => model.getLineLength(ln),
+      getLineMinColumn: (ln: number) => model.getLineMinColumn(ln),
+      getLineMaxColumn: (ln: number) => model.getLineMaxColumn(ln),
+      getLineFirstNonWhitespaceColumn: (ln: number) => model.getLineFirstNonWhitespaceColumn(ln),
+      getLineLastNonWhitespaceColumn: (ln: number) => model.getLineLastNonWhitespaceColumn(ln),
+      getLinesContent: () => model.getLinesContent(),
+      getFullModelRange: () => model.getFullModelRange(),
       getOffsetAt: (pos: IPosition) => model.getOffsetAt(pos.lineNumber, pos.column),
       getPositionAt: (offset: number) => model.getPositionAt(offset),
+      validatePosition: (pos: IPosition) => model.validatePosition(pos),
+      validateRange: (range: IRange) => model.validateRange(range),
+      modifyPosition: (pos: IPosition, off: number) => model.modifyPosition(pos, off),
+      getWordAtPosition: (pos: IPosition) => model.getWordAtPosition(pos),
+      getWordUntilPosition: (pos: IPosition) => model.getWordUntilPosition(pos),
+      findMatches: (s, r, re, mc, ws, cm, lim) => model.findMatches(s, r, re, mc, ws, cm, lim),
+      findNextMatch: (s, st, re, mc, ws, cm) => model.findNextMatch(s, st, re, mc, ws, cm),
+      findPreviousMatch: (s, st, re, mc, ws, cm) => model.findPreviousMatch(s, st, re, mc, ws, cm),
       getVersionId: () => model.getVersionId(),
       getAlternativeVersionId: () => getAltVersionId(),
       getLanguageId: () => model.getLanguageId(),
       getEOL: () => model.getEOL(),
-      setEOL: (eol: '\n' | '\r\n' | number) => {
-        model.setEOL(eol);
-        onSetEol();
+      setEOL: (eol: '\n' | '\r\n' | number) => { model.setEOL(eol); onSetEol(); },
+      getOptions: () => model.getOptions(),
+      updateOptions: (opts) => model.updateOptions(opts),
+      detectIndentation: (sp, ts) => model.detectIndentation(sp, ts),
+      pushStackElement: () => model.pushStackElement(),
+      applyEdits: (ops) => { model.applyEdits(ops); onSetValue(); },
+      pushEditOperations: (before, ops, computer) => {
+        const res = model.applyEdits(ops);
+        onSetValue();
+        return computer ? computer(res) : before;
       },
+      isDisposed: () => this.disposed,
+      isAttachedToEditor: () => !this.disposed,
     };
   }
 
@@ -162,27 +198,13 @@ export class ModelController {
   }
 
   wordAtPosition(lineNumber: number, column: number): { word: string; startColumn: number; endColumn: number } | null {
-    const line = this.model.getLineContent(lineNumber);
-    if (!line) return null;
-    let idx = Math.max(0, Math.min(line.length, column - 1));
-    const isIdent = (c: string) => /[A-Za-z0-9_$]/.test(c);
-    if (idx > 0 && (idx === line.length || !isIdent(line[idx]!)) && isIdent(line[idx - 1]!)) {
-      idx--;
-    }
-    if (idx >= line.length || !isIdent(line[idx]!)) return null;
-    let s = idx;
-    while (s > 0 && isIdent(line[s - 1]!)) s--;
-    let e = idx + 1;
-    while (e < line.length && isIdent(line[e]!)) e++;
-    return { word: line.slice(s, e), startColumn: s + 1, endColumn: e + 1 };
+    return this.model.getWordAtPosition({ lineNumber, column });
   }
 
   getTokenTypeAt(tokenization: TokenizationSupport, lineNumber: number, column: number): string | null {
     const tokens = tokenization.getLineTokens(this.model, lineNumber);
     for (const tok of tokens) {
-      if (column >= tok.startColumn && column < tok.endColumn) {
-        return tok.type;
-      }
+      if (column >= tok.startColumn && column < tok.endColumn) return tok.type;
     }
     return null;
   }
@@ -190,25 +212,29 @@ export class ModelController {
   executeEdits(
     selection: SelectionState,
     readOnly: boolean,
-    edits: IIdentifiedSingleEditOperation[],
+    edits: readonly IIdentifiedSingleEditOperation[],
+    endCursorState?: ISelection[] | ICursorStateComputer,
   ): boolean {
     if (readOnly || !edits.length) return false;
-    const sorted = [...edits].sort((a, b) => {
-      if (a.range.startLineNumber !== b.range.startLineNumber) {
-        return b.range.startLineNumber - a.range.startLineNumber;
+    const inverse = this.model.applyEdits(edits);
+    const nextCursor = typeof endCursorState === 'function' ? endCursorState(inverse) : endCursorState;
+    if (nextCursor && nextCursor.length > 0) {
+      const mapped = nextCursor.map((sel) => ({
+        anchor: this.model.validatePosition({ lineNumber: sel.selectionStartLineNumber ?? sel.startLineNumber, column: sel.selectionStartColumn ?? sel.startColumn }),
+        active: this.model.validatePosition({ lineNumber: sel.positionLineNumber ?? sel.endLineNumber, column: sel.positionColumn ?? sel.endColumn }),
+      }));
+      if (mapped.length === 1) {
+        selection.anchor = mapped[0]!.anchor;
+        selection.active = mapped[0]!.active;
+      } else {
+        selection.setSelections(mapped);
       }
-      return b.range.startColumn - a.range.startColumn;
-    });
-    this.model.transact(() => {
-      for (const edit of sorted) {
-        const start = this.model.getOffsetAt(edit.range.startLineNumber, edit.range.startColumn);
-        const end = this.model.getOffsetAt(edit.range.endLineNumber, edit.range.endColumn);
-        const text = edit.text ?? '';
-        this.model.replaceRange(start, end, text);
-        const pos = this.model.getPositionAt(start + text.length);
-        selection.setCaret(pos.lineNumber, pos.column);
-      }
-    });
+    } else {
+      const last = edits[edits.length - 1]!;
+      const startOff = this.model.getOffsetAt(last.range.startLineNumber, last.range.startColumn);
+      const pos = this.model.getPositionAt(Math.min(this.model.getValue().length, startOff + (last.text ?? '').length));
+      selection.setCaret(pos.lineNumber, pos.column);
+    }
     return true;
   }
 
@@ -225,7 +251,6 @@ export class ModelController {
       list.push(item.textEdit);
       byUri.set(key, list);
     }
-
     let applied = false;
     for (const [uriKey, textEdits] of byUri.entries()) {
       if (uriKey === currentKey) {
@@ -234,19 +259,7 @@ export class ModelController {
         const target = getRegisteredStandaloneModel(uriKey);
         const backing = getBackingTextModel(target);
         if (backing && textEdits.length) {
-          const sorted = [...textEdits].sort((a, b) => {
-            if (a.range.startLineNumber !== b.range.startLineNumber) {
-              return b.range.startLineNumber - a.range.startLineNumber;
-            }
-            return b.range.startColumn - a.range.startColumn;
-          });
-          backing.transact(() => {
-            for (const ed of sorted) {
-              const s = backing.getOffsetAt(ed.range.startLineNumber, ed.range.startColumn);
-              const e = backing.getOffsetAt(ed.range.endLineNumber, ed.range.endColumn);
-              backing.replaceRange(s, e, ed.text);
-            }
-          });
+          backing.applyEdits(textEdits.map((te) => ({ range: te.range, text: te.text })));
           applied = true;
         }
       }
@@ -262,17 +275,15 @@ export class ModelController {
     if (!entry) return;
     if (mode === 'undo') {
       if (entry.beforeSel) {
-        const s = entry.beforeSel;
-        selection.anchor = { lineNumber: s.aLine, column: s.aCol };
-        selection.active = { lineNumber: s.bLine, column: s.bCol };
+        selection.anchor = { lineNumber: entry.beforeSel.aLine, column: entry.beforeSel.aCol };
+        selection.active = { lineNumber: entry.beforeSel.bLine, column: entry.beforeSel.bCol };
         return;
       }
       const restored = entry.inverse.text;
       if (restored.length > 0) {
         const start = entry.inverse.startOffset;
-        const end = start + restored.length;
         const p1 = this.model.getPositionAt(start);
-        const p2 = this.model.getPositionAt(end);
+        const p2 = this.model.getPositionAt(start + restored.length);
         selection.anchor = { lineNumber: p1.lineNumber, column: p1.column };
         selection.active = { lineNumber: p2.lineNumber, column: p2.column };
         return;
@@ -282,17 +293,16 @@ export class ModelController {
       return;
     }
     if (entry.afterSel) {
-      const s = entry.afterSel;
-      selection.anchor = { lineNumber: s.aLine, column: s.aCol };
-      selection.active = { lineNumber: s.bLine, column: s.bCol };
+      selection.anchor = { lineNumber: entry.afterSel.aLine, column: entry.afterSel.aCol };
+      selection.active = { lineNumber: entry.afterSel.bLine, column: entry.afterSel.bCol };
       return;
     }
-    const endOff = entry.forward.startOffset + entry.forward.text.length;
-    const pos = this.model.getPositionAt(endOff);
+    const pos = this.model.getPositionAt(entry.forward.startOffset + entry.forward.text.length);
     selection.setCaret(pos.lineNumber, pos.column);
   }
 
   dispose(): void {
+    this.disposed = true;
     this.viewStates.clear();
   }
 }

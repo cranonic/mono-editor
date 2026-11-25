@@ -1,18 +1,28 @@
 import type { FrameContext, RenderPass } from '../frameContext';
 
 /**
- * Paints editor background, gutter backdrop, active-line highlights, and indentation guides.
+ * Paints editor background, gutter backdrop, active-line highlights, vertical rulers, and indentation guides.
  */
 export const backgroundPass: RenderPass = {
   name: 'background',
   paint(ctx: CanvasRenderingContext2D, f: FrameContext): void {
-    const { cssWidth, cssHeight, metrics, theme, showLineNumbers, indentGuides } = f.opts;
+    const {
+      cssWidth,
+      cssHeight,
+      metrics,
+      theme,
+      showLineNumbers,
+      glyphMargin,
+      indentGuides,
+      rulers,
+      renderLineHighlight = 'line',
+    } = f.opts;
     const { lineHeight, gutterWidth, charWidth } = metrics;
 
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, cssWidth, cssHeight);
 
-    if (showLineNumbers) {
+    if (showLineNumbers || glyphMargin) {
       ctx.fillStyle = theme.gutterBackground;
       ctx.fillRect(0, 0, gutterWidth, cssHeight);
     }
@@ -22,13 +32,15 @@ export const backgroundPass: RenderPass = {
     ctx.rect(f.contentLeft, 0, Math.max(0, cssWidth - f.contentLeft), cssHeight);
     ctx.clip();
 
+    const highlightLine = renderLineHighlight === 'line' || renderLineHighlight === 'all';
+
     for (let row = f.firstRow; row <= f.lastRow; row++) {
       const y = f.rowTopY(row);
       if (y + lineHeight < 0 || y > cssHeight) continue;
       const seg = f.getVisualLine(row);
       const line = seg.modelLine;
 
-      if (f.orderedSelections.some((os) => os.caretLine === line)) {
+      if (highlightLine && f.orderedSelections.some((os) => os.caretLine === line)) {
         ctx.fillStyle = theme.lineHighlight;
         ctx.fillRect(f.contentLeft, y, cssWidth - f.contentLeft, lineHeight);
       }
@@ -55,6 +67,22 @@ export const backgroundPass: RenderPass = {
         }
       }
     }
+
+    // Vertical column rulers (e.g. [80, 120])
+    if (rulers && rulers.length) {
+      ctx.strokeStyle = f.dark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.12)';
+      ctx.lineWidth = 1;
+      for (const col of rulers) {
+        if (col <= 0) continue;
+        const rx = Math.floor(f.textX0 + col * charWidth) + 0.5;
+        if (rx < f.contentLeft || rx > cssWidth) continue;
+        ctx.beginPath();
+        ctx.moveTo(rx, 0);
+        ctx.lineTo(rx, cssHeight);
+        ctx.stroke();
+      }
+    }
+
     ctx.restore();
   },
 };

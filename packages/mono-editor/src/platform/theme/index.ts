@@ -15,6 +15,7 @@ export {
   MSCODE_AMOLED_ID,
   SOLARIZED_DARK_ID,
   SOLARIZED_LIGHT_ID,
+  HC_BLACK_ID,
 } from './builtins/ids';
 export { resolveWidgetTheme, isDarkColor } from './widgetTheme';
 export type { ResolvedWidgetTheme } from './widgetTheme';
