@@ -1,3 +1,4 @@
+import type { WidgetBoxRect } from '../../browser/editor/editorTypes';
 import type { ViewController } from '../../browser/view/ViewController';
 import type { SelectionState } from '../../common/core/SelectionState';
 import { hasSnippetSyntax, type SnippetSession } from '../../common/editOperations/SnippetSession';
@@ -7,6 +8,7 @@ import {
   type CompletionContext,
   type CompletionItem,
   type CompletionProvider,
+  type GhostTextItem,
 } from '../../common/languages/providers/types';
 import type { TextModel } from '../../common/model/TextModel';
 import {
@@ -15,9 +17,16 @@ import {
   labelOfCompletion,
   scoreCompletionMatch,
 } from './suggestFilter';
-import { SuggestWidget, type SuggestAnchor, type SuggestWidgetOptions } from './SuggestWidget';
+import {
+  SuggestWidget,
+  type SuggestAnchor,
+  type SuggestDocsMode,
+  type SuggestWidgetOptions,
+} from './SuggestWidget';
 
 export { filterAndSortSuggestions, scoreCompletionMatch };
+
+export const SUGGEST_GHOST_OWNER = 'suggest-ghost';
 
 export type QuickSuggestionsOption =
   | boolean
@@ -31,14 +40,31 @@ export interface SuggestControllerOptions {
   quickSuggestions?: QuickSuggestionsOption;
   quickSuggestionsDelay?: number;
   suggestOnTriggerCharacters?: boolean;
+  suggestMode?: 'palette' | 'ghost';
+  suggestDocs?: SuggestDocsMode;
   getTokenTypeAt?: (lineNumber: number, column: number) => string | null;
   getLanguageIdAtPosition?: (lineNumber: number, column: number) => string;
+  onVisibilityChange?: (visible: boolean, rect: WidgetBoxRect | null) => void;
+  setGhostTexts?: (items: readonly GhostTextItem[]) => void;
+  clearGhostTexts?: (owner?: string) => void;
+  getGhostTexts?: (owner?: string) => readonly GhostTextItem[];
 }
 
 function isEnabledFlag(v: boolean | 'on' | 'off' | undefined, fallback: boolean): boolean {
   if (v === undefined) return fallback;
   if (typeof v === 'boolean') return v;
   return v !== 'off';
+}
+
+function previewTextForGhost(item: CompletionItem): string {
+  const raw = item.textEdit?.text ?? item.insertText ?? labelOfCompletion(item);
+  // Expand simple snippet placeholders ${1:foo} -> foo, strip $0/$1 markers
+  const cleaned = raw
+    .replace(/\$\{\d+:([^}]*)\}/g, '$1')
+    .replace(/\$\{\d+\|([^,|}]*)[^}]*\|\}/g, '$1')
+    .replace(/\$\d+/g, '');
+  const firstLine = cleaned.split(/\r?\n/)[0] ?? '';
+  return firstLine || labelOfCompletion(item);
 }
 
 export class SuggestController {
@@ -54,13 +80,20 @@ export class SuggestController {
   private quickSuggestions: QuickSuggestionsOption = true;
   private quickSuggestionsDelay = 10;
   private suggestOnTriggerCharacters = true;
+  private suggestMode: 'palette' | 'ghost' = 'palette';
   private getTokenTypeAt?: (lineNumber: number, column: number) => string | null;
   private getLanguageIdAtPosition?: (lineNumber: number, column: number) => string;
+  private onVisibilityChange?: (visible: boolean, rect: WidgetBoxRect | null) => void;
+  private setGhostTexts?: (items: readonly GhostTextItem[]) => void;
+  private clearGhostTexts?: (owner?: string) => void;
+  private getGhostTexts?: (owner?: string) => readonly GhostTextItem[];
   private anchorPos: { lineNumber: number; column: number } | null = null;
   private wordStartCol = 1;
   private itemProviders = new WeakMap<CompletionItem, CompletionProvider>();
   private snippetSession: SnippetSession | null = null;
   private resolveSeq = 0;
+  private ghostCandidates: Array<{ item: CompletionItem; suffix: string }> = [];
+  private ghostIndex = 0;
 
   constructor(
     host: HTMLElement,
@@ -75,7 +108,10 @@ export class SuggestController {
     this.selection = selection;
     this.view = view;
     this.onEdit = onEdit;
-    if (options) this.setOptions(options);
+    const mergedWidgetOpts: SuggestWidgetOptions = {
+      docsMode: options?.suggestDocs ?? 'off',
+      ...widgetOptions,
+    };
     this.widget = new SuggestWidget(
       host,
       {
@@ -84,15 +120,20 @@ export class SuggestController {
           this.seq++;
           this.anchorPos = null;
           this.clearQuickTimer();
+          this.clearGhostPreview();
           this.apply(item);
         },
         onDismiss: () => this.cancel(),
         onSelectionChange: (item) => {
           void this.resolveItem(item);
         },
+        onBoundsChange: (rect) => {
+          this.onVisibilityChange?.(rect !== null, rect);
+        },
       },
-      widgetOptions,
+      mergedWidgetOpts,
     );
+    if (options) this.setOptions(options);
     ensureDefaultCompletionProviders();
   }
 
@@ -103,12 +144,28 @@ export class SuggestController {
     if (opts.quickSuggestions !== undefined) this.quickSuggestions = opts.quickSuggestions;
     if (opts.quickSuggestionsDelay !== undefined) this.quickSuggestionsDelay = Math.max(0, opts.quickSuggestionsDelay);
     if (opts.suggestOnTriggerCharacters !== undefined) this.suggestOnTriggerCharacters = opts.suggestOnTriggerCharacters;
+    if (opts.suggestMode !== undefined) {
+      if (this.suggestMode !== opts.suggestMode) {
+        this.suggestMode = opts.suggestMode;
+        this.cancel();
+      }
+    }
+    if (opts.suggestDocs !== undefined) {
+      this.widget.setOptions({ docsMode: opts.suggestDocs });
+    }
     if (opts.getTokenTypeAt !== undefined) this.getTokenTypeAt = opts.getTokenTypeAt;
     if (opts.getLanguageIdAtPosition !== undefined) this.getLanguageIdAtPosition = opts.getLanguageIdAtPosition;
+    if (opts.onVisibilityChange !== undefined) this.onVisibilityChange = opts.onVisibilityChange;
+    if (opts.setGhostTexts !== undefined) this.setGhostTexts = opts.setGhostTexts;
+    if (opts.clearGhostTexts !== undefined) this.clearGhostTexts = opts.clearGhostTexts;
+    if (opts.getGhostTexts !== undefined) this.getGhostTexts = opts.getGhostTexts;
   }
 
   setWidgetOptions(opts: SuggestWidgetOptions): void { this.widget.setOptions(opts); }
   isOpen(): boolean { return this.open; }
+  isDocsOpen(): boolean { return this.widget.isDocsOpen(); }
+  hasGhostCandidates(): boolean { return this.ghostCandidates.length > 0; }
+  toggleDocs(): boolean { return this.widget.toggleDocs(); }
 
   handleCommitCharacter(ch: string): boolean {
     if (!this.open || this.widget.isSuspended() || !ch || ch.length !== 1) return false;
@@ -119,6 +176,11 @@ export class SuggestController {
 
   async trigger(triggerCharacter?: string, manual = true): Promise<void> {
     if (this.disposed) return;
+    // VS Code convention: Ctrl+Space while the palette is already open toggles docs pane
+    if (manual && !triggerCharacter && this.open) {
+      this.widget.toggleDocs();
+      return;
+    }
     this.clearQuickTimer();
     const my = ++this.seq;
     const pos = { lineNumber: this.selection.active.lineNumber, column: this.selection.active.column };
@@ -168,9 +230,19 @@ export class SuggestController {
       return;
     }
 
-    this.open = true;
     this.anchorPos = pos;
     this.wordStartCol = pos.column - prefix.length;
+
+    // Ghost mode on automatic trigger (Ctrl+Space manual trigger still opens the palette explicitly)
+    if (!manual && this.suggestMode === 'ghost') {
+      this.open = false;
+      this.widget.hide();
+      this.showGhostCandidates(filtered, prefix, pos);
+      return;
+    }
+
+    this.clearGhostPreview();
+    this.open = true;
     this.widget.show(filtered, this.anchor(), prefix);
     this.widget.setSuspended(!this.view.isLineInView(pos.lineNumber));
   }
@@ -191,11 +263,13 @@ export class SuggestController {
     if (/[A-Za-z0-9_$]/.test(ch)) {
       const prefix = this.currentPrefix();
       const validWord = /^[A-Za-z_$]/.test(prefix);
-      if (!this.open && (!validWord || !this.shouldQuickSuggestAtCaret())) return;
-      if (this.open) {
+      if (!this.open && this.ghostCandidates.length === 0 && (!validWord || !this.shouldQuickSuggestAtCaret())) {
+        return;
+      }
+      if (this.open || this.ghostCandidates.length > 0) {
         this.anchorPos = { lineNumber: this.selection.active.lineNumber, column: this.selection.active.column };
       }
-      if (this.open || this.quickSuggestionsDelay <= 0) {
+      if (this.open || this.ghostCandidates.length > 0 || this.quickSuggestionsDelay <= 0) {
         await this.trigger(undefined, false);
       } else {
         this.clearQuickTimer();
@@ -208,12 +282,12 @@ export class SuggestController {
       return;
     }
 
-    if (this.open || this.quickTimer) this.cancel();
+    if (this.open || this.quickTimer || this.ghostCandidates.length > 0) this.cancel();
   }
 
   async onBackspace(): Promise<void> {
     if (this.disposed) return;
-    if (!this.open) { this.clearQuickTimer(); return; }
+    if (!this.open && this.ghostCandidates.length === 0) { this.clearQuickTimer(); return; }
     const prefix = this.currentPrefix();
     if (prefix.length > 0) {
       this.anchorPos = { lineNumber: this.selection.active.lineNumber, column: this.selection.active.column };
@@ -232,11 +306,36 @@ export class SuggestController {
   }
 
   handleKey(e: KeyboardEvent): boolean {
-    if (!this.open || this.widget.isSuspended()) return false;
-    if (e.key === 'ArrowDown') { e.preventDefault(); this.widget.selectNext(); return true; }
-    if (e.key === 'ArrowUp') { e.preventDefault(); this.widget.selectPrev(); return true; }
-    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); return this.widget.acceptSelected(); }
-    if (e.key === 'Escape') { e.preventDefault(); this.cancel(); return true; }
+    if (this.open && !this.widget.isSuspended()) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); this.widget.selectNext(); return true; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); this.widget.selectPrev(); return true; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); return this.widget.acceptSelected(); }
+      if (e.key === 'Escape') { e.preventDefault(); this.cancel(); return true; }
+      return false;
+    }
+    if (this.ghostCandidates.length > 0 && !this.hasHigherPriorityGhost()) {
+      if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        return this.acceptGhostCandidate();
+      }
+      if (e.key === 'ArrowDown' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && this.ghostCandidates.length > 1) {
+        e.preventDefault();
+        this.ghostIndex = (this.ghostIndex + 1) % this.ghostCandidates.length;
+        this.publishActiveGhost();
+        return true;
+      }
+      if (e.key === 'ArrowUp' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && this.ghostCandidates.length > 1) {
+        e.preventDefault();
+        this.ghostIndex = (this.ghostIndex - 1 + this.ghostCandidates.length) % this.ghostCandidates.length;
+        this.publishActiveGhost();
+        return true;
+      }
+      if (e.key === 'Escape' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        this.clearGhostPreview();
+        return true;
+      }
+    }
     return false;
   }
 
@@ -248,7 +347,7 @@ export class SuggestController {
   }
 
   syncCursor(): void {
-    if (!this.open || !this.anchorPos) return;
+    if ((!this.open && this.ghostCandidates.length === 0) || !this.anchorPos) return;
     const a = this.selection.active;
     if (a.lineNumber !== this.anchorPos.lineNumber || a.column !== this.anchorPos.column) this.cancel();
   }
@@ -259,12 +358,87 @@ export class SuggestController {
     this.anchorPos = null;
     this.seq++;
     this.widget.hide();
+    this.clearGhostPreview();
   }
 
   dispose(): void {
     this.disposed = true;
     this.cancel();
     this.widget.dispose();
+  }
+
+  private hasHigherPriorityGhost(): boolean {
+    const active = this.getGhostTexts?.() ?? [];
+    return active.some((g) => (g.owner ?? 'default') !== SUGGEST_GHOST_OWNER);
+  }
+
+  private showGhostCandidates(
+    items: readonly CompletionItem[],
+    prefix: string,
+    pos: { lineNumber: number; column: number },
+  ): void {
+    if (this.hasHigherPriorityGhost()) {
+      this.clearGhostPreview();
+      return;
+    }
+    const lowerPrefix = prefix.toLowerCase();
+    const candidates: Array<{ item: CompletionItem; suffix: string }> = [];
+    for (const item of items) {
+      const preview = previewTextForGhost(item);
+      if (!preview) continue;
+      // Only items that extend the typed prefix (skip fuzzy-only matches)
+      if (prefix.length > 0 && !preview.toLowerCase().startsWith(lowerPrefix)) continue;
+      const suffix = preview.slice(prefix.length);
+      if (!suffix) continue;
+      candidates.push({ item, suffix });
+    }
+    if (!candidates.length) {
+      this.clearGhostPreview();
+      return;
+    }
+    this.ghostCandidates = candidates;
+    this.ghostIndex = 0;
+    this.anchorPos = pos;
+    this.publishActiveGhost();
+  }
+
+  private publishActiveGhost(): void {
+    if (!this.ghostCandidates.length || !this.anchorPos) {
+      this.clearGhostPreview();
+      return;
+    }
+    if (this.hasHigherPriorityGhost()) {
+      this.clearGhostPreview();
+      return;
+    }
+    const cur = this.ghostCandidates[this.ghostIndex];
+    if (!cur) return;
+    this.setGhostTexts?.([
+      {
+        id: 'suggest-ghost-active',
+        owner: SUGGEST_GHOST_OWNER,
+        lineNumber: this.anchorPos.lineNumber,
+        column: this.anchorPos.column,
+        text: cur.suffix,
+      },
+    ]);
+  }
+
+  private acceptGhostCandidate(): boolean {
+    const cur = this.ghostCandidates[this.ghostIndex];
+    if (!cur) return false;
+    this.clearGhostPreview();
+    this.anchorPos = null;
+    this.seq++;
+    this.apply(cur.item);
+    return true;
+  }
+
+  private clearGhostPreview(): void {
+    const had = this.ghostCandidates.length > 0;
+    this.ghostCandidates = [];
+    this.ghostIndex = 0;
+    if (had) this.clearGhostTexts?.(SUGGEST_GHOST_OWNER);
   }
 
   private clearQuickTimer(): void {

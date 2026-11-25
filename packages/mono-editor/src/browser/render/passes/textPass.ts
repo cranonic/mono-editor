@@ -8,6 +8,7 @@ import {
   type FrameContext,
   type RenderPass,
 } from '../frameContext';
+import { paintInlayChip } from './inlayBubblePass';
 
 interface StyledSpan {
   start: number;
@@ -416,18 +417,19 @@ export const textPass: RenderPass = {
         for (const hint of segInlays) {
           const idx = sameColCount.get(hint.column) ?? 0;
           sameColCount.set(hint.column, idx + 1);
+          const lift = hint.liftProgress ?? 0;
+          if (lift >= 0.99) continue; // Fully lifted into inlayBubblePass
           const startX = f.segVirtualX(content, seg, hint.column, 1, idx) + hint.marginLeftPx;
           if (startX + hint.chipWidthPx < f.contentLeft || startX > cssWidth) continue;
 
-          ctx.fillStyle = inlayBg;
-          ctx.beginPath();
-          ctx.roundRect(startX, chipY, hint.chipWidthPx, chipH, 3);
-          ctx.fill();
+          const prevAlpha = ctx.globalAlpha;
+          if (lift > 0.01) ctx.globalAlpha = prevAlpha * Math.max(0, 1 - lift);
+          paintInlayChip(ctx, startX, chipY, hint.chipWidthPx, chipH, hint.text, hintTextY, inlayBg, inlayFg);
+          if (lift > 0.01) ctx.globalAlpha = prevAlpha;
 
-          ctx.fillStyle = inlayFg;
-          ctx.fillText(hint.text, startX + INLAY_CHIP_PAD_X, hintTextY);
-
-          f.inlayHits.push({ hint, x: startX, y: chipY, w: hint.chipWidthPx, h: chipH });
+          if (lift < 0.5) {
+            f.inlayHits.push({ hint, x: startX, y: chipY, w: hint.chipWidthPx, h: chipH });
+          }
         }
         ctx.font = baseFont;
       }

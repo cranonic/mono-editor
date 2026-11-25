@@ -963,6 +963,15 @@
               </div>
 
               <div class="ctrl-row">
+                <label for="opt-inlay-click" title="inlayHints.onClick — click/tap behavior on inlay hints">Inlay Hint Click</label>
+                <select id="opt-inlay-click" class="ctrl-select">
+                  <option value="placeCursor" selected>Place Cursor</option>
+                  <option value="bubble">Bubble Lift</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
                 <label for="opt-inline-suggest">Ghost Text (AI)</label>
                 <span class="switch">
                   <input id="opt-inline-suggest" type="checkbox" checked />
@@ -998,6 +1007,78 @@
                   <input id="opt-quick-suggest" type="checkbox" checked />
                   <span class="switch-track"></span>
                 </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-suggest-mode" title="suggest.mode — completion popup list or inline ghost completion">Suggest Mode</label>
+                <select id="opt-suggest-mode" class="ctrl-select">
+                  <option value="palette" selected>Palette</option>
+                  <option value="ghost">Inline Ghost</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-suggest-docs" title="suggest.docs — completion documentation pane (Ctrl+Space or i button toggles)">Suggest Docs</label>
+                <select id="opt-suggest-docs" class="ctrl-select">
+                  <option value="off" selected>Off (Toggle)</option>
+                  <option value="auto">Auto</option>
+                  <option value="side">Side</option>
+                  <option value="below">Below</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-sig-trigger" title="signatureHelp — parameter hints trigger mode">Signature Help</label>
+                <select id="opt-sig-trigger" class="ctrl-select">
+                  <option value="auto" selected>Auto</option>
+                  <option value="manual">Manual Only</option>
+                  <option value="off">Disabled</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-hover-trigger" title="hover.trigger — pointer-aware default (click on touch, hover on desktop)">Hover Trigger</label>
+                <select id="opt-hover-trigger" class="ctrl-select">
+                  <option value="auto" selected>Auto (Pointer)</option>
+                  <option value="click">Click / Tap</option>
+                  <option value="hover">Mouse Hover</option>
+                  <option value="off">Off</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-diag-popup" title="diagnostics.popup — independent squiggle popup trigger">Diagnostics Popup</label>
+                <select id="opt-diag-popup" class="ctrl-select">
+                  <option value="auto" selected>Auto (Pointer)</option>
+                  <option value="click">Click / Tap</option>
+                  <option value="hover">Mouse Hover</option>
+                  <option value="off">Off</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-ctx-enabled" title="contextMenu.enabled — enable or disable editor context menu">Context Menu</label>
+                <span class="switch">
+                  <input id="opt-ctx-enabled" type="checkbox" checked />
+                  <span class="switch-track"></span>
+                </span>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-ctx-type" title="contextMenu.type — horizontal touch bar with More or vertical Monaco list">Context Menu Style</label>
+                <select id="opt-ctx-type" class="ctrl-select">
+                  <option value="horizontal" selected>Horizontal + More</option>
+                  <option value="vertical">Vertical List</option>
+                </select>
+              </div>
+
+              <div class="ctrl-row">
+                <label for="opt-ctx-anim" title="contextMenu.animation — panel entrance animation">Menu Animation</label>
+                <select id="opt-ctx-anim" class="ctrl-select">
+                  <option value="cascade" selected>Cascade</option>
+                  <option value="smooth">Smooth</option>
+                  <option value="none">None</option>
+                </select>
               </div>
 
               <div class="ctrl-row">

@@ -9,9 +9,17 @@ import { AXIS_LOCK_RATIO, TouchScrollPhysics, type ScrollAxis } from './touchScr
 
 export type PointerInteractKind = 'tap' | 'scroll' | 'scrollEnd' | 'select' | 'handle' | 'handleTap';
 
+export interface InlayHintClickMeta {
+  clickCount: 1 | 2;
+  source: 'touch' | 'mouse';
+  localX: number;
+  localY: number;
+}
+
 export interface PointerExtraCallbacks {
   onMouseEvent?: (kind: 'down' | 'up' | 'move' | 'leave' | 'contextmenu', e: MouseEvent) => void;
   onPinchZoom?: (scaleRatio: number) => void;
+  onTapMeta?: (info: { clientX: number; clientY: number; pointerType: string }) => void;
 }
 
 const TAP_SLOP = 14;
@@ -36,7 +44,7 @@ export class PointerController {
   private onInteract: (kind: PointerInteractKind) => void;
   private onFoldToggle?: (lineNumber: number) => void;
   private onColorSwatchClick?: (hit: ColorHit) => void;
-  private onInlayHintClick?: (hit: InlayHintHit) => void;
+  private onInlayHintClick?: (hit: InlayHintHit, meta?: InlayHintClickMeta) => void;
   private onLinkClick?: (hit: LinkHit, e: PointerEvent) => void;
   private extra?: PointerExtraCallbacks;
   private disposed = false;
@@ -85,7 +93,7 @@ export class PointerController {
     onInteract: (kind: PointerInteractKind) => void,
     onFoldToggle?: (lineNumber: number) => void,
     onColorSwatchClick?: (hit: ColorHit) => void,
-    onInlayHintClick?: (hit: InlayHintHit) => void,
+    onInlayHintClick?: (hit: InlayHintHit, meta?: InlayHintClickMeta) => void,
     onLinkClick?: (hit: LinkHit, e: PointerEvent) => void,
     extra?: PointerExtraCallbacks,
   ) {
@@ -190,6 +198,18 @@ export class PointerController {
     const localX = e.clientX - rect.left;
     const localY = e.clientY - rect.top;
 
+    // Track F: check color swatches inside sticky headers BEFORE sticky reveal click
+    if (this.onColorSwatchClick) {
+      for (const ch of this.view.getStickyColorHits()) {
+        if (localX >= ch.x - 3 && localX <= ch.x + ch.w + 3 && localY >= ch.y - 3 && localY <= ch.y + ch.h + 3) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.onColorSwatchClick(ch);
+          return true;
+        }
+      }
+    }
+
     const stickyHit = this.view.hitTestSticky(localX, localY);
     if (stickyHit) {
       e.preventDefault();
@@ -230,16 +250,8 @@ export class PointerController {
       }
     }
 
-    if (this.onInlayHintClick) {
-      for (const ih of this.view.getInlayHits()) {
-        if (localX >= ih.x && localX <= ih.x + ih.w && localY >= ih.y && localY <= ih.y + ih.h) {
-          e.preventDefault();
-          e.stopPropagation();
-          this.onInlayHintClick(ih);
-          return true;
-        }
-      }
-    }
+    // NOTE (Track C): Inlay hints intentionally do NOT intercept pointerdown so touch scrolling
+    // over a chip works smoothly; inlay clicks fire on pointerup tap within TAP_SLOP.
 
     if (this.onLinkClick && (e.ctrlKey || e.metaKey)) {
       for (const lh of this.view.getLinkHits()) {
@@ -476,7 +488,35 @@ export class PointerController {
     if (wasTap && !wasSelecting) {
       const now = performance.now();
       const nearLast = this.isWithinDoubleWindow(e.clientX, e.clientY, now);
-      if (pendingDouble || nearLast) {
+      const isDouble = pendingDouble || nearLast;
+
+      // Track C: Inlay hint tap / double-tap detection on pointerup (includes inline chips & lifted bubbles)
+      if (this.onInlayHintClick) {
+        const rect = this.root.getBoundingClientRect();
+        const localX = e.clientX - rect.left;
+        const localY = e.clientY - rect.top;
+        const hits = this.view.getInlayHits();
+        // Reverse order so lifted bubbles (painted after inline chips) take priority if overlapping
+        for (let i = hits.length - 1; i >= 0; i--) {
+          const ih = hits[i]!;
+          if (localX >= ih.x && localX <= ih.x + ih.w && localY >= ih.y && localY <= ih.y + ih.h) {
+            this.clearSingleTap();
+            const clickCount: 1 | 2 = isDouble ? 2 : 1;
+            const source: 'touch' | 'mouse' = e.pointerType === 'touch' ? 'touch' : 'mouse';
+            this.onInlayHintClick(ih, { clickCount, source, localX, localY });
+            if (isDouble) {
+              this.lastTapT = 0;
+            } else {
+              this.lastTapT = now;
+              this.lastTapX = e.clientX;
+              this.lastTapY = e.clientY;
+            }
+            return;
+          }
+        }
+      }
+
+      if (isDouble) {
         this.clearSingleTap();
         this.selectWordAt(e.clientX, e.clientY);
         this.view.schedulePaint();
@@ -490,6 +530,7 @@ export class PointerController {
       if (e.altKey) this.selection.addSelection(pos, pos, true);
       else this.selection.setCaret(pos.lineNumber, pos.column);
       this.view.schedulePaint();
+      this.extra?.onTapMeta?.({ clientX: e.clientX, clientY: e.clientY, pointerType: e.pointerType || 'mouse' });
       this.onInteract('tap');
       this.lastTapT = now;
       this.lastTapX = e.clientX;

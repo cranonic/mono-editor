@@ -3,6 +3,8 @@ import {
   type CompletionItem,
 } from '../../../common/languages/providers/types';
 
+export type SuggestDocsMode = 'off' | 'auto' | 'side' | 'below';
+
 export interface SuggestWidgetOptions {
   maxHeight?: number;
   maxWidth?: number;
@@ -10,6 +12,7 @@ export interface SuggestWidgetOptions {
   fontFamily?: string;
   fontSize?: number;
   rowHeight?: number;
+  docsMode?: SuggestDocsMode;
   background?: string;
   border?: string;
   foreground?: string;

@@ -264,6 +264,15 @@ export class IndentScopeFinder implements IScopeFinder {
   }
 }
 
+export interface StickyRowGeometry {
+  /** Document Y (sticky-space, relative to top of document with paddingTop) of visual `row`. */
+  topOfRow(row: number): number;
+  /** Top of visual `row`'s block including any leading view zones (e.g. CodeLens strip above `row`). */
+  blockTopOfRow?(row: number): number;
+  /** Inverse mapping: maps document Y in sticky-space to `{ row, inZone }`. */
+  rowAtDocY(docY: number): { row: number; inZone: boolean };
+}
+
 export interface StickyLayoutResult {
   lines: StickyRenderLine[];
   /** Total sticky region height (includes negative push) */
@@ -273,9 +282,9 @@ export interface StickyLayoutResult {
 }
 
 /**
- * Full layout for current scrollTop (supports folded blocks and wrapped lines via optional projection).
+ * Full layout for current scrollTop (supports folded blocks, wrapped lines, and multi-zone view zones).
  * probe = visual row at (scrollTop + lineHeight - ε)  — Acode buildSticky
- * pushPx = min(0, docY(probeRow+pushed) - (scrollTop + (pushed+1)*lh))
+ * pushPx = min(0, blockTop(probeRow+pushed) - (scrollTop + (pushed+1)*lh))
  */
 export function layoutStickyForScroll(
   finder: IScopeFinder,
@@ -288,12 +297,15 @@ export function layoutStickyForScroll(
   activeLineSticky?: boolean,
   projection?: import('./ViewLineProjection').ViewLineProjection,
   isLineHidden?: (lineNumber: number) => boolean,
+  geometry?: StickyRowGeometry,
 ): StickyLayoutResult {
   const { lineHeight, paddingTop } = metrics;
   if (maxLineCount <= 0) return { lines: [], height: 0, pushPx: 0, pushed: -1 };
 
   const probeY = scrollTop + lineHeight - 0.01;
-  const probeRow = Math.max(0, Math.floor((probeY - paddingTop) / lineHeight));
+  const probeRow = geometry
+    ? Math.max(0, geometry.rowAtDocY(probeY).row)
+    : Math.max(0, Math.floor((probeY - paddingTop) / lineHeight));
 
   let headers: StickyHeaders;
   if (projection && !projection.isIdentity()) {
@@ -311,18 +323,26 @@ export function layoutStickyForScroll(
   let pushPx = 0;
   if (headers.lines.length && scrollWithEditor && headers.pushed >= 0) {
     const row = probeRow + headers.pushed;
-    const docY = paddingTop + row * lineHeight;
+    const docY = geometry
+      ? (geometry.blockTopOfRow ? geometry.blockTopOfRow(row) : geometry.topOfRow(row))
+      : paddingTop + row * lineHeight;
     pushPx = Math.min(0, docY - (scrollTop + (headers.pushed + 1) * lineHeight));
   }
 
-  const out: StickyRenderLine[] = headers.lines.map((lineNumber, i) => {
+  const out: StickyRenderLine[] = [];
+  for (let i = 0; i < headers.lines.length; i++) {
+    const lineNumber = headers.lines[i]!;
     const isPushed = scrollWithEditor && headers.pushed === i;
+    if (isPushed && lineHeight + pushPx <= 0.01) {
+      // Completely pushed past the top of the sticky slot (can occur when next block has a leading lens strip).
+      continue;
+    }
     const y = i * lineHeight + (isPushed ? pushPx : 0);
     const visibility = isPushed
       ? Math.max(0, Math.min(1, (lineHeight + pushPx) / lineHeight))
       : 1;
-    return { lineNumber, y, visibility, kind: 'scope' as const };
-  });
+    out.push({ lineNumber, y, visibility, kind: 'scope' as const });
+  }
 
   // Active line sticky: caret line scrolled above the sticky stack → pin as extra row
   if (
@@ -335,7 +355,7 @@ export function layoutStickyForScroll(
       projection && !projection.isIdentity()
         ? projection.modelToVisual(activeLine, activeColumn ?? 1).visualRow
         : activeLine - 1;
-    const activeDocY = paddingTop + activeRow * lineHeight;
+    const activeDocY = geometry ? geometry.topOfRow(activeRow) : paddingTop + activeRow * lineHeight;
     const stackH = out.length * lineHeight;
     // Active line is above the viewport content area (under sticky stack)
     if (activeDocY + lineHeight <= scrollTop + stackH + 0.5) {
@@ -359,7 +379,7 @@ export function layoutStickyForScroll(
   }
 
   const height = out.length
-    ? Math.max(...out.map((l) => l.y + lineHeight), out.length * lineHeight)
+    ? Math.max(...out.map((l) => l.y + lineHeight), 0)
     : 0;
   return { lines: out, height, pushPx, pushed: headers.pushed };
 }

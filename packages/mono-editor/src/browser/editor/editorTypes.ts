@@ -36,6 +36,7 @@ import type {
 import type {
   DocumentSymbol,
   GhostTextItem,
+  IInlayHintClickEvent,
   Location,
   ModelLike,
   TextEdit,
@@ -51,9 +52,16 @@ import type { KeybindingService, MonoKeybinding } from '../../platform/keybindin
 import type { PaletteService } from '../../platform/palette/PaletteService';
 import type { ResolvedWidgetTheme } from '../../platform/theme/widgetTheme';
 import type { InputChangeEvent, InputController } from '../input/InputController';
-import type { PointerInteractKind } from '../input/pointer/PointerController';
+import type { InlayHintClickMeta, PointerInteractKind } from '../input/pointer/PointerController';
 import type { ColorHit, InlayHintHit, LinkHit } from '../render/CanvasRenderer';
 import type { ViewController } from '../view/ViewController';
+
+export interface WidgetBoxRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
 
 export type MonoContentChangeEvent = IModelContentChangedEvent;
 
@@ -201,6 +209,7 @@ export interface IMonoEditor {
   onKeyUp(listener: (e: KeyboardEvent) => void): MonoDisposable;
   onDidDispose(listener: () => void): MonoDisposable;
   onDidChangeMarkers(listener: (markers: IMarker[]) => void): MonoDisposable;
+  onDidClickInlayHint(listener: (e: IInlayHintClickEvent) => void): MonoDisposable;
 
   addAction(action: MonoAction): MonoDisposable;
   getAction(id: string): IMonoEditorAction | null;
@@ -299,9 +308,10 @@ export interface IEditorContribution {
   onKeyDown?(e: KeyboardEvent): boolean;
   shouldAllowWheelTarget?(target: Node): boolean;
   onColorSwatchClick?(hit: ColorHit): void;
-  onInlayHintClick?(hit: InlayHintHit): void;
+  onInlayHintClick?(hit: InlayHintHit, meta?: InlayHintClickMeta): void;
   onLinkClick?(hit: LinkHit, e: PointerEvent): void;
   onFoldToggle?(lineNumber: number): void;
+  onPointerTapMeta?(info: { clientX: number; clientY: number; pointerType: string }): void;
 }
 
 /** Narrow capability interface for contributions interacting with the host editor. */
@@ -362,6 +372,17 @@ export interface IEditorContributionHost {
   removeOverlayWidget(widget: IOverlayWidget): void;
   announce(message: string): void;
   getDocumentSymbols(): Promise<DocumentSymbol[]>;
+  emitInlayHintClick(e: IInlayHintClickEvent): void;
+  setContext(key: string, value: boolean | string | number): void;
+  getContext(key: string): boolean | string | number | undefined;
+  setSuggestWidgetRect(rect: WidgetBoxRect | null): void;
+  getSuggestWidgetRect(): WidgetBoxRect | null;
+  isSuggestVisible(): boolean;
+  setGhostTexts(items: readonly GhostTextItem[]): void;
+  clearGhostTexts(owner?: string): void;
+  getGhostTexts(owner?: string): readonly GhostTextItem[];
+  showContextMenu(): void;
+  hideContextMenu(): void;
 }
 
 export interface IFindContribution extends IEditorContribution {

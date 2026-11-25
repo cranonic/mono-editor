@@ -33,6 +33,7 @@ import {
   type IEditorContributionHost,
   type IFindContribution,
   type IMonoEditor,
+  type WidgetBoxRect,
 } from './editorTypes';
 import type { ModelController } from './modelController';
 
@@ -263,6 +264,7 @@ export function buildContributionHost(params: {
   isPeekEditor: boolean;
   initialOptions: MonoEditorOptions;
   contributions: Map<string, IEditorContribution>;
+  events: EditorEventBus;
   isDisposed: () => boolean;
   getMetrics: () => RenderMetrics;
   syncTextarea: () => void;
@@ -270,6 +272,7 @@ export function buildContributionHost(params: {
   emitCursorEvents: (source: string, keepSuggest?: boolean) => void;
   createNestedEditor: (container: HTMLElement, sharedModel: TextModel, extra?: Partial<MonoEditorOptions>) => IMonoEditor;
 }): IEditorContributionHost {
+  let suggestRect: WidgetBoxRect | null = null;
   return {
     root: params.root, view: params.view, input: params.input, selection: params.selection,
     commands: params.commands, keybindings: params.keybindings, folding: params.folding,
@@ -322,6 +325,20 @@ export function buildContributionHost(params: {
     removeOverlayWidget: (w) => params.widgets.removeOverlayWidget(w),
     announce: (msg) => params.input.announce(msg),
     getDocumentSymbols: () => params.editor.getDocumentSymbols(),
+    emitInlayHintClick: (e) => params.events.emitInlayHintClick(e),
+    setContext: (k, v) => params.commands.setContext(k, v),
+    getContext: (k) => params.commands.getContext(k),
+    setSuggestWidgetRect: (r) => {
+      suggestRect = r;
+      params.commands.setContext('suggestWidgetVisible', r !== null);
+    },
+    getSuggestWidgetRect: () => suggestRect,
+    isSuggestVisible: () => suggestRect !== null,
+    setGhostTexts: (items) => params.editor.setGhostTexts(items),
+    clearGhostTexts: (owner) => params.editor.clearGhostTexts(owner),
+    getGhostTexts: (owner) => params.editor.getGhostTexts(owner),
+    showContextMenu: () => params.editor.showContextMenu(),
+    hideContextMenu: () => params.editor.hideContextMenu(),
   };
 }
 
@@ -365,13 +382,16 @@ export function createEditorPointer(params: {
     }),
     params.toggleFoldAtLine,
     (h) => { for (const c of params.contributions.values()) c.onColorSwatchClick?.(h); },
-    (h) => { for (const c of params.contributions.values()) c.onInlayHintClick?.(h); },
+    (h, meta) => { for (const c of params.contributions.values()) c.onInlayHintClick?.(h, meta); },
     (h, ev) => { for (const c of params.contributions.values()) c.onLinkClick?.(h, ev); },
     {
       onMouseEvent: (k, e) => {
         const r = params.root.getBoundingClientRect();
         const target = params.view.getTargetAtLocalPoint(e.clientX - r.left, e.clientY - r.top, e.target);
         params.events.emitMouse(k, wrapEditorMouseEvent(e, target));
+      },
+      onTapMeta: (info) => {
+        for (const c of params.contributions.values()) c.onPointerTapMeta?.(info);
       },
       onPinchZoom: (ratio) => {
         if (!params.opts.pinchZoom) return;

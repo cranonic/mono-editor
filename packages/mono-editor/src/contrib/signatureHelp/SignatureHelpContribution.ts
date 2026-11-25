@@ -5,6 +5,7 @@ import {
 } from '../../browser/editor/editorTypes';
 import type { InputChangeEvent } from '../../browser/input/InputController';
 import type { PointerInteractKind } from '../../browser/input/pointer/PointerController';
+import type { MonoEditorOptions } from '../../common/config/editorOptions';
 import type { TextModel } from '../../common/model/TextModel';
 import { MonoCommands } from '../../platform/keybindings/KeybindingService';
 import type { ResolvedWidgetTheme } from '../../platform/theme/widgetTheme';
@@ -15,12 +16,19 @@ export class SignatureHelpContribution implements IEditorContribution {
   private readonly controller: SignatureHelpController;
 
   constructor(host: IEditorContributionHost) {
+    const sigOpts = host.initialOptions.signatureHelp;
     this.controller = new SignatureHelpController(
       host.root,
       host.getModel(),
       host.selection,
       host.view,
-      (ln, col) => host.getLanguageIdAtPosition(ln, col),
+      {
+        enabled: sigOpts?.enabled ?? true,
+        trigger: sigOpts?.trigger ?? 'auto',
+        getLanguageIdAtPosition: (ln, col) => host.getLanguageIdAtPosition(ln, col),
+        getAvoidRect: () => host.getSuggestWidgetRect(),
+        isSuggestVisible: () => host.isSuggestVisible(),
+      },
     );
 
     host.keybindings.add({
@@ -57,7 +65,6 @@ export class SignatureHelpContribution implements IEditorContribution {
   }
 
   onCursorChange(source: string): void {
-    // Live update parameter index when moving caret via arrows or tapping inside arguments
     if (source === 'mouse' || source === 'api' || source === 'keyboard') {
       this.controller.syncCursor();
     }
@@ -75,9 +82,16 @@ export class SignatureHelpContribution implements IEditorContribution {
     if (kind === 'handle' || kind === 'handleTap' || kind === 'select') {
       this.controller.hide();
     } else if (kind === 'tap') {
-      // Keep open & update active parameter if user tapped another argument inside the same call
       this.controller.syncCursor();
     }
+  }
+
+  onOptionsChange(patch: Partial<MonoEditorOptions>): void {
+    if (!patch.signatureHelp) return;
+    this.controller.setOptions({
+      enabled: patch.signatureHelp.enabled,
+      trigger: patch.signatureHelp.trigger,
+    });
   }
 
   onModelChange(model: TextModel): void {

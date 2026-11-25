@@ -15,6 +15,7 @@ import {
 import { COLOR_SWATCH_ADVANCE, type CanvasRenderer } from '../render/CanvasRenderer';
 import {
   computeRowDocTop,
+  createRowGeometry,
   resolveViewZoneAfterRow,
   type ResolvedViewZone,
   type ViewZoneSpec,
@@ -103,24 +104,6 @@ export function lineColumnAtX(
   return renderer.columnAtX(content, mapped.realX, metrics, round);
 }
 
-function adjustDocYForZones(
-  docY: number,
-  lineHeight: number,
-  zones: readonly ResolvedViewZone[],
-): number {
-  if (!zones.length) return docY;
-  let y = docY;
-  for (const z of zones) {
-    const zoneStart = (z.afterVisualRow + 1) * lineHeight;
-    if (y >= zoneStart + z.heightPx) {
-      y -= z.heightPx;
-    } else if (y >= zoneStart) {
-      return Math.max(0, z.afterVisualRow * lineHeight);
-    }
-  }
-  return y;
-}
-
 export function hitTestPosition(
   ctx: HitTestContext,
   localX: number,
@@ -142,19 +125,16 @@ export function hitTestPosition(
     getLineInlayHints,
     getLineGhostInline,
   } = ctx;
-  let y = localY + scrollTop - topInsetPx - metrics.paddingTop;
-  if (resolvedZones && resolvedZones.length) {
-    y = adjustDocYForZones(y, metrics.lineHeight, resolvedZones);
-  } else {
-    const afterRow = resolveViewZoneAfterRow(viewZone, model, projection);
-    if (viewZone && afterRow >= 0) {
-      const zoneStartY = (afterRow + 1) * metrics.lineHeight;
-      if (y >= zoneStartY + viewZone.heightPx) y -= viewZone.heightPx;
-      else if (y >= zoneStartY) y = afterRow * metrics.lineHeight;
-    }
-  }
+  const zones: readonly ResolvedViewZone[] =
+    resolvedZones && resolvedZones.length
+      ? resolvedZones
+      : viewZone
+        ? [{ id: viewZone.id, afterVisualRow: resolveViewZoneAfterRow(viewZone, model, projection), heightPx: viewZone.heightPx }]
+        : [];
+  const geom = createRowGeometry(metrics, topInsetPx, zones);
+  const hit = geom.rowAtDocY(localY + scrollTop);
   const totalRows = projection.getVisualLineCount();
-  const rawRow = Math.floor(y / metrics.lineHeight);
+  const rawRow = hit.row;
   if (rawRow >= totalRows) {
     const lastSeg = projection.getVisualLine(totalRows - 1);
     const lastLine = model.getLineContent(lastSeg.modelLine);

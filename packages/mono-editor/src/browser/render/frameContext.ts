@@ -187,6 +187,12 @@ export interface PaintOptions {
   hoverRange?: IRange | null;
   documentHighlights?: readonly { range: IRange; kind?: number }[];
   ghostTextItalic?: boolean;
+  /** Track C: optional lift progress (0..1) per inlay hint key when bubble mode is active. */
+  getInlayLiftProgress?: (hint: ResolvedInlayHint) => number;
+  /** Track C: whether bubble mode is active for lifted inlay hints. */
+  inlayBubbleEnabled?: boolean;
+  /** Track C: lifted bubble hits populated by inlayBubblePass for tap handling. */
+  stickyStackBottom?: number;
 }
 
 export interface FrameContext {
@@ -221,11 +227,14 @@ export interface FrameContext {
   segX: (content: string, seg: VisualLine, col: number) => number;
   /** Caret X at `col` (sits to the LEFT of inline ghost text anchored at `col`). */
   segCaretX: (content: string, seg: VisualLine, col: number) => number;
+  /** Single source of truth X for caret / selection start / selection end / teardrops. */
+  xAt: (line: number, col: number, role: 'caret' | 'selStart' | 'selEnd') => number;
   /** Element start X inside `seg` for a virtual element (0=swatch, 1=inlay, 2=ghost). */
   segVirtualX: (content: string, seg: VisualLine, col: number, order: number, idx?: number) => number;
   tokenColorAt: (lineNumber: number, col: number) => string;
   foldHits: FoldHit[];
   colorHits: ColorHit[];
+  stickyColorHits: ColorHit[];
   inlayHits: InlayHintHit[];
   linkHits: LinkHit[];
   teardrops: TeardropHit[];
@@ -463,7 +472,14 @@ export function buildFrameContext(
     let els = lineVirtualCache.get(ln);
     if (!els) {
       const colors = colorsForLine(ln);
-      const inlays = inlayHintsForLine(ln);
+      const rawInlays = inlayHintsForLine(ln);
+      const getLift = opts.getInlayLiftProgress;
+      const inlays = getLift && rawInlays.length
+        ? rawInlays.map((h) => {
+            const p = Math.max(0, Math.min(1, getLift(h)));
+            return p <= 0 ? h : { ...h, totalAdvancePx: Math.max(0, h.totalAdvancePx * (1 - p)) };
+          })
+        : rawInlays;
       const ghosts = ghostInlineForLine(ln);
       els = !colors.length && !inlays.length && !ghosts.length
         ? []
@@ -489,6 +505,15 @@ export function buildFrameContext(
 
   const segX = (content: string, seg: VisualLine, col: number): number => segXInternal(content, seg, col, true);
   const segCaretX = (content: string, seg: VisualLine, col: number): number => segXInternal(content, seg, col, false);
+  const xAt = (line: number, col: number, role: 'caret' | 'selStart' | 'selEnd'): number => {
+    const clampedLine = Math.max(1, Math.min(model.getLineCount(), line));
+    const content = model.getLineContent(clampedLine);
+    const seg =
+      projection && !projection.isIdentity()
+        ? projection.modelToVisual(clampedLine, col).visualLine
+        : getVisualLine(clampedLine - 1);
+    return role === 'caret' ? segCaretX(content, seg, col) : segX(content, seg, col);
+  };
   const segVirtualX = (content: string, seg: VisualLine, col: number, order: number, idx = 0): number => {
     const vels = virtualElementsForLine(seg.modelLine);
     const originAdv = seg.startCol === 1 ? 0 : virtualAdvanceBeforeColumn(vels, seg.startCol, true);
@@ -558,10 +583,12 @@ export function buildFrameContext(
     measureText,
     segX,
     segCaretX,
+    xAt,
     segVirtualX,
     tokenColorAt,
     foldHits: [],
     colorHits: [],
+    stickyColorHits: [],
     inlayHits: [],
     linkHits: [],
     teardrops: [],

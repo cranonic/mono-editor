@@ -125,6 +125,7 @@ export type {
   InlayHint,
   InlayHintList,
   InlayHintsProvider,
+  IInlayHintClickEvent,
   IWorkspaceTextEdit,
   WorkspaceEdit,
   RenameLocation,

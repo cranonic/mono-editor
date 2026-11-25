@@ -106,7 +106,7 @@ for (const langId of JS_TS_LANGS) {
             label: 'log',
             kind: CompletionItemKind.Snippet,
             detail: 'console.log snippet',
-            insertText: 'console.log(${1:"label"}, ${2:value});$0',
+            insertText: 'console.log("${1:label}", ${2:value});$0',
             insertTextRules: CompletionItemInsertTextRule.InsertAsSnippet,
           },
           {
@@ -1323,10 +1323,19 @@ const optColorComments = document.getElementById('opt-color-comments') as HTMLIn
 const optColorStyle = document.getElementById('opt-color-style') as HTMLInputElement;
 const optColorScript = document.getElementById('opt-color-script') as HTMLInputElement;
 const optInlayHints = document.getElementById('opt-inlay-hints') as HTMLInputElement;
+const optInlayClick = document.getElementById('opt-inlay-click') as HTMLSelectElement;
 const optInlineSuggest = document.getElementById('opt-inline-suggest') as HTMLInputElement;
 const optSemanticTokens = document.getElementById('opt-semantic-tokens') as HTMLInputElement;
 const optScrollBeyond = document.getElementById('opt-scroll-beyond') as HTMLInputElement;
 const optQuickSuggest = document.getElementById('opt-quick-suggest') as HTMLInputElement;
+const optSuggestMode = document.getElementById('opt-suggest-mode') as HTMLSelectElement;
+const optSuggestDocs = document.getElementById('opt-suggest-docs') as HTMLSelectElement;
+const optSigTrigger = document.getElementById('opt-sig-trigger') as HTMLSelectElement;
+const optHoverTrigger = document.getElementById('opt-hover-trigger') as HTMLSelectElement;
+const optDiagPopup = document.getElementById('opt-diag-popup') as HTMLSelectElement;
+const optCtxEnabled = document.getElementById('opt-ctx-enabled') as HTMLInputElement;
+const optCtxType = document.getElementById('opt-ctx-type') as HTMLSelectElement;
+const optCtxAnim = document.getElementById('opt-ctx-anim') as HTMLSelectElement;
 const optAutoBrackets = document.getElementById('opt-auto-brackets') as HTMLInputElement;
 const optAutoQuotes = document.getElementById('opt-auto-quotes') as HTMLInputElement;
 const optAutoSurround = document.getElementById('opt-auto-surround') as HTMLInputElement;
@@ -1668,7 +1677,7 @@ editorInstance.onMouseDown((ev) => {
   }
 });
 
-// Responsive Diff Editor toggle (auto inline < 720px, side-by-side >= 720px)
+// Dual-MonoEditor Diff Editor toggle (auto inline < 900px, side-by-side >= 900px, editable modified pane)
 let diffOpen = false;
 let diffEditor: IMonoDiffEditor | null = null;
 btnDiff.addEventListener('click', () => {
@@ -1676,9 +1685,19 @@ btnDiff.addEventListener('click', () => {
   btnDiff.classList.toggle('active', diffOpen);
   workspaceEl.classList.toggle('diff-mode', diffOpen);
   if (diffOpen) {
-    if (!diffEditor) diffEditor = editor.createDiffEditor(diffHost);
+    if (!diffEditor) diffEditor = editor.createDiffEditor(diffHost, { readOnly: false });
     const langId = editorInstance.getLanguageId();
-    const baseText = (LANGUAGE_SAMPLES[langId] ?? LANGUAGE_SAMPLES.javascript!).code;
+    const currentText = editorInstance.getValue();
+    let baseText = (LANGUAGE_SAMPLES[langId] ?? LANGUAGE_SAMPLES.javascript!).code;
+    if (baseText === currentText) {
+      const lines = currentText.split('\n');
+      const longOrig =
+        '// Long single-line benchmark for independent horizontal scrolling across split diff panes without text overlap: ' +
+        'const pipelineConfig = { renderer: "canvas2d", syncVerticalScroll: true, independentHorizontalScroll: true, tokenDiff: "advanced", editableModifiedPane: true };';
+      const origLines = lines.map((line, i) => (i === 0 ? `${line} (baseline)` : line));
+      origLines.splice(Math.min(3, origLines.length), 0, longOrig);
+      baseText = origLines.join('\n');
+    }
     const origModel = editor.createModel(baseText, langId);
     diffEditor.setModel({ original: origModel, modified: editorInstance.getModel() });
     requestAnimationFrame(() => diffEditor?.layout());
@@ -1724,9 +1743,16 @@ optColorComments.addEventListener('change', syncColorRules);
 optColorStyle.addEventListener('change', syncColorRules);
 optColorScript.addEventListener('change', syncColorRules);
 
-optInlayHints.addEventListener('change', () => {
-  editorInstance.updateOptions({ inlayHints: { enabled: optInlayHints.checked } });
-});
+const syncInlayHints = () => {
+  editorInstance.updateOptions({
+    inlayHints: {
+      enabled: optInlayHints.checked,
+      onClick: optInlayClick.value as 'placeCursor' | 'bubble' | 'none',
+    },
+  });
+};
+optInlayHints.addEventListener('change', syncInlayHints);
+optInlayClick.addEventListener('change', syncInlayHints);
 
 optInlineSuggest.addEventListener('change', () => {
   editorInstance.updateOptions({ inlineSuggest: { enabled: optInlineSuggest.checked } });
@@ -1740,9 +1766,60 @@ optScrollBeyond.addEventListener('change', () => {
   editorInstance.updateOptions({ scrollBeyondLastLine: optScrollBeyond.checked });
 });
 
-optQuickSuggest.addEventListener('change', () => {
-  editorInstance.updateOptions({ quickSuggestions: optQuickSuggest.checked });
+const syncSuggestOptions = () => {
+  editorInstance.updateOptions({
+    quickSuggestions: optQuickSuggest.checked,
+    suggest: {
+      mode: optSuggestMode.value as 'palette' | 'ghost',
+      docs: optSuggestDocs.value as 'off' | 'auto' | 'side' | 'below',
+    },
+  });
+};
+optQuickSuggest.addEventListener('change', syncSuggestOptions);
+optSuggestMode.addEventListener('change', syncSuggestOptions);
+optSuggestDocs.addEventListener('change', syncSuggestOptions);
+
+optSigTrigger.addEventListener('change', () => {
+  const v = optSigTrigger.value;
+  editorInstance.updateOptions({
+    signatureHelp:
+      v === 'off'
+        ? { enabled: false, trigger: 'manual' }
+        : { enabled: true, trigger: v as 'auto' | 'manual' },
+  });
 });
+
+optHoverTrigger.addEventListener('change', () => {
+  const v = optHoverTrigger.value;
+  editorInstance.updateOptions({
+    hover: {
+      enabled: v !== 'off',
+      trigger: v === 'auto' ? undefined : (v as 'click' | 'hover' | 'off'),
+    },
+  });
+});
+
+optDiagPopup.addEventListener('change', () => {
+  const v = optDiagPopup.value;
+  editorInstance.updateOptions({
+    diagnostics: {
+      popup: v === 'auto' ? undefined : (v as 'click' | 'hover' | 'off'),
+    },
+  });
+});
+
+const syncContextMenuOptions = () => {
+  editorInstance.updateOptions({
+    contextMenu: {
+      enabled: optCtxEnabled.checked,
+      type: optCtxType.value as 'horizontal' | 'vertical',
+      animation: optCtxAnim.value as 'cascade' | 'smooth' | 'none',
+    },
+  });
+};
+optCtxEnabled.addEventListener('change', syncContextMenuOptions);
+optCtxType.addEventListener('change', syncContextMenuOptions);
+optCtxAnim.addEventListener('change', syncContextMenuOptions);
 
 optAutoBrackets.addEventListener('change', () => {
   editorInstance.updateOptions({

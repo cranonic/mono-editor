@@ -161,14 +161,14 @@ export class TeardropDragController {
     const localX = clientX - rect.left;
     const localY = clientY - rect.top;
 
-    if (!view.projection.isIdentity() || view.getTopInset() > 0 || view.getViewZone() !== null) {
+    if (!view.projection.isIdentity() || view.getTopInset() > 0 || view.hasViewZones()) {
       const targetY = localY - this.handleLift - m.lineHeight * 0.45;
       return view.positionAtPoint(localX, targetY, true);
     }
 
     const caretMidY = localY - this.handleLift - m.lineHeight * 0.45;
     const sticky = this.stickyLine ?? view.positionAtPoint(localX, localY, true).lineNumber;
-    const lineMidY = m.paddingTop + (sticky - 1) * m.lineHeight - view.scrollTop + m.lineHeight / 2;
+    const lineMidY = view.getRowGeometry().topOfRow(sticky - 1) - view.scrollTop + m.lineHeight / 2;
     const dy = caretMidY - lineMidY;
 
     let nextLine = sticky;

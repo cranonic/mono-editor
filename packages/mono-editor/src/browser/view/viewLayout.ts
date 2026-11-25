@@ -68,6 +68,119 @@ export function totalViewZonesHeight(zones: readonly { heightPx: number }[]): nu
   return total;
 }
 
+/**
+ * Single source of truth for vertical row ↔ document-Y geometry across all view zones
+ * (CodeLens strips, Peek views, Diff filler zones).
+ */
+export interface RowGeometry {
+  readonly lineHeight: number;
+  readonly paddingTop: number;
+  readonly topInsetPx: number;
+  readonly zones: readonly ResolvedViewZone[];
+  readonly totalZoneHeight: number;
+  /** Total height of all zones anchored above visual `row` (`z.afterVisualRow < row`). */
+  extraAbove(row: number): number;
+  /** Total height of zones anchored directly above visual `row` (`z.afterVisualRow === row - 1`). */
+  leadingZoneHeight(row: number): number;
+  /** Document Y (scroll-space, including `topInsetPx + paddingTop`) of the top of `row`. */
+  topOfRow(row: number): number;
+  /** Document Y (scroll-space) of the start of `row`'s block including any leading zones above it. */
+  blockTopOfRow(row: number): number;
+  /** Document Y in sticky-space (`paddingTop`, excluding `topInsetPx`) of the top of `row`. */
+  stickyTopOfRow(row: number): number;
+  /** Document Y in sticky-space of the start of `row`'s block including leading zones above it. */
+  stickyBlockTopOfRow(row: number): number;
+  /**
+   * Inverse of `topOfRow`: given document Y in scroll-space (`localY + scrollTop`),
+   * returns `{ row, inZone }`. A zone after row `r` belongs to row `r + 1` (the line below it).
+   */
+  rowAtDocY(docY: number): { row: number; inZone: boolean };
+  /** Inverse in sticky-space (no `topInsetPx`). */
+  rowAtStickyDocY(stickyDocY: number): { row: number; inZone: boolean };
+  /** Document Y (scroll-space) of the top of a zone anchored after `afterRow` (preceding zones with same id excluded). */
+  zoneDocTop(afterRow: number, zoneId: string): number;
+  /** Total content height for `visualLineCount` rows (including `topInsetPx`, `paddingTop`, zones). */
+  totalHeight(visualLineCount: number): number;
+}
+
+export function createRowGeometry(
+  metrics: { lineHeight: number; paddingTop: number },
+  topInsetPx: number,
+  zones: readonly ResolvedViewZone[],
+): RowGeometry {
+  const { lineHeight, paddingTop } = metrics;
+  const sorted = zones.length <= 1 ? zones : [...zones].sort((a, b) => a.afterVisualRow - b.afterVisualRow);
+  const totalZoneHeight = totalViewZonesHeight(sorted);
+
+  const extraAbove = (row: number): number => sumViewZonesAboveRow(row, sorted);
+
+  const leadingZoneHeight = (row: number): number => {
+    if (!sorted.length) return 0;
+    const target = row - 1;
+    let h = 0;
+    for (const z of sorted) {
+      if (z.afterVisualRow === target) h += z.heightPx;
+      else if (z.afterVisualRow > target) break;
+    }
+    return h;
+  };
+
+  const stickyTopOfRow = (row: number): number => paddingTop + row * lineHeight + extraAbove(row);
+  const stickyBlockTopOfRow = (row: number): number => stickyTopOfRow(row) - leadingZoneHeight(row);
+  const topOfRow = (row: number): number => topInsetPx + stickyTopOfRow(row);
+  const blockTopOfRow = (row: number): number => topInsetPx + stickyBlockTopOfRow(row);
+
+  const rowAtRelativeY = (relY: number): { row: number; inZone: boolean } => {
+    if (relY <= 0) return { row: 0, inZone: false };
+    if (!sorted.length) {
+      return { row: Math.max(0, Math.floor(relY / lineHeight)), inZone: false };
+    }
+    let cumZone = 0;
+    for (const z of sorted) {
+      const zoneStart = (z.afterVisualRow + 1) * lineHeight + cumZone;
+      if (relY < zoneStart) {
+        return { row: Math.max(0, Math.floor((relY - cumZone) / lineHeight)), inZone: false };
+      }
+      if (relY < zoneStart + z.heightPx) {
+        return { row: Math.max(0, z.afterVisualRow + 1), inZone: true };
+      }
+      cumZone += z.heightPx;
+    }
+    return { row: Math.max(0, Math.floor((relY - cumZone) / lineHeight)), inZone: false };
+  };
+
+  const rowAtStickyDocY = (stickyDocY: number) => rowAtRelativeY(stickyDocY - paddingTop);
+  const rowAtDocY = (docY: number) => rowAtRelativeY(docY - topInsetPx - paddingTop);
+  const zoneDocTop = (afterRow: number, zoneId: string): number => {
+    let extraBefore = 0;
+    for (const z of sorted) {
+      if (z.id === zoneId) break;
+      if (z.afterVisualRow <= afterRow) extraBefore += z.heightPx;
+    }
+    return topInsetPx + paddingTop + (afterRow + 1) * lineHeight + extraBefore;
+  };
+  const totalHeight = (visualLineCount: number): number =>
+    topInsetPx + paddingTop + visualLineCount * lineHeight + totalZoneHeight;
+
+  return {
+    lineHeight,
+    paddingTop,
+    topInsetPx,
+    zones: sorted,
+    totalZoneHeight,
+    extraAbove,
+    leadingZoneHeight,
+    topOfRow,
+    blockTopOfRow,
+    stickyTopOfRow,
+    stickyBlockTopOfRow,
+    rowAtDocY,
+    rowAtStickyDocY,
+    zoneDocTop,
+    totalHeight,
+  };
+}
+
 export function computeRowDocTop(
   row: number,
   metrics: RenderMetrics,

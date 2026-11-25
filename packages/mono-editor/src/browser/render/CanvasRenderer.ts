@@ -21,6 +21,7 @@ import { backgroundPass } from './passes/backgroundPass';
 import { decorationsAndCaretsPass } from './passes/decorationsAndCaretsPass';
 import { gutterPass } from './passes/gutterPass';
 import { highlightsPass } from './passes/highlightsPass';
+import { inlayBubblePass } from './passes/inlayBubblePass';
 import { stickyPass } from './passes/stickyPass';
 import { teardropsPass } from './passes/teardropsPass';
 import { textPass } from './passes/textPass';
@@ -53,6 +54,7 @@ const DEFAULT_PASSES: readonly RenderPass[] = [
   textPass,
   decorationsAndCaretsPass,
   gutterPass,
+  inlayBubblePass,
   teardropsPass,
   stickyPass,
 ];
@@ -66,6 +68,7 @@ export class CanvasRenderer {
   lastTeardrops: TeardropHit[] = [];
   lastFoldHits: FoldHit[] = [];
   lastColorHits: ColorHit[] = [];
+  lastStickyColorHits: ColorHit[] = [];
   lastInlayHits: InlayHintHit[] = [];
   lastLinkHits: LinkHit[] = [];
 
@@ -130,6 +133,7 @@ export class CanvasRenderer {
 
     this.lastFoldHits = frame.foldHits;
     this.lastColorHits = frame.colorHits;
+    this.lastStickyColorHits = frame.stickyColorHits;
     this.lastInlayHits = frame.inlayHits;
     this.lastLinkHits = frame.linkHits;
     this.lastTeardrops = frame.teardrops;

@@ -15,7 +15,7 @@ import { MarkerService } from '../../common/decorations/MarkerService';
 import type { IEditorDecorationsCollection, IMarker, IMarkerData, IModelDeltaDecoration } from '../../common/decorations/types';
 import { registerDefaultLanguages } from '../../common/languages/defaults/registerDefaults';
 import { languageFeatures } from '../../common/languages/languageFeaturesService';
-import type { DocumentSymbol, GhostTextItem } from '../../common/languages/providers/types';
+import type { DocumentSymbol, GhostTextItem, IInlayHintClickEvent } from '../../common/languages/providers/types';
 import { TokenizationSupport } from '../../common/languages/tokenization/TokenizationSupport';
 import { FoldingModel } from '../../common/viewModel/FoldingModel';
 import type { MonoStickyScrollOptions } from '../../common/viewModel/StickyScroll';
@@ -124,7 +124,7 @@ export class MonoEditor implements IMonoEditor {
       editor: this, root: this.root, view: this.view, widgets: this.widgets, input: this.input, selection: this.selection,
       commands: this.commands, keybindings: this.keybindings, folding: this.folding, tokenization: this.tokenization,
       markers: this.markers, minimap: this.minimap, modelCtrl: this.modelCtrl, opts: this.opts,
-      isPeekEditor: this.isPeekEditor, initialOptions: options, contributions: this.contributions,
+      isPeekEditor: this.isPeekEditor, initialOptions: options, contributions: this.contributions, events: this.events,
       isDisposed: () => this.disposed, getMetrics: () => this.metrics(), syncTextarea: () => this.syncTextarea(),
       emitContent: () => this.emitContent(), emitCursorEvents: (s, k) => this.emitCursorEvents(s, k),
       createNestedEditor: (c, m, extra) => new MonoEditor(c, { _sharedTextModel: m, _isPeekEditor: true, ...extra }),
@@ -303,6 +303,7 @@ export class MonoEditor implements IMonoEditor {
   onKeyUp(l: (e: KeyboardEvent) => void) { return this.events.onKeyUp(l); }
   onDidDispose(l: () => void) { return this.events.onDidDispose(l); }
   onDidChangeMarkers(l: (markers: IMarker[]) => void) { return this.events.onDidChangeMarkers(l); }
+  onDidClickInlayHint(l: (e: IInlayHintClickEvent) => void) { return this.events.onDidClickInlayHint(l); }
 
   addAction(action: MonoAction) { return this.commands.addAction(action); }
   registerCommand(id: string, h: MonoCommandHandler, m?: Omit<MonoRegisteredCommand, 'id' | 'handler'>) { return this.commands.registerCommand(id, h, m); }

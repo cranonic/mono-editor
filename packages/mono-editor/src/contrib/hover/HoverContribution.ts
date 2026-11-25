@@ -10,23 +10,58 @@ import type { MonoEditorOptions } from '../../common/config/editorOptions';
 import type { TextModel } from '../../common/model/TextModel';
 import { MonoCommands } from '../../platform/keybindings/KeybindingService';
 import type { ResolvedWidgetTheme } from '../../platform/theme/widgetTheme';
-import { HoverController } from './HoverController';
+import { HoverController, type HoverTriggerMode } from './HoverController';
+
+function detectCoarsePointer(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return Boolean(window.matchMedia?.('(pointer: coarse)').matches);
+  } catch {
+    return false;
+  }
+}
+
+export function resolveHoverAndDiagnosticsTriggers(
+  options: Pick<MonoEditorOptions, 'hover' | 'diagnostics'>,
+  isCoarsePointer: boolean,
+): { hoverTrigger: HoverTriggerMode; diagnosticsPopup: HoverTriggerMode } {
+  const h = options.hover;
+  let hoverTrigger: HoverTriggerMode;
+  if (h?.trigger !== undefined) {
+    hoverTrigger = h.trigger;
+  } else if (h?.enabled === false) {
+    hoverTrigger = 'off';
+  } else if (h?.openOnMouseHover === true) {
+    hoverTrigger = 'hover';
+  } else if (h?.openOnMouseHover === false) {
+    hoverTrigger = 'click';
+  } else {
+    hoverTrigger = isCoarsePointer ? 'click' : 'hover';
+  }
+
+  const diagnosticsPopup: HoverTriggerMode =
+    options.diagnostics?.popup !== undefined ? options.diagnostics.popup : hoverTrigger;
+
+  return { hoverTrigger, diagnosticsPopup };
+}
 
 export class HoverContribution implements IEditorContribution {
   readonly id = ContributionIds.Hover;
   private readonly host: IEditorContributionHost;
   private readonly hover: HoverController;
-  private enabled: boolean;
+  private hoverTrigger: HoverTriggerMode;
+  private diagnosticsPopup: HoverTriggerMode;
+  private explicitDiagnosticsPopup: HoverTriggerMode | undefined;
   private delayMs: number;
-  private openOnMouseHover: boolean;
   private lastMousePosKey = '';
 
   constructor(host: IEditorContributionHost) {
     this.host = host;
-    const hOpts = host.initialOptions.hover;
-    this.enabled = hOpts?.enabled !== false;
-    this.delayMs = hOpts?.delay ?? 300;
-    this.openOnMouseHover = hOpts?.openOnMouseHover !== false;
+    const resolved = resolveHoverAndDiagnosticsTriggers(host.initialOptions, detectCoarsePointer());
+    this.hoverTrigger = resolved.hoverTrigger;
+    this.diagnosticsPopup = resolved.diagnosticsPopup;
+    this.explicitDiagnosticsPopup = host.initialOptions.diagnostics?.popup;
+    this.delayMs = host.initialOptions.hover?.delay ?? 300;
 
     this.hover = new HoverController(
       host.root,
@@ -42,7 +77,7 @@ export class HoverContribution implements IEditorContribution {
         setCaret: (ln, col) => host.setPosition(ln, col),
       },
     );
-    this.hover.setSticky(hOpts?.sticky !== false);
+    this.hover.setSticky(host.initialOptions.hover?.sticky !== false);
 
     host.view.setHoverRangeProvider(() => this.hover.getActiveRange());
 
@@ -52,14 +87,14 @@ export class HoverContribution implements IEditorContribution {
       weight: 4,
       handler: () => {
         const p = this.host.getPosition();
-        void this.hover.showAt(p.lineNumber, p.column);
+        void this.hover.showAt(p.lineNumber, p.column, { includeHover: true, includeDiagnostics: true });
       },
     });
     host.commands.registerCommand(
       MonoCommands.ShowHover,
       () => {
         const p = this.host.getPosition();
-        return this.hover.showAt(p.lineNumber, p.column);
+        return this.hover.showAt(p.lineNumber, p.column, { includeHover: true, includeDiagnostics: true });
       },
       { title: 'Show Hover Docs', category: 'View' },
     );
@@ -70,7 +105,7 @@ export class HoverContribution implements IEditorContribution {
 
   showAtCaret(): Promise<boolean> {
     const p = this.host.getPosition();
-    return this.hover.showAt(p.lineNumber, p.column);
+    return this.hover.showAt(p.lineNumber, p.column, { includeHover: true, includeDiagnostics: true });
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
@@ -105,9 +140,16 @@ export class HoverContribution implements IEditorContribution {
     if (kind === 'tap' || kind === 'handle' || kind === 'handleTap' || kind === 'select') {
       this.hover.hide();
     }
-    if (kind === 'tap' && this.enabled) {
-      const p = this.host.selection.active;
-      this.hover.schedule(p.lineNumber, p.column, Math.max(350, this.delayMs));
+    if (kind === 'tap') {
+      const includeHover = this.hoverTrigger === 'click';
+      const includeDiagnostics = this.diagnosticsPopup === 'click';
+      if (includeHover || includeDiagnostics) {
+        const p = this.host.selection.active;
+        this.hover.schedule(p.lineNumber, p.column, Math.max(250, this.delayMs), {
+          includeHover,
+          includeDiagnostics,
+        });
+      }
     }
   }
 
@@ -121,15 +163,30 @@ export class HoverContribution implements IEditorContribution {
   }
 
   onOptionsChange(patch: Partial<MonoEditorOptions>): void {
-    if (!patch.hover) return;
-    if (patch.hover.enabled !== undefined) {
-      this.enabled = patch.hover.enabled;
-      if (!this.enabled) this.hover.hide();
+    if (!patch.hover && !patch.diagnostics) return;
+    if (patch.hover) {
+      if (patch.hover.trigger !== undefined) {
+        this.hoverTrigger = patch.hover.trigger;
+      } else if (patch.hover.enabled === false) {
+        this.hoverTrigger = 'off';
+      } else if (patch.hover.enabled === true && this.hoverTrigger === 'off') {
+        this.hoverTrigger = detectCoarsePointer() ? 'click' : 'hover';
+      } else if (patch.hover.openOnMouseHover === true) {
+        this.hoverTrigger = 'hover';
+      } else if (patch.hover.openOnMouseHover === false) {
+        this.hoverTrigger = 'click';
+      }
+      if (patch.hover.delay !== undefined) this.delayMs = Math.max(0, patch.hover.delay);
+      if (patch.hover.sticky !== undefined) this.hover.setSticky(patch.hover.sticky);
     }
-    if (patch.hover.delay !== undefined) this.delayMs = Math.max(0, patch.hover.delay);
-    if (patch.hover.sticky !== undefined) this.hover.setSticky(patch.hover.sticky);
-    if (patch.hover.openOnMouseHover !== undefined) {
-      this.openOnMouseHover = patch.hover.openOnMouseHover;
+    if (patch.diagnostics?.popup !== undefined) {
+      this.explicitDiagnosticsPopup = patch.diagnostics.popup;
+      this.diagnosticsPopup = patch.diagnostics.popup;
+    } else if (this.explicitDiagnosticsPopup === undefined) {
+      this.diagnosticsPopup = this.hoverTrigger;
+    }
+    if (this.hoverTrigger === 'off' && this.diagnosticsPopup === 'off') {
+      this.hover.hide();
     }
   }
 
@@ -145,9 +202,11 @@ export class HoverContribution implements IEditorContribution {
   }
 
   private onPointerMove = (e: PointerEvent): void => {
-    if (!this.enabled || !this.openOnMouseHover || e.pointerType !== 'mouse' || this.host.isDisposed()) {
-      return;
-    }
+    if (e.pointerType !== 'mouse' || this.host.isDisposed()) return;
+    const includeHover = this.hoverTrigger === 'hover';
+    const includeDiagnostics = this.diagnosticsPopup === 'hover';
+    if (!includeHover && !includeDiagnostics) return;
+
     const target = e.target as Node | null;
     if (this.hover.containsNode(target)) {
       this.hover.cancelHideTimer();
@@ -167,7 +226,6 @@ export class HoverContribution implements IEditorContribution {
     if (key === this.lastMousePosKey) return;
     this.lastMousePosKey = key;
 
-    // If moving outside the active hover range, schedule gentle hide so user can move mouse into sticky card
     const active = this.hover.getActiveRange();
     if (active && this.hover.isOpen()) {
       const insideRange =
@@ -179,12 +237,16 @@ export class HoverContribution implements IEditorContribution {
       else return;
     }
 
-    const word = this.host.wordAtPosition(pos.lineNumber, pos.column);
-    if (!word) {
+    const hasDiag = includeDiagnostics && this.hover.hasDiagnosticsAt(pos.lineNumber, pos.column);
+    const hasWord = includeHover && Boolean(this.host.wordAtPosition(pos.lineNumber, pos.column));
+    if (!hasWord && !hasDiag) {
       this.hover.cancelTimer();
       return;
     }
-    this.hover.schedule(pos.lineNumber, pos.column, this.delayMs);
+    this.hover.schedule(pos.lineNumber, pos.column, this.delayMs, {
+      includeHover,
+      includeDiagnostics,
+    });
   };
 
   private onPointerLeave = (): void => {

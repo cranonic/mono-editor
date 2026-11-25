@@ -47,9 +47,13 @@ export interface ResolvedInlayHint {
   readonly paddingRight: boolean;
   /** Precomputed pixel width of the rendered chip (excluding outer margins) */
   readonly chipWidthPx: number;
-  /** Total horizontal pixel advance including outer padding margins */
+  /** Total horizontal pixel advance including outer padding margins (scales to 0 as liftProgress → 1) */
   readonly totalAdvancePx: number;
   readonly marginLeftPx: number;
+  /** Bubble lift animation progress (0 = inline, 1 = fully lifted into floating bubble above caret). */
+  readonly liftProgress?: number;
+  /** Original provider InlayHint reference for public onDidClickInlayHint events. */
+  readonly rawHint?: InlayHint;
 }
 
 /** Splits ghost text into its inline first-line part and virtual continuation lines. */

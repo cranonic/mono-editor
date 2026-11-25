@@ -112,6 +112,24 @@ export interface MonoMobileQuickKeysOptions {
   keys?: readonly { label: string; insert?: string; command?: string }[];
 }
 
+export interface MonoContextMenuOptions {
+  enabled?: boolean;
+  type?: 'horizontal' | 'vertical';
+  animation?: 'cascade' | 'smooth' | 'none';
+  horizontal?: {
+    showIcons?: boolean;
+    more?: {
+      showIcons?: boolean;
+      showShortcuts?: boolean;
+    };
+  };
+  vertical?: {
+    showIcons?: boolean;
+    showShortcuts?: boolean;
+  };
+  maxHeight?: number;
+}
+
 export interface MonoEditorOptions {
   value?: string;
   language?: string;
@@ -137,6 +155,8 @@ export interface MonoEditorOptions {
   cursorSurroundingLines?: number;
   linkedEditing?: boolean;
   codeLens?: boolean;
+  codeLensFontSize?: number;
+  codeLensFontFamily?: string;
   errorLens?: boolean | MonoErrorLensOptions;
   pinchZoom?: boolean;
   mobileQuickKeys?: boolean | MonoMobileQuickKeysOptions;
@@ -157,6 +177,14 @@ export interface MonoEditorOptions {
       };
   quickSuggestionsDelay?: number;
   suggestOnTriggerCharacters?: boolean;
+  suggest?: {
+    docs?: 'off' | 'auto' | 'side' | 'below';
+    mode?: 'palette' | 'ghost';
+  };
+  signatureHelp?: {
+    enabled?: boolean;
+    trigger?: 'auto' | 'manual';
+  };
   autoClosingBrackets?: AutoClosingBehavior;
   autoClosingQuotes?: AutoClosingBehavior;
   autoSurround?: AutoSurroundBehavior;
@@ -177,16 +205,22 @@ export interface MonoEditorOptions {
   colorDecoratorsRules?: ColorDecoratorRules;
   hover?: {
     enabled?: boolean;
+    trigger?: 'click' | 'hover' | 'off';
     delay?: number;
     sticky?: boolean;
     above?: boolean;
     openOnMouseHover?: boolean;
   };
+  diagnostics?: {
+    popup?: 'hover' | 'click' | 'off';
+  };
+  contextMenu?: MonoContextMenuOptions;
   inlayHints?: {
     enabled?: boolean;
     fontSize?: number;
     fontFamily?: string;
     padding?: boolean;
+    onClick?: 'placeCursor' | 'bubble' | 'none';
   };
   inlineSuggest?: {
     enabled?: boolean;

@@ -13,3 +13,4 @@ export type {
 export { ContextKeyService } from './ContextKeyService';
 export { CommandsRegistry } from './CommandsRegistry';
 export { CommandService } from './CommandService';
+export { evaluateWhenExpression } from './whenExpr';

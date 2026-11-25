@@ -1,6 +1,7 @@
 import { CommandsRegistry } from './CommandsRegistry';
 import { ContextKeyService } from './ContextKeyService';
 import type { KeybindingService } from '../keybindings/KeybindingService';
+import { MenuId, menus } from '../menus/MenuRegistry';
 import type {
   MonoAction,
   MonoCommandHandler,
@@ -29,6 +30,7 @@ export class CommandService {
     this.context.set('editorTextFocus', false);
     this.context.set('editorReadonly', false);
     this.context.set('editorHasSelection', false);
+    this.context.set('editorHasMultipleSelections', false);
     this.context.set('textInputFocus', false);
   }
 
@@ -43,11 +45,12 @@ export class CommandService {
   }
 
   /**
-   * Monaco `editor.addAction({ id, label, keybindings, precondition, run })`
+   * Monaco `editor.addAction({ id, label, keybindings, precondition, contextMenuGroupId, contextMenuOrder, run })`
    */
   addAction(action: MonoAction): MonoDisposable {
+    const resolvedTitle = action.title ?? action.label;
     const dCmd = this.registry.registerCommand(action.id, action.run, {
-      title: action.title,
+      title: resolvedTitle,
       category: action.category,
       icon: action.icon,
       precondition: action.precondition,
@@ -74,9 +77,26 @@ export class CommandService {
       kbDisposers.push(remove);
     }
 
+    let dMenu: MonoDisposable | null = null;
+    if (action.contextMenuGroupId) {
+      const pre = action.precondition;
+      dMenu = menus.register({
+        id: `action.${action.id}`,
+        menu: MenuId.EditorContext,
+        command: action.id,
+        title: resolvedTitle ?? action.id,
+        icon: action.icon,
+        group: action.contextMenuGroupId,
+        order: action.contextMenuOrder ?? action.order ?? 100,
+        when: typeof pre === 'function' ? () => pre() : pre,
+        touchToolbar: 'overflow',
+      });
+    }
+
     const d: MonoDisposable = {
       dispose: () => {
         dCmd.dispose();
+        dMenu?.dispose();
         kbDisposers.forEach((r) => r());
       },
     };
@@ -98,6 +118,10 @@ export class CommandService {
 
   setContext(key: string, value: boolean | string | number): void {
     this.context.set(key, value);
+  }
+
+  getContext(key: string): boolean | string | number | undefined {
+    return this.context.get(key);
   }
 
   dispose(): void {

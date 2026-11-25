@@ -51,13 +51,13 @@ import { computeCenterReveal, quantizeStickyScrollTop } from './scrollReveal';
 import { StickyScrollController, type StickyComputeArgs } from './stickyScrollController';
 import {
   computeMaxContentWidthPx,
-  computeRowDocTop,
   computeScrollHeight,
+  createRowGeometry,
   resolveAllViewZones,
   resolveViewZoneAfterRow,
-  sumViewZonesAboveRow,
   type MaxCharsCache,
   type ResolvedViewZone,
+  type RowGeometry,
   type ViewZoneSpec,
 } from './viewLayout';
 import { createEmptyViewProviders, type ViewDataProviders } from './viewProviders';
@@ -204,6 +204,9 @@ export class ViewController {
     for (const r of this.hiddenAreas) if (ln >= r.startLineNumber && ln <= r.endLineNumber) return true;
     return false;
   }
+  isLineHidden(ln: number): boolean {
+    return (this.foldingEnabled && (this.foldingModel?.isLineHidden(ln) ?? false)) || this.isLineInHiddenArea(ln);
+  }
 
   measureTextWidth(text: string): number { return this.renderer.measureTextWidth(text, this.getMetrics()); }
   setFoldingModel(folding: FoldingModel | null): void { this.foldingModel = folding; this.projection.invalidate(); }
@@ -260,15 +263,22 @@ export class ViewController {
   }
   getViewZone(): ViewZoneSpec | null { return this.viewZone; }
   setExtraViewZones(zones: readonly ViewZoneSpec[]): void {
+    const anchorRow = this.scrollTop > 0 ? this.getRowGeometry().rowAtDocY(this.scrollTop + this.topInsetPx + 1).row : -1;
+    const prevTop = anchorRow >= 0 ? this.getRowGeometry().topOfRow(anchorRow) : 0;
     this.extraViewZones = zones.map((z) => ({ ...z }));
+    if (anchorRow >= 0) this.scrollTop = Math.max(0, this.scrollTop + (this.getRowGeometry().topOfRow(anchorRow) - prevTop));
     this.clampScroll(); this.paint();
   }
+  hasViewZones(): boolean { return this.viewZone !== null || this.extraViewZones.length > 0; }
   private getCombinedZoneSpecs(): ViewZoneSpec[] {
     return this.viewZone ? [this.viewZone, ...this.extraViewZones] : this.extraViewZones;
   }
   private getResolvedZones(): ResolvedViewZone[] {
     const specs = this.getCombinedZoneSpecs();
     return specs.length ? resolveAllViewZones(specs, this.model, this.projection) : [];
+  }
+  getRowGeometry(metrics: RenderMetrics = this.getMetrics()): RowGeometry {
+    return createRowGeometry(metrics, this.topInsetPx, this.getResolvedZones());
   }
 
   getViewZoneScreenRect(): { top: number; height: number; afterVisualRow: number } | null {
@@ -277,35 +287,33 @@ export class ViewController {
     const m = this.getMetrics();
     const afterRow = resolveViewZoneAfterRow(this.viewZone, this.model, this.projection);
     if (afterRow < 0) return null;
-    const extraAbove = sumViewZonesAboveRow(afterRow, this.getResolvedZones());
-    const top = this.topInsetPx + m.paddingTop + (afterRow + 1) * m.lineHeight + extraAbove - this.scrollTop;
+    const geom = this.getRowGeometry(m);
+    const top = geom.topOfRow(afterRow) + m.lineHeight - this.scrollTop;
     return { top, height: this.viewZone.heightPx, afterVisualRow: afterRow };
   }
 
   getZoneTopForLine(afterLineNumber: number, zoneId: string): number {
     this.syncProjection();
-    const m = this.getMetrics();
-    const zones = this.getResolvedZones();
-    const afterRow = afterLineNumber <= 0 ? -1 : resolveViewZoneAfterRow({ id: zoneId, afterLineNumber, heightPx: 1 }, this.model, this.projection);
-    let extraBefore = 0;
-    for (const z of zones) {
-      if (z.id === zoneId) break;
-      if (z.afterVisualRow <= afterRow) extraBefore += z.heightPx;
-    }
-    return this.topInsetPx + m.paddingTop + (afterRow + 1) * m.lineHeight + extraBefore - this.scrollTop;
+    const geom = this.getRowGeometry();
+    const afterRow =
+      afterLineNumber <= 0
+        ? -1
+        : resolveViewZoneAfterRow({ id: zoneId, afterLineNumber, heightPx: 1 }, this.model, this.projection);
+    return geom.zoneDocTop(afterRow, zoneId) - this.scrollTop;
   }
 
   getColorHits(): ColorHit[] { return this.renderer.lastColorHits; }
+  getStickyColorHits(): ColorHit[] { return this.renderer.lastStickyColorHits; }
   getFoldHits(): FoldHit[] { return this.renderer.lastFoldHits; }
   getInlayHits(): InlayHintHit[] { return this.renderer.lastInlayHits; }
   getLinkHits(): LinkHit[] { return this.renderer.lastLinkHits; }
 
   getVisibleLineRange(): { startLineNumber: number; endLineNumber: number } {
     this.syncProjection();
-    const m = this.getMetrics();
+    const geom = this.getRowGeometry();
     const total = this.projection.getVisualLineCount();
-    const firstRow = Math.max(0, Math.floor(this.scrollTop / m.lineHeight) - this.overscan);
-    const lastRow = Math.min(total - 1, firstRow + Math.ceil((this.cssHeight || 400) / m.lineHeight) + this.overscan * 2);
+    const firstRow = Math.max(0, geom.rowAtDocY(this.scrollTop).row - this.overscan);
+    const lastRow = Math.min(total - 1, geom.rowAtDocY(this.scrollTop + (this.cssHeight || 400)).row + this.overscan);
     return {
       startLineNumber: this.projection.getVisualLine(firstRow).modelLine,
       endLineNumber: this.projection.getVisualLine(Math.max(firstRow, lastRow)).modelLine,
@@ -314,19 +322,18 @@ export class ViewController {
 
   getVisibleRanges(): IRange[] {
     this.syncProjection();
-    const m = this.getMetrics();
+    const geom = this.getRowGeometry();
     const total = this.projection.getVisualLineCount();
-    const firstRow = Math.max(0, Math.floor(Math.max(0, this.scrollTop - this.topInsetPx - m.paddingTop) / m.lineHeight));
-    const lastRow = Math.min(total - 1, firstRow + Math.ceil(Math.max(m.lineHeight, this.cssHeight) / m.lineHeight));
+    const firstRow = Math.max(0, Math.min(total - 1, geom.rowAtDocY(this.scrollTop + this.topInsetPx).row));
+    const lastRow = Math.max(firstRow, Math.min(total - 1, geom.rowAtDocY(this.scrollTop + Math.max(geom.lineHeight, this.cssHeight)).row));
     const startLine = this.projection.getVisualLine(firstRow).modelLine;
-    const endLine = this.projection.getVisualLine(Math.max(firstRow, lastRow)).modelLine;
+    const endLine = this.projection.getVisualLine(lastRow).modelLine;
     return [{ startLineNumber: startLine, startColumn: 1, endLineNumber: endLine, endColumn: this.model.getLineContent(endLine).length + 1 }];
   }
 
   getTopForLineNumber(lineNumber: number): number {
     this.syncProjection();
-    const row = this.projection.modelLineToFirstVisualRow(lineNumber);
-    return computeRowDocTop(row, this.getMetrics(), this.topInsetPx, this.viewZone, -1, this.getResolvedZones());
+    return this.getRowGeometry().topOfRow(this.projection.modelLineToFirstVisualRow(lineNumber));
   }
 
   getBottomForLineNumber(lineNumber: number): number {
@@ -334,7 +341,7 @@ export class ViewController {
     const m = this.getMetrics();
     const lines = this.projection.getVisualLinesForModelLine(lineNumber);
     const lastRow = lines.length ? lines[lines.length - 1]!.visualRow : this.projection.modelLineToFirstVisualRow(lineNumber);
-    return computeRowDocTop(lastRow, m, this.topInsetPx, this.viewZone, -1, this.getResolvedZones()) + m.lineHeight;
+    return this.getRowGeometry(m).topOfRow(lastRow) + m.lineHeight;
   }
 
   getOffsetForColumn(lineNumber: number, column: number): number { return this.measureColumnX(lineNumber, column); }
@@ -428,7 +435,7 @@ export class ViewController {
     this.syncProjection();
     const m = this.getMetrics();
     const { lineNumber: line, column: col } = this.selection.active;
-    const topY = computeRowDocTop(this.projection.modelToVisual(line, col).visualRow, m, this.topInsetPx, this.viewZone, -1, this.getResolvedZones());
+    const topY = this.getRowGeometry(m).topOfRow(this.projection.modelToVisual(line, col).visualRow);
     const padPx = this.cursorSurroundingLines * m.lineHeight;
     const effectiveH = Math.max(m.lineHeight, this.cssHeight - this.bottomInsetPx);
     if (topY < this.scrollTop + this.topInsetPx + m.paddingTop + padPx) {
@@ -458,6 +465,7 @@ export class ViewController {
       model: this.model, selection: this.selection, projection: this.projection, metrics,
       renderTop, topInsetPx: this.topInsetPx, cssHeight: this.cssHeight, tabSize: this.tabSize,
       foldingEnabled: this.foldingEnabled, foldingModel: this.foldingModel,
+      geometry: this.getRowGeometry(metrics),
     };
   }
   private stickyHeightAt(scrollTop: number): number {
@@ -471,7 +479,7 @@ export class ViewController {
     const { lineNumber: line, column: col } = this.selection.active;
     const row = this.projection.modelToVisual(line, col).visualRow;
     this.scrollTop = computeCenterReveal({
-      scrollTop: this.scrollTop, rowTop: computeRowDocTop(row, m, this.topInsetPx, this.viewZone, -1, this.getResolvedZones()),
+      scrollTop: this.scrollTop, rowTop: this.getRowGeometry(m).topOfRow(row),
       lineHeight: m.lineHeight, cssHeight: Math.max(m.lineHeight, this.cssHeight - this.bottomInsetPx),
       topInsetPx: this.topInsetPx, maxScrollTop: this.getMaxScrollTop(), stickyHeightAt: (s) => this.stickyHeightAt(s),
     });
@@ -491,12 +499,13 @@ export class ViewController {
     const renderTop = Math.round(this.scrollTop * dpr) / dpr;
     const renderLeft = Math.round(this.scrollLeft * dpr) / dpr;
     const metrics = this.getMetrics();
+    const geom = this.getRowGeometry(metrics);
     const stickyLines = this.sticky.compute(this.stickyArgs(quantizeStickyScrollTop(this.scrollTop, dpr), metrics));
     const totalVisualRows = this.projection.getVisualLineCount();
-    const firstRow = Math.max(0, Math.floor(renderTop / metrics.lineHeight) - this.overscan);
-    const lastRow = Math.min(totalVisualRows - 1, firstRow + Math.ceil(this.cssHeight / metrics.lineHeight) + this.overscan * 2);
+    const firstRow = Math.max(0, geom.rowAtDocY(renderTop).row - this.overscan);
+    const lastRow = Math.min(totalVisualRows - 1, geom.rowAtDocY(renderTop + this.cssHeight).row + this.overscan);
     const firstModelLine = this.projection.getVisualLine(firstRow).modelLine;
-    const lastModelLine = this.projection.getVisualLine(lastRow).modelLine;
+    const lastModelLine = this.projection.getVisualLine(Math.max(firstRow, lastRow)).modelLine;
 
     const langConfig = getLanguageConfiguration(this.model.getLanguageId());
     const bracketMatch = this.matchBrackets !== 'never'
@@ -544,7 +553,7 @@ export class ViewController {
     this.syncProjection();
     const m = this.getMetrics();
     const line = Math.max(1, Math.min(this.model.getLineCount(), lineNumber));
-    const docY = m.paddingTop + this.projection.modelLineToFirstVisualRow(line) * m.lineHeight;
+    const docY = this.getRowGeometry(m).topOfRow(this.projection.modelLineToFirstVisualRow(line));
     this.scrollTop = Math.max(0, docY - (this.cssHeight - m.lineHeight) / 2);
     this.clampScroll();
     const col = localX != null ? this.columnAtX(line, localX - this.contentLeft - m.paddingLeft + this.scrollLeft, true) : this.selection.active.column;
@@ -555,8 +564,8 @@ export class ViewController {
     this.syncProjection();
     const m = this.getMetrics();
     const line = Math.max(1, Math.min(this.model.getLineCount(), lineNumber));
-    const docY = m.paddingTop + this.projection.modelLineToFirstVisualRow(line) * m.lineHeight;
-    this.scrollTop = Math.max(0, docY + this.topInsetPx - index * m.lineHeight);
+    const docY = this.getRowGeometry(m).topOfRow(this.projection.modelLineToFirstVisualRow(line));
+    this.scrollTop = Math.max(0, docY - index * m.lineHeight);
     this.clampScroll();
     const col = localX != null ? this.columnAtX(line, localX - this.contentLeft - m.paddingLeft + this.scrollLeft, true) : 1;
     this.selection.setCaret(line, col); this.paint();

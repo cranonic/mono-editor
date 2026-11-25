@@ -1,3 +1,4 @@
+import type { WidgetBoxRect } from '../../browser/editor/editorTypes';
 import { renderHighlightedCodeToDom, renderMarkdownToDom } from '../../browser/render/markdownDom';
 import { DEFAULT_THEME } from '../../common/config/themeTypes';
 import { resolveParameterLabelRange } from '../../common/languages/callContext';
@@ -10,6 +11,84 @@ export interface SignatureHelpAnchor {
   y: number;
   top?: number;
   languageId?: string;
+  avoidRect?: WidgetBoxRect | null;
+}
+
+export function computeSignaturePlacement(
+  anchor: { x: number; y: number; top?: number },
+  widgetSize: { width: number; height: number },
+  hostSize: { width: number; height: number },
+  avoidRect?: WidgetBoxRect | null,
+): { left: number; top: number } {
+  const hostW = Math.max(100, hostSize.width || 600);
+  const hostH = Math.max(100, hostSize.height || 400);
+  const w = Math.max(0, widgetSize.width);
+  const h = Math.max(0, widgetSize.height);
+  const lineTop = anchor.top ?? Math.max(0, anchor.y - 22);
+  const margin = 6;
+
+  let left = Math.max(margin, anchor.x);
+  if (left + w > hostW - margin) left = Math.max(margin, hostW - w - margin);
+
+  const aboveTop = lineTop - h - 5;
+  const belowTop = anchor.y + 4;
+
+  const overlapsAvoid = (l: number, t: number): boolean => {
+    if (!avoidRect) return false;
+    return (
+      l < avoidRect.left + avoidRect.width &&
+      l + w > avoidRect.left &&
+      t < avoidRect.top + avoidRect.height &&
+      t + h > avoidRect.top
+    );
+  };
+
+  if (avoidRect) {
+    const avoidIsBelow = avoidRect.top >= lineTop;
+    // Prefer the opposite side of the caret line from the completion list
+    if (avoidIsBelow) {
+      if (aboveTop >= 4 && !overlapsAvoid(left, aboveTop)) {
+        return { left: Math.round(left), top: Math.round(aboveTop) };
+      }
+      // Try clamped above if it still avoids the completion list
+      const clampedAbove = Math.max(4, Math.min(aboveTop, avoidRect.top - h - 4));
+      if (!overlapsAvoid(left, clampedAbove)) {
+        return { left: Math.round(left), top: Math.round(clampedAbove) };
+      }
+      // Fallback: below the avoidRect
+      const underAvoid = avoidRect.top + avoidRect.height + 4;
+      if (underAvoid + h <= hostH - 4) {
+        return { left: Math.round(left), top: Math.round(underAvoid) };
+      }
+    } else {
+      if (belowTop + h <= hostH - 4 && !overlapsAvoid(left, belowTop)) {
+        return { left: Math.round(left), top: Math.round(belowTop) };
+      }
+      const clampedBelow = Math.min(hostH - h - 4, Math.max(belowTop, avoidRect.top + avoidRect.height + 4));
+      if (!overlapsAvoid(left, clampedBelow)) {
+        return { left: Math.round(left), top: Math.round(clampedBelow) };
+      }
+      const overAvoid = Math.max(4, avoidRect.top - h - 4);
+      if (!overlapsAvoid(left, overAvoid)) {
+        return { left: Math.round(left), top: Math.round(overAvoid) };
+      }
+    }
+    // Try beside the avoidRect horizontally if vertical sides are tight
+    const rightOfAvoid = avoidRect.left + avoidRect.width + 6;
+    if (rightOfAvoid + w <= hostW - 4) {
+      return { left: Math.round(rightOfAvoid), top: Math.round(Math.max(4, Math.min(lineTop, hostH - h - 4))) };
+    }
+    const leftOfAvoid = avoidRect.left - w - 6;
+    if (leftOfAvoid >= 4) {
+      return { left: Math.round(leftOfAvoid), top: Math.round(Math.max(4, Math.min(lineTop, hostH - h - 4))) };
+    }
+  }
+
+  let top = aboveTop;
+  if (top < margin) {
+    top = Math.min(hostH - h - margin, belowTop);
+  }
+  return { left: Math.round(left), top: Math.round(Math.max(4, top)) };
 }
 
 function docStringOf(doc: string | { value: string } | undefined): string {
@@ -231,20 +310,16 @@ export class SignatureHelpWidget {
     this.host.appendChild(el);
     this.el = el;
 
-    // Position above the caret line by default (preventing overlap with autocomplete below)
     const hostW = this.host.clientWidth || 600;
     const hostH = this.host.clientHeight || 400;
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
-    const lineTop = anchor.top ?? Math.max(0, anchor.y - 22);
-    let left = Math.max(6, anchor.x);
-    if (left + w > hostW - 6) left = Math.max(6, hostW - w - 6);
-    let top = lineTop - h - 5;
-    if (top < 6) {
-      top = Math.min(hostH - h - 6, anchor.y + 4);
-    }
-    el.style.left = `${Math.round(left)}px`;
-    el.style.top = `${Math.round(Math.max(4, top))}px`;
+    const pos = computeSignaturePlacement(
+      anchor,
+      { width: el.offsetWidth, height: el.offsetHeight },
+      { width: hostW, height: hostH },
+      anchor.avoidRect,
+    );
+    el.style.left = `${pos.left}px`;
+    el.style.top = `${pos.top}px`;
   }
 
   hide(): void {

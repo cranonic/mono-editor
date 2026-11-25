@@ -34,6 +34,7 @@ const DEFAULT_QUICK_KEYS: QuickKeyDef[] = [
   { label: '→', aria: 'Move cursor right', action: 'right' },
   { label: 'Undo', aria: 'Undo', action: 'undo' },
   { label: 'Redo', aria: 'Redo', action: 'redo' },
+  { label: 'Params', aria: 'Parameter Hints', command: MonoCommands.TriggerParameterHints },
   { label: 'GoTo', aria: 'Go to line', action: 'goto' },
 ];
 

@@ -1,4 +1,4 @@
-import { colorAdvanceBefore, TEARDROP, type FrameContext, type RenderPass } from '../frameContext';
+import { TEARDROP, type FrameContext, type RenderPass } from '../frameContext';
 
 const CARET_H = 18;
 const CARET_W = 2;
@@ -66,19 +66,9 @@ function paintTeardropAt(
   type: 'cursor' | 'start' | 'end',
   color: string,
 ): void {
-  const { opts, colorsForLine, measureColumnX, teardrops } = frame;
-  const {
-    model,
-    metrics,
-    scrollTop,
-    scrollLeft,
-    showLineNumbers,
-    projection,
-    freeHandle = null,
-    topInsetPx = 0,
-    viewZone = null,
-  } = opts;
-  const { lineHeight, paddingTop, paddingLeft, gutterWidth } = metrics;
+  const { opts, teardrops } = frame;
+  const { metrics, projection, freeHandle = null } = opts;
+  const { lineHeight } = metrics;
   const { w, h } = TEARDROP;
 
   let cx: number;
@@ -90,27 +80,13 @@ function paintTeardropAt(
     tipY = freeHandle.y;
     lineTop = tipY - lineHeight + 1;
   } else {
-    const content = model.getLineContent(line);
-    const textX0 = (showLineNumbers ? gutterWidth : 0) + paddingLeft - scrollLeft;
-    const lineColors = colorsForLine(line);
-    const colAdv = colorAdvanceBefore(lineColors, col);
-    let visualRow = line - 1;
-    if (projection && !projection.isIdentity()) {
-      const mapped = projection.modelToVisual(line, col);
-      const seg = mapped.visualLine;
-      visualRow = mapped.visualRow;
-      const originPx = seg.startCol === 1 ? 0 : measureColumnX(content, seg.startCol);
-      const originAdv = seg.startCol === 1 ? 0 : colorAdvanceBefore(lineColors, seg.startCol);
-      cx =
-        textX0 +
-        seg.wrapIndentPx +
-        (measureColumnX(content, col) - originPx) +
-        (colAdv - originAdv);
-    } else {
-      cx = textX0 + measureColumnX(content, col) + colAdv;
-    }
-    const zoneExtra = viewZone && visualRow > viewZone.afterVisualRow ? viewZone.heightPx : 0;
-    lineTop = topInsetPx + paddingTop + visualRow * lineHeight + zoneExtra - scrollTop;
+    const role = type === 'cursor' ? 'caret' : type === 'start' ? 'selStart' : 'selEnd';
+    cx = frame.xAt(line, col, role);
+    const visualRow =
+      projection && !projection.isIdentity()
+        ? projection.modelToVisual(line, col).visualRow
+        : line - 1;
+    lineTop = frame.rowTopY(visualRow);
     tipY = lineTop + lineHeight - 1;
   }
 

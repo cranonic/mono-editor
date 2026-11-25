@@ -151,6 +151,21 @@ for (const abs of files) {
     }
   }
 
+  // 3b. View-zone row-Y geometry guard: raw `paddingTop + <row> * lineHeight` belongs in viewLayout.ts
+  if (
+    layer === 'browser' &&
+    rel !== 'browser/view/viewLayout.ts' &&
+    rel !== 'browser/view/viewParts/MinimapController.ts' &&
+    rel !== 'browser/view/viewParts/OverlayScrollbar.ts' &&
+    rel !== 'browser/render/frameContext.ts'
+  ) {
+    const stripped = stripCommentsAndStrings(code);
+    const rawRowY = /\bpaddingTop\s*\+\s*[^;\n]*\*\s*(?:[A-Za-z_]\w*\.)?lineHeight\b/;
+    if (rawRowY.test(stripped)) {
+      errors.push(`[GEOMETRY] ${rel}: raw "paddingTop + ... * lineHeight" bypasses RowGeometry (use viewLayout.ts createRowGeometry)`);
+    }
+  }
+
   // 4. Layering edges, core bundle guard, & graph building
   const deps = [];
   for (const spec of extractImports(code)) {

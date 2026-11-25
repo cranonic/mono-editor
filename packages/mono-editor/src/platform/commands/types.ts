@@ -36,12 +36,18 @@ export interface MonoRegisteredCommand extends MonoCommand {
  * command + optional keybinding + palette metadata.
  */
 export interface MonoAction extends MonoCommand {
+  /** Monaco alias for `title`. */
+  label?: string;
   /** Primary chord e.g. "ctrl+shift+f" */
   keybinding?: string;
   /** Extra chords */
   keybindings?: string[];
   /** Keybinding when-clause (defaults to precondition) */
   keybindingWhen?: string | (() => boolean);
+  /** Monaco context menu group (e.g. 'navigation', '1_modification'). Auto-registers into MenuId.EditorContext. */
+  contextMenuGroupId?: string;
+  /** Sort order inside contextMenuGroupId. */
+  contextMenuOrder?: number;
   weight?: number;
   run: MonoCommandHandler;
 }

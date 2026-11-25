@@ -1,11 +1,19 @@
 export {
+  createMonoDiffNavigator,
   createMonoEditor,
   editor,
   getActiveMonoEditors,
   MonoDiffEditor,
   MonoEditor,
+  onDidCreateMonoDiffEditor,
+  type DiffUpdateEvent,
   type ICodeEditorOpener,
   type IDiffEditorModel,
+  type IDiffEditorModelChangedEvent,
+  type IDiffEditorViewState,
+  type IDiffNavigator,
+  type IDiffNavigatorOptions,
+  type IHideUnchangedRegionsOptions,
   type IMonoDiffEditor,
   type IStandaloneTextModel,
   type MonoDiffEditorOptions,
@@ -159,13 +167,18 @@ export {
   transposeCharacters,
   trimTrailingWhitespace,
 } from './common/editOperations/lineTransforms';
-export { computeLineDiff } from './common/diff/myersDiff';
+export { computeDiff, computeLineDiff } from './common/diff/myersDiff';
 export type {
   DiffChangeHunk,
   DiffHunk,
   DiffInlineRow,
   DiffRowKind,
   DiffSideBySideRow,
+  ICharChange,
+  IDiffComputationOptions,
+  IDiffComputationResult,
+  ILineChange,
+  IMovedText,
   InlineDiffRow,
   LineDiffResult,
   SideBySideDiffRow,
@@ -303,6 +316,7 @@ export {
   CommandService,
   CommandsRegistry,
   ContextKeyService,
+  evaluateWhenExpression,
 } from './platform/commands';
 export type {
   MonoAction,
@@ -314,7 +328,33 @@ export type {
   MonoPaletteProvider,
   MonoRegisteredCommand,
 } from './platform/commands';
+export {
+  BUILTIN_CLIPBOARD_COMMANDS,
+  createMenuEvalContext,
+  MenuId,
+  MenuRegistry,
+  menus,
+  registerDefaultEditorMenuEntries,
+} from './platform/menus';
+export type {
+  MenuEvalContext,
+  MonoMenuEntry,
+  ResolvedMenuEntry,
+  ResolvedMenuGroup,
+} from './platform/menus';
 export { PaletteService } from './platform/palette';
+export { createRowGeometry } from './browser/view/viewLayout';
+export type { RowGeometry } from './browser/view/viewLayout';
+export type { IInlayHintClickEvent } from './common/languages';
+export { computeDocsPlacement } from './contrib/suggest/widget/suggestDetailsPane';
+export { computeSignaturePlacement } from './contrib/signatureHelp/SignatureHelpWidget';
+export {
+  computeCascadeTiming,
+  computeMenuPlacement,
+  computeMenuSafeArea,
+} from './contrib/contextMenu/menuPlacement';
+export { markersAtPosition } from './contrib/hover/HoverController';
+export { resolveHoverAndDiagnosticsTriggers } from './contrib/hover/HoverContribution';
 
 // Find / Replace (in-editor widget + engine)
 export { FindController, findMatches } from './contrib/find';

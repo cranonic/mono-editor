@@ -15,6 +15,7 @@ import type {
   MonoDisposable,
 } from '../../common/core/types';
 import type { IMarker } from '../../common/decorations/types';
+import type { IInlayHintClickEvent } from '../../common/languages/providers/types';
 import type { ModelChange, TextModel } from '../../common/model/TextModel';
 import type {
   ICursorPositionChangedEvent,
@@ -74,6 +75,7 @@ export class EditorEventBus {
   private disposeListeners = new Set<() => void>();
   private markerListeners = new Set<(markers: IMarker[]) => void>();
   private modelListeners = new Set<(e: IModelChangedEvent) => void>();
+  private inlayHintClickListeners = new Set<(e: IInlayHintClickEvent) => void>();
 
   altVersionId = 1;
   private lastChange: ModelChange | undefined;
@@ -109,6 +111,7 @@ export class EditorEventBus {
   onDidDispose(l: () => void): MonoDisposable { return add(this.disposeListeners, l); }
   onDidChangeMarkers(l: (markers: IMarker[]) => void): MonoDisposable { return add(this.markerListeners, l); }
   onDidChangeModel(l: (e: IModelChangedEvent) => void): MonoDisposable { return add(this.modelListeners, l); }
+  onDidClickInlayHint(l: (e: IInlayHintClickEvent) => void): MonoDisposable { return add(this.inlayHintClickListeners, l); }
 
   emitContent(model: TextModel, change?: ModelChange): void {
     this.altVersionId++;
@@ -177,6 +180,7 @@ export class EditorEventBus {
   emitKeyUp(e: KeyboardEvent): void { safeEmit(this.keyUpListeners, e); }
   emitMarkers(markers: IMarker[]): void { safeEmit(this.markerListeners, markers); }
   emitModelChanged(ev: IModelChangedEvent): void { safeEmit(this.modelListeners, ev); }
+  emitInlayHintClick(ev: IInlayHintClickEvent): void { safeEmit(this.inlayHintClickListeners, ev); }
   emitDispose(): void { safeEmitVoid(this.disposeListeners); }
 
   dispose(): void {
@@ -190,6 +194,6 @@ export class EditorEventBus {
     this.mouseDownListeners.clear(); this.mouseUpListeners.clear(); this.mouseMoveListeners.clear();
     this.mouseLeaveListeners.clear(); this.contextMenuListeners.clear();
     this.keyDownListeners.clear(); this.keyUpListeners.clear(); this.disposeListeners.clear();
-    this.markerListeners.clear(); this.modelListeners.clear();
+    this.markerListeners.clear(); this.modelListeners.clear(); this.inlayHintClickListeners.clear();
   }
 }

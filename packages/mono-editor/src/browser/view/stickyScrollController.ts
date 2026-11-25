@@ -13,6 +13,7 @@ import {
   type StickyRenderLine,
 } from '../../common/viewModel/StickyScroll';
 import type { ViewLineProjection } from '../../common/viewModel/ViewLineProjection';
+import { createRowGeometry, type RowGeometry } from './viewLayout';
 
 export interface StickyComputeArgs {
   model: TextModel;
@@ -25,11 +26,21 @@ export interface StickyComputeArgs {
   tabSize: number;
   foldingEnabled: boolean;
   foldingModel: FoldingModel | null;
+  geometry?: RowGeometry;
 }
 
 function isMarkdownLanguage(langId: string): boolean {
   const id = langId.toLowerCase();
   return id === 'markdown' || id === 'md' || id === 'mdx';
+}
+
+function toStickyGeometry(geometry?: RowGeometry) {
+  if (!geometry) return undefined;
+  return {
+    topOfRow: (row: number) => geometry.stickyTopOfRow(row),
+    blockTopOfRow: (row: number) => geometry.stickyBlockTopOfRow(row),
+    rowAtDocY: (docY: number) => geometry.rowAtStickyDocY(docY),
+  };
 }
 
 /**
@@ -117,6 +128,7 @@ export class StickyScrollController {
       tabSize,
       foldingEnabled,
       foldingModel,
+      geometry,
     } = args;
 
     const finder = this.resolveFinder(model, tabSize);
@@ -128,6 +140,7 @@ export class StickyScrollController {
         : undefined;
 
     const stickyScrollTop = renderTop - topInsetPx;
+    const stickyGeom = toStickyGeometry(geometry);
     const layout = layoutStickyForScroll(
       finder,
       stickyScrollTop,
@@ -139,13 +152,14 @@ export class StickyScrollController {
       this.opts.activeLineSticky,
       projection,
       isLineHidden,
+      stickyGeom,
     );
     this.lastSticky = layout.lines;
     this.lastStickyHeight = layout.height;
 
     if (this.opts.bottomActiveSticky && !(isLineHidden && isLineHidden(caretLine))) {
       const caretRow = projection.modelToVisual(caretLine, caretCol).visualRow;
-      const docY = metrics.paddingTop + caretRow * metrics.lineHeight;
+      const docY = (geometry ?? createRowGeometry(metrics, 0, [])).stickyTopOfRow(caretRow);
       const viewBottom = stickyScrollTop + cssHeight;
       const viewTop = stickyScrollTop + Math.max(topInsetPx, this.lastStickyHeight);
       const lineBottom = docY + metrics.lineHeight;
@@ -186,6 +200,7 @@ export class StickyScrollController {
       false,
       args.projection,
       isLineHidden,
+      toStickyGeometry(args.geometry),
     ).height;
   }
 

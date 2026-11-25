@@ -1,3 +1,4 @@
+import type { WidgetBoxRect } from '../../browser/editor/editorTypes';
 import type { ViewController } from '../../browser/view/ViewController';
 import type { SelectionState } from '../../common/core/SelectionState';
 import { analyzeCallContext } from '../../common/languages/callContext';
@@ -10,6 +11,14 @@ import type {
 import type { TextModel } from '../../common/model/TextModel';
 import type { ResolvedWidgetTheme } from '../../platform/theme/widgetTheme';
 import { SignatureHelpWidget } from './SignatureHelpWidget';
+
+export interface SignatureHelpControllerOptions {
+  enabled?: boolean;
+  trigger?: 'auto' | 'manual';
+  getLanguageIdAtPosition?: (lineNumber: number, column: number) => string;
+  getAvoidRect?: () => WidgetBoxRect | null;
+  isSuggestVisible?: () => boolean;
+}
 
 function isSignatureHelpResult(
   res: SignatureHelp | SignatureHelpResult | null | undefined,
@@ -27,23 +36,42 @@ export class SignatureHelpController {
   private activeLangId = 'typescript';
   private seq = 0;
   private disposed = false;
+  private enabled = true;
+  private triggerMode: 'auto' | 'manual' = 'auto';
   private getLanguageIdAtPosition?: (lineNumber: number, column: number) => string;
+  private getAvoidRect?: () => WidgetBoxRect | null;
+  private isSuggestVisible?: () => boolean;
 
   constructor(
     host: HTMLElement,
     model: TextModel,
     selection: SelectionState,
     view: ViewController,
-    getLanguageIdAtPosition?: (lineNumber: number, column: number) => string,
+    optionsOrLangGetter?: SignatureHelpControllerOptions | ((lineNumber: number, column: number) => string),
   ) {
     this.model = model;
     this.selection = selection;
     this.view = view;
-    this.getLanguageIdAtPosition = getLanguageIdAtPosition;
+    if (typeof optionsOrLangGetter === 'function') {
+      this.getLanguageIdAtPosition = optionsOrLangGetter;
+    } else if (optionsOrLangGetter) {
+      this.setOptions(optionsOrLangGetter);
+    }
     this.widget = new SignatureHelpWidget(host, {
       onPrev: () => this.prevSignature(),
       onNext: () => this.nextSignature(),
     });
+  }
+
+  setOptions(opts: SignatureHelpControllerOptions): void {
+    if (opts.enabled !== undefined) {
+      this.enabled = opts.enabled;
+      if (!this.enabled) this.hide();
+    }
+    if (opts.trigger !== undefined) this.triggerMode = opts.trigger;
+    if (opts.getLanguageIdAtPosition !== undefined) this.getLanguageIdAtPosition = opts.getLanguageIdAtPosition;
+    if (opts.getAvoidRect !== undefined) this.getAvoidRect = opts.getAvoidRect;
+    if (opts.isSuggestVisible !== undefined) this.isSuggestVisible = opts.isSuggestVisible;
   }
 
   setModel(model: TextModel): void {
@@ -98,7 +126,6 @@ export class SignatureHelpController {
         if (my !== this.seq || this.disposed) return false;
         const help = isSignatureHelpResult(res) ? res.value : res;
         if (help && help.signatures.length > 0) {
-          // Prefer provider's activeParameter; fall back to live multi-line call context index
           const resolvedParam = help.activeParameter ?? callCtx?.activeParameter ?? 0;
           this.activeHelp = {
             signatures: help.signatures,
@@ -125,18 +152,18 @@ export class SignatureHelpController {
     if (this.disposed || !typedText) return;
     const ch = typedText[typedText.length - 1]!;
     if (ch === ')') {
-      // If we are still inside an outer nested call, retrigger for the outer call!
       const modelLike = this.buildModelLike(this.model.getLanguageId());
       const outer = analyzeCallContext(modelLike, this.selection.active);
-      if (outer) {
+      if (outer && (this.isOpen() || (this.enabled && this.triggerMode === 'auto'))) {
         await this.trigger(undefined, false);
       } else {
         this.hide();
       }
       return;
     }
+    const autoAllowed = this.enabled && this.triggerMode === 'auto';
     const triggers = this.collectTriggerCharacters();
-    if (triggers.has(ch)) {
+    if (triggers.has(ch) && (autoAllowed || this.isOpen())) {
       await this.trigger(ch, false);
       return;
     }
@@ -164,14 +191,9 @@ export class SignatureHelpController {
       this.hide();
       return;
     }
-    // Multi-line function call: stay open and reposition at new line!
     await this.trigger(undefined, false);
   }
 
-  /**
-   * Live parameter tracking on cursor movement (arrows, Home/End, tap inside arguments):
-   * keeps popup open across multi-line calls and updates active parameter immediately.
-   */
   syncCursor(): void {
     if (!this.isOpen()) return;
     const modelLike = this.buildModelLike(this.model.getLanguageId());
@@ -215,6 +237,8 @@ export class SignatureHelpController {
       this.hide();
       return true;
     }
+    // Completion list retains Up/Down ownership whenever both widgets are open
+    if (this.isSuggestVisible?.()) return false;
     if ((this.activeHelp?.signatures.length ?? 0) > 1) {
       if (e.key === 'ArrowUp' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
@@ -268,6 +292,7 @@ export class SignatureHelpController {
       y: scr.y + scr.h,
       top: scr.y,
       languageId: this.activeLangId,
+      avoidRect: this.getAvoidRect?.() ?? null,
     });
   }
 

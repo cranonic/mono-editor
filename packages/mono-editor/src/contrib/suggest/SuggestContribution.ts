@@ -47,8 +47,17 @@ export class SuggestContribution implements IEditorContribution {
         quickSuggestions: opts.quickSuggestions,
         quickSuggestionsDelay: opts.quickSuggestionsDelay,
         suggestOnTriggerCharacters: opts.suggestOnTriggerCharacters,
+        suggestMode: opts.suggest?.mode ?? 'palette',
+        suggestDocs: opts.suggest?.docs ?? 'off',
         getTokenTypeAt: (ln, col) => host.getTokenTypeAt(ln, col),
         getLanguageIdAtPosition: (ln, col) => host.getLanguageIdAtPosition(ln, col),
+        onVisibilityChange: (visible, rect) => {
+          host.setSuggestWidgetRect(rect);
+          host.setContext('suggestWidgetVisible', visible);
+        },
+        setGhostTexts: (items) => host.setGhostTexts(items),
+        clearGhostTexts: (owner) => host.clearGhostTexts(owner),
+        getGhostTexts: (owner) => host.getGhostTexts(owner),
       },
     );
     this.suggest.setSnippetSession(this.snippetSession);
@@ -127,12 +136,15 @@ export class SuggestContribution implements IEditorContribution {
     if (
       patch.quickSuggestions !== undefined ||
       patch.quickSuggestionsDelay !== undefined ||
-      patch.suggestOnTriggerCharacters !== undefined
+      patch.suggestOnTriggerCharacters !== undefined ||
+      patch.suggest !== undefined
     ) {
       this.suggest.setOptions({
         quickSuggestions: patch.quickSuggestions,
         quickSuggestionsDelay: patch.quickSuggestionsDelay,
         suggestOnTriggerCharacters: patch.suggestOnTriggerCharacters,
+        suggestMode: patch.suggest?.mode,
+        suggestDocs: patch.suggest?.docs,
       });
     }
   }

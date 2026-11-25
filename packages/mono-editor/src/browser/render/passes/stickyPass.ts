@@ -1,35 +1,117 @@
-import type { FrameContext, RenderPass } from '../frameContext';
+import { rgbaToCss } from '../../../common/color/colorFormat';
+import {
+  collectInlineVirtualElements,
+  virtualAdvanceBeforeColumn,
+  virtualElementStartX,
+} from '../../../common/virtualText';
+import {
+  COLOR_SWATCH_ADVANCE,
+  COLOR_SWATCH_SIZE,
+  type FrameContext,
+  type RenderPass,
+} from '../frameContext';
 
-function paintTokenizedLine(
+/**
+ * Paints a sticky line using the same swatch-only inline layout as the real line (Track F):
+ * inlay hints and ghost text are intentionally excluded from sticky headers (VS Code behaviour),
+ * while inline color swatches are drawn at identical X coordinates and recorded in `stickyColorHits`
+ * so tapping a sticky swatch opens the color picker for that line.
+ */
+function paintStickyLineContent(
   ctx: CanvasRenderingContext2D,
   frame: FrameContext,
   line: number,
   content: string,
   textX0: number,
+  y: number,
   textY: number,
-): void {
-  const { opts, tokenColors, measureColumnX } = frame;
-  const { theme, getLineTokens } = opts;
+  lineHeight: number,
+): { swatchAdvanceAt: (col: number) => number } {
+  const { opts, tokenColors, measureColumnX, measureText } = frame;
+  const { theme, getLineTokens, cssWidth } = opts;
+  const lineColors = frame.colorsForLine(line);
+  const swatchEls = lineColors.length
+    ? collectInlineVirtualElements({
+        colors: lineColors,
+        swatchAdvancePx: COLOR_SWATCH_ADVANCE,
+        measureText,
+      })
+    : [];
+  const swatchAdvanceAt = (col: number): number =>
+    swatchEls.length ? virtualAdvanceBeforeColumn(swatchEls, col, false) : 0;
+
+  const splitCols = lineColors.map((c) => c.startColumn);
+  if (splitCols.length > 1) splitCols.sort((a, b) => a - b);
+
+  const drawSlice = (from: number, to: number, color: string) => {
+    if (to <= from) return;
+    const emitRun = (a: number, b: number) => {
+      const slice = content.slice(a - 1, b - 1);
+      if (!slice) return;
+      ctx.fillStyle = color;
+      ctx.fillText(slice, textX0 + measureColumnX(content, a) + swatchAdvanceAt(a), textY);
+    };
+    if (!splitCols.length) {
+      emitRun(from, to);
+      return;
+    }
+    let cur = from;
+    for (const sc of splitCols) {
+      if (sc > cur && sc < to) {
+        emitRun(cur, sc);
+        cur = sc;
+      }
+    }
+    if (cur < to) emitRun(cur, to);
+  };
+
   const tokens = getLineTokens?.(line) ?? [];
   if (!tokens.length) {
-    ctx.fillStyle = theme.foreground;
-    ctx.fillText(content, textX0, textY);
-    return;
+    drawSlice(1, content.length + 1, theme.foreground);
+  } else {
+    let col = 1;
+    for (const tok of tokens) {
+      if (tok.startColumn > col) drawSlice(col, tok.startColumn, theme.foreground);
+      drawSlice(tok.startColumn, tok.endColumn, tokenColors[tok.type] ?? theme.foreground);
+      col = Math.max(col, tok.endColumn);
+    }
+    if (col <= content.length) drawSlice(col, content.length + 1, theme.foreground);
   }
-  let col = 1;
-  const emit = (from: number, to: number, type: string) => {
-    if (to <= from) return;
-    const slice = content.slice(from - 1, to - 1);
-    if (!slice) return;
-    ctx.fillStyle = tokenColors[type] ?? theme.foreground;
-    ctx.fillText(slice, textX0 + measureColumnX(content, from), textY);
-  };
-  for (const tok of tokens) {
-    if (tok.startColumn > col) emit(col, tok.startColumn, 'plain');
-    emit(tok.startColumn, tok.endColumn, tok.type);
-    col = Math.max(col, tok.endColumn);
+
+  // Paint inline color swatches in sticky header (aligned identically with real line)
+  if (lineColors.length) {
+    const swatchY = Math.round(y + (lineHeight - COLOR_SWATCH_SIZE) / 2);
+    for (const cm of lineColors) {
+      const baseRealX = measureColumnX(content, cm.startColumn);
+      const sx = Math.round(textX0 + virtualElementStartX(baseRealX, swatchEls, cm.startColumn, 0) + 1);
+      if (sx + COLOR_SWATCH_SIZE < frame.contentLeft || sx > cssWidth) continue;
+
+      if (cm.rgba.a < 0.999) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(sx, swatchY, COLOR_SWATCH_SIZE, COLOR_SWATCH_SIZE);
+        ctx.fillStyle = '#b0b0b0';
+        const half = Math.floor(COLOR_SWATCH_SIZE / 2);
+        ctx.fillRect(sx, swatchY, half, half);
+        ctx.fillRect(sx + half, swatchY + half, COLOR_SWATCH_SIZE - half, COLOR_SWATCH_SIZE - half);
+      }
+
+      ctx.fillStyle = rgbaToCss(cm.rgba);
+      ctx.fillRect(sx, swatchY, COLOR_SWATCH_SIZE, COLOR_SWATCH_SIZE);
+      ctx.strokeStyle = frame.dark ? 'rgba(255, 255, 255, 0.42)' : 'rgba(15, 23, 42, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(sx + 0.5, swatchY + 0.5, COLOR_SWATCH_SIZE - 1, COLOR_SWATCH_SIZE - 1);
+
+      frame.stickyColorHits.push({
+        match: cm,
+        x: sx - 2,
+        y,
+        w: COLOR_SWATCH_ADVANCE + 2,
+        h: lineHeight,
+      });
+    }
   }
-  if (col <= content.length) emit(col, content.length + 1, 'plain');
+
+  return { swatchAdvanceAt };
 }
 
 export const stickyPass: RenderPass = {
@@ -102,10 +184,12 @@ export const stickyPass: RenderPass = {
 
         const textX0s = contentLeft + paddingLeft - scrollLeft;
         ctx.globalAlpha = alpha;
-        paintTokenizedLine(ctx, frame, line, content, textX0s, textY);
+        const { swatchAdvanceAt } = paintStickyLineContent(
+          ctx, frame, line, content, textX0s, y, textY, lineHeight,
+        );
 
         if (s.caretColumn != null && s.kind === 'active') {
-          const cx = textX0s + measureColumnX(content, s.caretColumn);
+          const cx = textX0s + measureColumnX(content, s.caretColumn) + swatchAdvanceAt(s.caretColumn);
           ctx.fillStyle = tokenColorAt(line, s.caretColumn);
           ctx.fillRect(cx, y + 2, 2, lineHeight - 4);
         }
@@ -172,14 +256,13 @@ export const stickyPass: RenderPass = {
       ctx.clip();
 
       const textX0b = contentLeft + paddingLeft - scrollLeft;
-      paintTokenizedLine(ctx, frame, bl, content, textX0b, textY);
+      const { swatchAdvanceAt } = paintStickyLineContent(
+        ctx, frame, bl, content, textX0b, y, textY, lineHeight,
+      );
 
-      const cx =
-        contentLeft +
-        paddingLeft -
-        scrollLeft +
-        measureColumnX(content, bottomSticky.caretColumn ?? 1);
-      ctx.fillStyle = tokenColorAt(bl, bottomSticky.caretColumn ?? 1);
+      const bCol = bottomSticky.caretColumn ?? 1;
+      const cx = textX0b + measureColumnX(content, bCol) + swatchAdvanceAt(bCol);
+      ctx.fillStyle = tokenColorAt(bl, bCol);
       ctx.fillRect(cx, y + 2, 2, lineHeight - 4);
       ctx.restore();
       ctx.restore();

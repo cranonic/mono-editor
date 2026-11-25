@@ -1,8 +1,9 @@
 import type { MonoContextKeyValue, MonoDisposable } from './types';
+import { evaluateWhenExpression } from './whenExpr';
 
 /**
- * Minimal Monaco ContextKeyService.
- * Supports: key, !key, key == value, a && b, a || b (no parens nesting beyond simple).
+ * Monaco-compatible ContextKeyService.
+ * Supports: key, !key, key == value, key != value, a && b, a || b, and nested parentheses.
  */
 export class ContextKeyService {
   private keys = new Map<string, MonoContextKeyValue>();
@@ -47,7 +48,7 @@ export class ContextKeyService {
         return false;
       }
     }
-    return this.evalExpr(when.trim());
+    return evaluateWhenExpression(when, (k) => this.keys.get(k));
   }
 
   private emit(): void {
@@ -58,49 +59,5 @@ export class ContextKeyService {
         /* */
       }
     }
-  }
-
-  private evalExpr(expr: string): boolean {
-    // Split OR first
-    const orParts = expr.split('||').map((s) => s.trim());
-    return orParts.some((part) =>
-      part
-        .split('&&')
-        .map((s) => s.trim())
-        .every((term) => this.evalTerm(term)),
-    );
-  }
-
-  private evalTerm(term: string): boolean {
-    if (!term) return true;
-    if (term.startsWith('!')) {
-      return !this.truthy(term.slice(1).trim());
-    }
-    const eq = term.match(/^([\w.]+)\s*==\s*(.+)$/);
-    if (eq) {
-      const key = eq[1]!;
-      let raw = eq[2]!.trim();
-      if (
-        (raw.startsWith("'") && raw.endsWith("'")) ||
-        (raw.startsWith('"') && raw.endsWith('"'))
-      ) {
-        raw = raw.slice(1, -1);
-      }
-      const v = this.keys.get(key);
-      if (raw === 'true') return v === true;
-      if (raw === 'false') return v === false;
-      return String(v) === raw;
-    }
-    const ne = term.match(/^([\w.]+)\s*!=\s*(.+)$/);
-    if (ne) {
-      return !this.evalTerm(`${ne[1]} == ${ne[2]}`);
-    }
-    return this.truthy(term);
-  }
-
-  private truthy(key: string): boolean {
-    const v = this.keys.get(key);
-    if (v === undefined) return false;
-    return !!v;
   }
 }

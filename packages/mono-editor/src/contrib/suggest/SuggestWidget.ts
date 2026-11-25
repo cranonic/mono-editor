@@ -1,7 +1,8 @@
+import type { WidgetBoxRect } from '../../browser/editor/editorTypes';
 import type { CompletionItem } from '../../common/languages/providers/types';
 import { haptic } from '../../platform/haptic/haptic';
 import { createIcon, ensureCodicons, kindToCodicon } from '../../platform/icons';
-import { SuggestDetailsPane } from './widget/suggestDetailsPane';
+import { SuggestDetailsPane, type CaretLineBand } from './widget/suggestDetailsPane';
 import {
   BORDER,
   ensureSuggestStyle,
@@ -11,11 +12,26 @@ import {
   matchIndexes,
   resolveSuggestPalette,
   type SuggestAnchor,
+  type SuggestDocsMode,
   type SuggestPalette,
   type SuggestWidgetOptions,
 } from './widget/suggestStyle';
 
-export type { SuggestAnchor, SuggestWidgetOptions };
+export type { SuggestAnchor, SuggestDocsMode, SuggestWidgetOptions };
+
+function hasItemDocumentation(item: CompletionItem | null | undefined): boolean {
+  if (!item) return false;
+  if (typeof item.documentation === 'string' && item.documentation.trim().length > 0) return true;
+  if (
+    item.documentation &&
+    typeof item.documentation === 'object' &&
+    typeof item.documentation.value === 'string' &&
+    item.documentation.value.trim().length > 0
+  ) {
+    return true;
+  }
+  return Boolean(item.detail && item.detail.trim().length > 0);
+}
 
 /**
  * VS Code-style suggest widget: content-sized floating list next to the caret.
@@ -36,7 +52,11 @@ export class SuggestWidget {
   private pal: SuggestPalette;
   private onAccept: (item: CompletionItem) => void;
   private onSelectionChange?: (item: CompletionItem | null) => void;
+  private onBoundsChange?: (rect: WidgetBoxRect | null) => void;
   private lastTouchAcceptAt = 0;
+  /** Session-scoped docs visibility toggle (reset on hide). */
+  private docsExpanded = false;
+  private docsToggledManually = false;
 
   constructor(
     host: HTMLElement,
@@ -44,6 +64,7 @@ export class SuggestWidget {
       onAccept: (item: CompletionItem) => void;
       onDismiss: () => void;
       onSelectionChange?: (item: CompletionItem | null) => void;
+      onBoundsChange?: (rect: WidgetBoxRect | null) => void;
     },
     options?: SuggestWidgetOptions,
   ) {
@@ -51,12 +72,14 @@ export class SuggestWidget {
     this.details = new SuggestDetailsPane(host);
     this.onAccept = handlers.onAccept;
     this.onSelectionChange = handlers.onSelectionChange;
+    this.onBoundsChange = handlers.onBoundsChange;
     this.opts = {
       maxHeight: 150,
       maxWidth: 460,
       minWidth: 250,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       fontSize: 14,
+      docsMode: 'off',
       className: '',
       themeType: 'dark',
       ...options,
@@ -65,25 +88,45 @@ export class SuggestWidget {
   }
 
   setOptions(options: SuggestWidgetOptions): void {
+    const prevDocsMode = this.opts.docsMode;
     this.opts = { ...this.opts, ...options };
     this.pal = resolveSuggestPalette(this.opts);
+    if (options.docsMode !== undefined && options.docsMode !== prevDocsMode && !this.docsToggledManually) {
+      this.docsExpanded = options.docsMode !== 'off';
+    }
     if (this.el) {
       this.applyChrome();
       this.renderList();
       this.position();
+      this.showDocumentation(this.getSelectedItem());
     }
   }
 
   isVisible(): boolean { return !!this.el; }
   isSuspended(): boolean { return this.suspended; }
+  isDocsOpen(): boolean { return this.details.isVisible(); }
+
+  toggleDocs(): boolean {
+    if (!this.el) return false;
+    this.docsToggledManually = true;
+    this.docsExpanded = !this.docsExpanded;
+    this.paintRow(this.index);
+    this.showDocumentation(this.getSelectedItem());
+    return this.docsExpanded;
+  }
 
   show(items: CompletionItem[], anchor: SuggestAnchor, filter?: string): void {
+    const wasVisible = !!this.el;
     this.items = items;
     this.filter = filter || '';
     this.index = Math.max(0, items.findIndex((i) => i.preselect));
     this.hoverIndex = -1;
     this.suspended = false;
     this.anchor = anchor;
+    if (!wasVisible) {
+      this.docsToggledManually = false;
+      this.docsExpanded = (this.opts.docsMode ?? 'off') !== 'off';
+    }
     ensureSuggestStyle();
     if (!this.el) this.build();
     this.el!.style.display = 'flex';
@@ -94,6 +137,7 @@ export class SuggestWidget {
   }
 
   hide(): void {
+    const wasVisible = !!this.el;
     if (this.el) {
       this.el.remove();
       this.el = null;
@@ -103,6 +147,9 @@ export class SuggestWidget {
     this.rows = [];
     this.items = [];
     this.suspended = false;
+    this.docsExpanded = false;
+    this.docsToggledManually = false;
+    if (wasVisible) this.onBoundsChange?.(null);
   }
 
   setSuspended(suspended: boolean): void {
@@ -111,6 +158,7 @@ export class SuggestWidget {
     this.el.style.display = suspended ? 'none' : 'flex';
     this.details.setSuspended(suspended);
     if (!suspended) this.position();
+    else this.onBoundsChange?.(null);
   }
 
   getSelectedItem(): CompletionItem | null {
@@ -118,7 +166,13 @@ export class SuggestWidget {
   }
 
   showDocumentation(item: CompletionItem | null): void {
-    this.details.show(item, this.el, this.suspended, this.opts, this.pal);
+    if (!this.docsExpanded) {
+      this.details.hide();
+      return;
+    }
+    const configured = this.opts.docsMode ?? 'off';
+    const placementMode: Exclude<SuggestDocsMode, 'off'> = configured === 'off' ? 'auto' : configured;
+    this.details.show(item, this.el, this.suspended, this.opts, this.pal, this.caretLineBand(), placementMode);
   }
 
   reposition(anchor: SuggestAnchor): void {
@@ -147,6 +201,11 @@ export class SuggestWidget {
   }
 
   dispose(): void { this.hide(); }
+
+  private caretLineBand(): CaretLineBand {
+    const lineTop = this.anchor.top ?? Math.max(0, this.anchor.y - this.rowHeight());
+    return { top: lineTop, bottom: this.anchor.y };
+  }
 
   private notifySelectionChange(): void {
     const item = this.items[this.index] ?? null;
@@ -236,9 +295,17 @@ export class SuggestWidget {
     left = Math.min(left, hostW - w - 4);
     left = Math.max(4, left);
 
-    this.el.style.left = `${Math.round(left)}px`;
-    this.el.style.top = `${Math.round(top)}px`;
-    this.details.position(this.el, this.suspended);
+    const roundedLeft = Math.round(left);
+    const roundedTop = Math.round(top);
+    this.el.style.left = `${roundedLeft}px`;
+    this.el.style.top = `${roundedTop}px`;
+    this.onBoundsChange?.({ left: roundedLeft, top: roundedTop, width: w, height: h });
+
+    if (this.docsExpanded) {
+      const configured = this.opts.docsMode ?? 'off';
+      const placementMode: Exclude<SuggestDocsMode, 'off'> = configured === 'off' ? 'auto' : configured;
+      this.details.position(this.el, this.suspended, this.caretLineBand(), placementMode);
+    }
   }
 
   private setIndex(i: number): void {
@@ -270,7 +337,13 @@ export class SuggestWidget {
     row.style.background = selected ? p.selectedBackground : i === this.hoverIndex ? p.hoverBackground : 'transparent';
     row.style.color = selected ? p.selectedForeground : p.foreground;
     const hl = selected ? p.focusHighlight : p.highlight;
-    row.querySelectorAll<HTMLElement>('.mono-sg-hl').forEach((h) => (h.style.color = hl));
+    row.querySelectorAll?.<HTMLElement>('.mono-sg-hl').forEach((h) => (h.style.color = hl));
+    const infoBtn = row.querySelector?.<HTMLButtonElement>('.mono-sg-info-btn') ?? null;
+    if (infoBtn) {
+      infoBtn.style.display = selected ? 'inline-flex' : 'none';
+      infoBtn.style.opacity = this.docsExpanded ? '1' : '0.75';
+      infoBtn.setAttribute('aria-pressed', this.docsExpanded ? 'true' : 'false');
+    }
   }
 
   private renderList(): void {
@@ -291,7 +364,7 @@ export class SuggestWidget {
         boxSizing: 'border-box',
         height: `${rowH}px`,
         lineHeight: `${rowH}px`,
-        padding: '0 8px 0 4px',
+        padding: '0 6px 0 4px',
         cursor: 'pointer',
         whiteSpace: 'pre',
         userSelect: 'none',
@@ -349,8 +422,8 @@ export class SuggestWidget {
         d.textContent = right;
         Object.assign(d.style, {
           flex: '0 1 auto',
-          maxWidth: '60%',
-          marginLeft: '16px',
+          maxWidth: '55%',
+          marginLeft: '14px',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           textAlign: 'right',
@@ -358,6 +431,45 @@ export class SuggestWidget {
         });
         if (this.opts.detailForeground) d.style.color = this.opts.detailForeground;
         row.appendChild(d);
+      }
+
+      if (hasItemDocumentation(item)) {
+        const infoBtn = document.createElement('button');
+        infoBtn.type = 'button';
+        infoBtn.className = 'mono-sg-info-btn';
+        infoBtn.title = 'Toggle Documentation (Ctrl+Space)';
+        infoBtn.setAttribute('aria-label', 'Toggle Documentation');
+        infoBtn.textContent = 'i';
+        Object.assign(infoBtn.style, {
+          display: 'none',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: '0',
+          marginLeft: '6px',
+          width: '18px',
+          height: '18px',
+          borderRadius: '50%',
+          border: '1px solid currentColor',
+          background: 'transparent',
+          color: 'inherit',
+          fontSize: '11px',
+          fontStyle: 'italic',
+          fontFamily: 'Georgia, serif',
+          lineHeight: '1',
+          padding: '0',
+          cursor: 'pointer',
+        });
+        const onToggle = (e: Event) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.toggleDocs();
+        };
+        infoBtn.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+        infoBtn.addEventListener('touchend', onToggle, { passive: false });
+        infoBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); });
+        infoBtn.addEventListener('pointerup', onToggle);
+        infoBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+        row.appendChild(infoBtn);
       }
 
       this.bindRowEvents(row, i);

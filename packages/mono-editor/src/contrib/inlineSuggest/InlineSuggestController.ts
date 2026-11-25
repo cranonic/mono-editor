@@ -347,6 +347,11 @@ export class InlineSuggestController implements IInlineSuggestContribution {
   }
 
   private refreshView(): void {
+    const active = this.ghost.getAllActive();
+    const hasNonSuggest = active.some((g) => g.owner !== 'suggest-ghost');
+    if (hasNonSuggest && active.some((g) => g.owner === 'suggest-ghost')) {
+      this.ghost.clearGhostTexts('suggest-ghost');
+    }
     this.host.commands.setContext('inlineSuggestionVisible', this.ghost.hasAny());
     this.host.view.projection.invalidate();
     this.host.view.paint();

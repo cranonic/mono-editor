@@ -68,7 +68,6 @@ export const highlightsPass: RenderPass = {
 
       if (occurrences.length) {
         const occFill = f.dark ? 'rgba(255, 255, 255, 0.11)' : 'rgba(15, 23, 42, 0.09)';
-        const occStroke = f.dark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(15, 23, 42, 0.22)';
         for (const occ of occurrences) {
           if (occ.lineNumber !== line) continue;
           const c1 = Math.max(seg.startCol, occ.startColumn);
@@ -78,26 +77,6 @@ export const highlightsPass: RenderPass = {
           const x2 = f.segX(content, seg, c2);
           ctx.fillStyle = occFill;
           ctx.fillRect(x1, y + 1, Math.max(2, x2 - x1), lineHeight - 2);
-          ctx.strokeStyle = occStroke;
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x1 + 0.5, y + 1.5, Math.max(1, x2 - x1 - 1), lineHeight - 3);
-        }
-      }
-
-      if (bracketMatch) {
-        const pairPts = [bracketMatch.open, bracketMatch.close];
-        for (const bp of pairPts) {
-          if (bp.lineNumber !== line) continue;
-          const c1 = Math.max(seg.startCol, bp.column);
-          const c2 = Math.min(seg.endCol, bp.column + bp.length);
-          if (c2 <= c1) continue;
-          const x1 = f.segX(content, seg, c1);
-          const x2 = f.segX(content, seg, c2);
-          ctx.fillStyle = f.dark ? 'rgba(56, 189, 248, 0.20)' : 'rgba(37, 99, 235, 0.14)';
-          ctx.fillRect(x1, y + 1, Math.max(2, x2 - x1), lineHeight - 2);
-          ctx.strokeStyle = f.dark ? 'rgba(125, 211, 252, 0.72)' : 'rgba(37, 99, 235, 0.62)';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x1 + 0.5, y + 1.5, Math.max(1, x2 - x1 - 1), lineHeight - 3);
         }
       }
 
@@ -162,6 +141,39 @@ export const highlightsPass: RenderPass = {
           const w = Math.max(x2 - x1, extendsPastLine ? 6 : (line === os.endLine ? 2 : 0));
           ctx.fillStyle = theme.selection;
           ctx.fillRect(x1, y, w || 4, lineHeight);
+        }
+      }
+
+      // Paint occurrence outlines & bracket match pair AFTER selection fill so they stay visible inside selections
+      if (occurrences.length) {
+        const occStroke = f.dark ? 'rgba(255, 255, 255, 0.28)' : 'rgba(15, 23, 42, 0.28)';
+        for (const occ of occurrences) {
+          if (occ.lineNumber !== line) continue;
+          const c1 = Math.max(seg.startCol, occ.startColumn);
+          const c2 = Math.min(seg.endCol, occ.endColumn);
+          if (c2 <= c1) continue;
+          const x1 = f.segX(content, seg, c1);
+          const x2 = f.segX(content, seg, c2);
+          ctx.strokeStyle = occStroke;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x1 + 0.5, y + 1.5, Math.max(1, x2 - x1 - 1), lineHeight - 3);
+        }
+      }
+
+      if (bracketMatch) {
+        const pairPts = [bracketMatch.open, bracketMatch.close];
+        for (const bp of pairPts) {
+          if (bp.lineNumber !== line) continue;
+          const c1 = Math.max(seg.startCol, bp.column);
+          const c2 = Math.min(seg.endCol, bp.column + bp.length);
+          if (c2 <= c1) continue;
+          const x1 = f.segX(content, seg, c1);
+          const x2 = f.segX(content, seg, c2);
+          ctx.fillStyle = f.dark ? 'rgba(56, 189, 248, 0.16)' : 'rgba(37, 99, 235, 0.12)';
+          ctx.fillRect(x1, y + 1, Math.max(2, x2 - x1), lineHeight - 2);
+          ctx.strokeStyle = f.dark ? 'rgba(125, 211, 252, 0.85)' : 'rgba(37, 99, 235, 0.78)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x1 + 0.5, y + 1.5, Math.max(1, x2 - x1 - 1), lineHeight - 3);
         }
       }
     }

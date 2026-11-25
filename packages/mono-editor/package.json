@@ -19,22 +19,28 @@
   "files": ["src", "docs", "README.md"],
   "sideEffects": false,
   "peerDependencies": {
-    "react": ">=18"
+    "react": ">=18",
+    "katex": ">=0.16",
+    "mermaid": ">=11"
   },
   "peerDependenciesMeta": {
     "react": {
+      "optional": true
+    },
+    "katex": {
+      "optional": true
+    },
+    "mermaid": {
       "optional": true
     }
   },
   "keywords": ["editor", "code-editor", "canvas", "mono", "monaco-alternative"],
   "license": "UNLICENSED",
   "devDependencies": {
-    "typescript": "^7.0.2",
-    "vite": "^8.3.8"
-  },
-  "dependencies": {
     "@types/katex": "^0.16.8",
     "katex": "^0.19.1",
-    "mermaid": "^12.3.0"
+    "mermaid": "^12.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
   }
 }

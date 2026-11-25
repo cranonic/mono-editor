@@ -103,6 +103,15 @@ export interface InlayHint {
   readonly paddingRight?: boolean;
 }
 
+export interface IInlayHintClickEvent {
+  readonly hint: InlayHint;
+  readonly part?: InlayHintLabelPart;
+  readonly position: IPosition;
+  readonly clickCount: 1 | 2;
+  readonly source: 'touch' | 'mouse';
+  preventDefault(): void;
+}
+
 export interface InlayHintList {
   readonly hints: readonly InlayHint[];
   dispose?(): void;
@@ -374,6 +383,7 @@ export interface CodeLensList {
 
 export interface CodeLensProvider {
   onDidChange?: (listener: () => void) => { dispose(): void };
+  onDidChangeCodeLenses?: (listener: () => void) => { dispose(): void };
   provideCodeLenses(
     model: ModelLike,
     token?: CancellationToken,

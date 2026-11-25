@@ -1,4 +1,17 @@
-import { MonoDiffEditor, type IDiffEditorModel, type IMonoDiffEditor, type MonoDiffEditorOptions } from '../browser/diff/MonoDiffEditor';
+import {
+  createMonoDiffNavigator,
+  MonoDiffEditor,
+  onDidCreateMonoDiffEditor,
+  type DiffUpdateEvent,
+  type IDiffEditorModel,
+  type IDiffEditorModelChangedEvent,
+  type IDiffEditorViewState,
+  type IDiffNavigator,
+  type IDiffNavigatorOptions,
+  type IHideUnchangedRegionsOptions,
+  type IMonoDiffEditor,
+  type MonoDiffEditorOptions,
+} from '../browser/diff/MonoDiffEditor';
 import { getActiveMonoEditors, MonoEditor } from '../browser/editor/MonoEditor';
 import {
   onDidCreateMonoEditor,
@@ -51,8 +64,19 @@ import type {
 // Ensure all built-in contributions are registered before any MonoEditor is instantiated.
 registerBuiltInContributions();
 
-export { getActiveMonoEditors, MonoDiffEditor, MonoEditor };
-export type { ICodeEditorOpener, IDiffEditorModel, IMonoDiffEditor, MonoDiffEditorOptions };
+export { createMonoDiffNavigator, getActiveMonoEditors, MonoDiffEditor, MonoEditor, onDidCreateMonoDiffEditor };
+export type {
+  DiffUpdateEvent,
+  ICodeEditorOpener,
+  IDiffEditorModel,
+  IDiffEditorModelChangedEvent,
+  IDiffEditorViewState,
+  IDiffNavigator,
+  IDiffNavigatorOptions,
+  IHideUnchangedRegionsOptions,
+  IMonoDiffEditor,
+  MonoDiffEditorOptions,
+};
 
 export function createMonoEditor(host: HTMLElement, options?: MonoEditorOptions): IMonoEditor {
   registerBuiltInContributions();
@@ -116,12 +140,20 @@ export const editor = {
     return new MonoDiffEditor(domElement, options);
   },
 
+  createDiffNavigator(diffEditor: IMonoDiffEditor, opts?: IDiffNavigatorOptions): IDiffNavigator {
+    return createMonoDiffNavigator(diffEditor, opts);
+  },
+
   getEditors(): IMonoEditor[] {
     return getActiveMonoEditors();
   },
 
   onDidCreateEditor(listener: (editor: IMonoEditor) => void): MonoDisposable {
     return onDidCreateMonoEditor(listener);
+  },
+
+  onDidCreateDiffEditor(listener: (diffEditor: IMonoDiffEditor) => void): MonoDisposable {
+    return onDidCreateMonoDiffEditor(listener);
   },
 
   registerEditorOpener(opener: ICodeEditorOpener): MonoDisposable {
