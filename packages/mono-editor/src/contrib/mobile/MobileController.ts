@@ -40,15 +40,6 @@ const DEFAULT_QUICK_KEYS: QuickKeyDef[] = [
 
 const BAR_HEIGHT_PX = 42;
 
-function isCoarseTouchDevice(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    return Boolean(window.matchMedia?.('(pointer: coarse)').matches);
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Mobile & Touch Accessibility Controller:
  * 1) Tracks `window.visualViewport` soft-keyboard overlap and updates `view.setBottomInset`
@@ -114,7 +105,7 @@ export class MobileController implements IEditorContribution {
     if (opt === true) return { enabled: true };
     if (opt === false) return { enabled: false };
     if (opt && typeof opt === 'object') return { enabled: opt.enabled !== false, keys: opt.keys };
-    return { enabled: isCoarseTouchDevice() };
+    return { enabled: false };
   }
 
   private attachVisualViewport(): void {

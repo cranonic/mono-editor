@@ -74,11 +74,11 @@ export class SuggestWidget {
     this.onSelectionChange = handlers.onSelectionChange;
     this.onBoundsChange = handlers.onBoundsChange;
     this.opts = {
-      maxHeight: 150,
-      maxWidth: 460,
-      minWidth: 250,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-      fontSize: 14,
+      maxHeight: 220,
+      maxWidth: 440,
+      minWidth: 240,
+      fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+      fontSize: 13,
       docsMode: 'off',
       className: '',
       themeType: 'dark',
@@ -267,7 +267,7 @@ export class SuggestWidget {
     el.style.fontFamily = this.opts.fontFamily!;
     el.style.fontSize = `${this.opts.fontSize}px`;
     el.style.minWidth = `${this.opts.minWidth}px`;
-    el.style.boxShadow = `0 0 8px 2px ${p.shadow}`;
+    el.style.boxShadow = `0 2px 8px ${p.shadow}`;
   }
 
   private position(): void {
@@ -338,10 +338,14 @@ export class SuggestWidget {
     row.style.color = selected ? p.selectedForeground : p.foreground;
     const hl = selected ? p.focusHighlight : p.highlight;
     row.querySelectorAll?.<HTMLElement>('.mono-sg-hl').forEach((h) => (h.style.color = hl));
+    const detailEl = row.querySelector?.<HTMLElement>('.mono-sg-detail') ?? null;
+    if (detailEl) {
+      detailEl.style.color = selected ? p.selectedDetailForeground : p.detailForeground;
+    }
     const infoBtn = row.querySelector?.<HTMLButtonElement>('.mono-sg-info-btn') ?? null;
     if (infoBtn) {
       infoBtn.style.display = selected ? 'inline-flex' : 'none';
-      infoBtn.style.opacity = this.docsExpanded ? '1' : '0.75';
+      infoBtn.style.opacity = this.docsExpanded ? '1' : '0.8';
       infoBtn.setAttribute('aria-pressed', this.docsExpanded ? 'true' : 'false');
     }
   }
@@ -419,6 +423,7 @@ export class SuggestWidget {
       const right = item.detail || kindLabel(item.kind);
       if (right) {
         const d = document.createElement('span');
+        d.className = 'mono-sg-detail';
         d.textContent = right;
         Object.assign(d.style, {
           flex: '0 1 auto',
@@ -428,8 +433,8 @@ export class SuggestWidget {
           textOverflow: 'ellipsis',
           textAlign: 'right',
           fontSize: '85%',
+          color: p.detailForeground,
         });
-        if (this.opts.detailForeground) d.style.color = this.opts.detailForeground;
         row.appendChild(d);
       }
 
@@ -437,24 +442,23 @@ export class SuggestWidget {
         const infoBtn = document.createElement('button');
         infoBtn.type = 'button';
         infoBtn.className = 'mono-sg-info-btn';
-        infoBtn.title = 'Toggle Documentation (Ctrl+Space)';
+        infoBtn.title = 'Read More (Ctrl+Space)';
         infoBtn.setAttribute('aria-label', 'Toggle Documentation');
-        infoBtn.textContent = 'i';
+        const infoIcon = createIcon('info', 14);
+        infoIcon.style.lineHeight = '14px';
+        infoBtn.appendChild(infoIcon);
         Object.assign(infoBtn.style, {
           display: 'none',
           alignItems: 'center',
           justifyContent: 'center',
           flexShrink: '0',
-          marginLeft: '6px',
+          marginLeft: '4px',
           width: '18px',
           height: '18px',
-          borderRadius: '50%',
-          border: '1px solid currentColor',
+          borderRadius: '3px',
+          border: 'none',
           background: 'transparent',
           color: 'inherit',
-          fontSize: '11px',
-          fontStyle: 'italic',
-          fontFamily: 'Georgia, serif',
           lineHeight: '1',
           padding: '0',
           cursor: 'pointer',

@@ -96,12 +96,30 @@ function docStringOf(doc: string | { value: string } | undefined): string {
   return typeof doc === 'string' ? doc : doc.value || '';
 }
 
+const SIG_STYLE_ID = 'mono-sig-vscode-style';
+
+function ensureSigStyle(): void {
+  if (typeof document === 'undefined' || !document.head) return;
+  if (document.getElementById(SIG_STYLE_ID)) return;
+  const s = document.createElement('style');
+  s.id = SIG_STYLE_ID;
+  s.textContent = `
+.mono-signature-help-widget .mono-sig-docs{scrollbar-width:thin;scrollbar-color:rgba(121,121,121,.4) transparent}
+.mono-signature-help-widget .mono-sig-docs::-webkit-scrollbar{width:8px;height:8px}
+.mono-signature-help-widget .mono-sig-docs::-webkit-scrollbar-track{background:transparent}
+.mono-signature-help-widget .mono-sig-docs::-webkit-scrollbar-thumb{background:rgba(121,121,121,.4)}
+.mono-signature-help-widget .mono-sig-nav-btn:hover{background:rgba(128,128,128,0.22)}
+`;
+  document.head.appendChild(s);
+}
+
 /**
- * Exact VS Code / Monaco-faithful floating Parameter Hints / Signature Help widget:
- *  - Syntax-highlighted signature line with bold + accent + underlined active parameter
- *  - Safe `[start, end]` and comma-aware substring parameter range matching
- *  - Tabular-nums overload switcher (`▲ 1/2 ▼`) with touch-friendly hit targets
- *  - Active parameter doc + muted function overview doc separated by crisp 1px hairline
+ * Exact VS Code / Monaco `.parameter-hints-widget` floating Signature Help widget
+ * with a slightly more compact max width (`340px`) for crisp readability on desktop & mobile:
+ *  - Sharp 3px border-radius, 1px VS Code widget border & subtle shadow
+ *  - Compact left overload switcher (`▲ 1/2 ▼`) with tabular-nums
+ *  - Syntax-highlighted monospace signature with VS Code bold + blue active parameter highlight
+ *  - Active parameter doc + signature overview doc separated by crisp 1px border
  */
 export class SignatureHelpWidget {
   private host: HTMLElement;
@@ -137,6 +155,7 @@ export class SignatureHelpWidget {
     this.hide();
     if (!help.signatures.length) return;
     ensureCodicons();
+    ensureSigStyle();
     this.lastHelp = help;
     this.lastAnchor = anchor;
 
@@ -148,40 +167,41 @@ export class SignatureHelpWidget {
     const activeParam = paramIdx >= 0 ? sig.parameters?.[paramIdx] : undefined;
 
     const resolved = this.theme ?? resolveWidgetTheme(DEFAULT_THEME);
-    const bg = resolved.background;
-    const border = resolved.border;
-    const fg = resolved.foreground;
+    const isDark = resolved.isDark;
+    const bg = resolved.background || (isDark ? '#252526' : '#f3f3f3');
+    const border = resolved.border || (isDark ? '#454545' : '#c8c8c8');
+    const fg = resolved.foreground || (isDark ? '#cccccc' : '#616161');
     const muted = resolved.mutedForeground;
-    const accent = resolved.focusBorder;
-    const shadow = resolved.shadow;
+    const activeParamColor = isDark ? '#1a85ff' : '#0066bf';
+    const vsShadow = isDark ? '0 2px 8px rgba(0, 0, 0, 0.36)' : '0 2px 8px rgba(0, 0, 0, 0.16)';
 
     const el = document.createElement('div');
     el.className = 'mono-signature-help-widget';
     Object.assign(el.style, {
       position: 'absolute',
       zIndex: '46',
-      maxWidth: `${Math.min(480, Math.max(220, (this.host.clientWidth || 600) - 16))}px`,
+      maxWidth: `${Math.min(340, Math.max(200, (this.host.clientWidth || 600) - 16))}px`,
       background: bg,
       border: `1px solid ${border}`,
-      borderRadius: '6px',
-      boxShadow: shadow,
+      borderRadius: '3px',
+      boxShadow: vsShadow,
       color: fg,
-      fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
-      fontSize: '12px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontSize: '12.5px',
       lineHeight: '1.45',
       pointerEvents: 'auto',
       overflow: 'hidden',
       boxSizing: 'border-box',
     } as CSSStyleDeclaration);
 
-    // Header row: overload switcher + syntax-highlighted signature label
+    // Header row: VS Code `.signature` row (left overload switcher + syntax-highlighted monospace signature)
     const header = document.createElement('div');
     Object.assign(header.style, {
       display: 'flex',
-      alignItems: 'center',
-      gap: '8px',
-      padding: '6px 10px',
-      fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+      alignItems: 'flex-start',
+      gap: '6px',
+      padding: '5px 8px',
+      fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       fontSize: '12px',
       wordBreak: 'break-word',
     });
@@ -192,16 +212,20 @@ export class SignatureHelpWidget {
       Object.assign(nav.style, {
         display: 'inline-flex',
         alignItems: 'center',
-        gap: '2px',
+        gap: '1px',
         flexShrink: '0',
         color: muted,
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         fontSize: '11px',
         fontVariantNumeric: 'tabular-nums',
         userSelect: 'none',
+        paddingRight: '4px',
+        borderRight: `1px solid ${border}`,
       });
       const mkNavBtn = (iconId: 'chevron-up' | 'chevron-down', label: string, cb: () => void) => {
         const b = document.createElement('button');
         b.type = 'button';
+        b.className = 'mono-sig-nav-btn';
         b.title = label;
         b.setAttribute('aria-label', label);
         Object.assign(b.style, {
@@ -209,13 +233,13 @@ export class SignatureHelpWidget {
           background: 'transparent',
           color: fg,
           cursor: 'pointer',
-          padding: '4px',
-          minWidth: '24px',
-          minHeight: '24px',
+          padding: '2px',
+          minWidth: '20px',
+          minHeight: '20px',
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          borderRadius: '4px',
+          borderRadius: '3px',
         });
         b.appendChild(createIcon(iconId, 12));
         b.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -230,7 +254,7 @@ export class SignatureHelpWidget {
       const count = document.createElement('span');
       count.className = 'mono-sig-overload-count';
       count.textContent = `${sigIdx + 1}/${help.signatures.length}`;
-      count.style.minWidth = '24px';
+      count.style.minWidth = '20px';
       count.style.textAlign = 'center';
       nav.appendChild(mkNavBtn('chevron-up', 'Previous signature', this.onPrev));
       nav.appendChild(count);
@@ -241,6 +265,7 @@ export class SignatureHelpWidget {
     const sigEl = document.createElement('div');
     sigEl.className = 'mono-sig-label';
     sigEl.style.flex = '1';
+    sigEl.style.minWidth = '0';
     sigEl.style.lineHeight = '1.45';
     const range = resolveParameterLabelRange(
       sig.label,
@@ -262,10 +287,10 @@ export class SignatureHelpWidget {
       activeSpan.className = 'mono-sig-active-param';
       activeSpan.textContent = sig.label.slice(s, e);
       activeSpan.style.fontWeight = '700';
-      activeSpan.style.color = accent;
+      activeSpan.style.color = activeParamColor;
       activeSpan.style.textDecoration = 'underline';
       activeSpan.style.textDecorationThickness = '1.5px';
-      activeSpan.style.textUnderlineOffset = '3px';
+      activeSpan.style.textUnderlineOffset = '2px';
       sigEl.appendChild(activeSpan);
       if (e < sig.label.length) {
         const afterSpan = document.createElement('span');
@@ -283,14 +308,14 @@ export class SignatureHelpWidget {
       body.className = 'mono-sig-docs';
       Object.assign(body.style, {
         borderTop: `1px solid ${border}`,
-        padding: '7px 10px',
-        maxHeight: '170px',
+        padding: '5px 8px',
+        maxHeight: '150px',
         overflowY: 'auto',
       });
       if (paramDoc) {
         const pWrap = document.createElement('div');
         pWrap.className = 'mono-sig-param-doc';
-        pWrap.style.marginBottom = sigDoc ? '6px' : '0';
+        pWrap.style.marginBottom = sigDoc ? '4px' : '0';
         renderMarkdownToDom(pWrap, paramDoc, resolved);
         body.appendChild(pWrap);
       }

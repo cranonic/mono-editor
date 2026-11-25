@@ -2100,3 +2100,73 @@ syncMarkdownPreviewLayout();
 // Expose pure Mono globals for console inspection
 (window as any).monoEditor = editorInstance;
 (window as any).mono = { editor, languages };
+import {
+  editor,
+  languages,
+  analyzeCallContext,
+  CompletionItemKind,
+  CompletionItemInsertTextRule,
+  DocumentHighlightKind,
+  EndOfLineSequence,
+  InlayHintKind,
+  InlineCompletionTriggerKind,
+  MarkerSeverity,
+  MonoCommands,
+  MouseTargetType,
+  SymbolKind,
+  Uri,
+  BUILTIN_THEME_IDS,
+  type CursorStyleMode,
+  type DocumentSymbol,
+  type IMonoDiffEditor,
+  type IStandaloneTextModel,
+  type MonoLineNumbers,
+  type RenderWhitespaceMode,
+  type WordWrapMode,
+  type WrappingIndentMode,
+  type ScrollbarVisibility,
+} from '../src/index';
+
+// ── Phase 3 & 4 IntelliSense & LSP Demo Providers ────────────────────────────
+const JS_TS_LANGS = ['javascript', 'typescript'];
+const REF_LANGS = ['javascript', 'typescript', 'html', 'css'];
+
+function findIdentifierWord(line: string, col: number): string | null {
+  let idx = Math.max(0, Math.min(line.length, col - 1));
+  const isId = (c: string) => /[A-Za-z0-9_$]/.test(c);
+  if (idx > 0 && (idx === line.length || !isId(line[idx]!)) && isId(line[idx - 1]!)) idx--;
+  if (idx >= line.length || !isId(line[idx]!)) return null;
+  let s = idx;
+  while (s > 0 && isId(line[s - 1]!)) s--;
+  let e = idx + 1;
+  while (e < line.length && isId(line[e]!)) e++;
+  return line.slice(s, e);
+}
+
+for (const langId of JS_TS_LANGS) {
+  // 1) Rich Completions: Snippets + resolveCompletionItem + commitCharacters
+  languages.registerCompletionItemProvider(langId, {
+    triggerCharacters: ['.'],
+    provideCompletionItems(model, position, context) {
+      const line = model.getLineContent(position.lineNumber);
+      const before = line.slice(0, Math.max(0, position.column - 1));
+      if (context?.triggerCharacter === '.' || /\bconsole\.\w*$/.test(before)) {
+        return {
+          suggestions: [
+            {
+              label: 'log',
+              kind: CompletionItemKind.Method,
+              detail: 'Console.log(...data)',
+              insertText: 'log(${1:value})$0',
+              insertTextRules: CompletionItemInsertTextRule.InsertAsSnippet,
+              commitCharacters: ['('],
+            },
+            {
+              label: 'warn',
+              kind: CompletionItemKind.Method,
+              detail: 'Console.warn(...data)',
+              insertText: 'warn(${1:message})$0',
+              insertTextRules: CompletionItemInsertTextRule.InsertAsSnippet,
+            },
+            {
+              label: 'er

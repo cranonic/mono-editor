@@ -101,7 +101,7 @@ function appendInlineMarkdown(
       const code = document.createElement('code');
       code.textContent = match[1];
       Object.assign(code.style, {
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+        fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
         fontSize: '0.92em',
         padding: '1px 4px',
         borderRadius: '3px',
@@ -142,6 +142,14 @@ function appendInlineMarkdown(
   }
 }
 
+export interface MarkdownRenderOptions {
+  /**
+   * When true, render fenced code blocks seamlessly without outer box background/border/padding
+   * (matches VS Code's `.monaco-hover .hover-row` signature header look).
+   */
+  flatCodeBlocks?: boolean;
+}
+
 /**
  * Safely renders Markdown into DOM elements (zero `innerHTML` usage).
  * Supports syntax-highlighted fenced code blocks, headings, bullet lists, dividers,
@@ -152,8 +160,10 @@ export function renderMarkdownToDom(
   markdown: string,
   theme: ResolvedWidgetTheme,
   defaultCodeLang?: string,
+  options?: MarkdownRenderOptions,
 ): void {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
+  const flatCode = Boolean(options?.flatCodeBlocks);
   let i = 0;
 
   while (i < lines.length) {
@@ -171,19 +181,36 @@ export function renderMarkdownToDom(
       }
       i++; // consume closing fence
       const pre = document.createElement('pre');
-      Object.assign(pre.style, {
-        margin: '4px 0',
-        padding: '6px 8px',
-        borderRadius: '4px',
-        background: theme.codeBackground,
-        border: `1px solid ${theme.border}`,
-        overflowX: 'auto',
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-        fontSize: '12px',
-        lineHeight: '1.45',
-        color: theme.foreground,
-        whiteSpace: 'pre',
-      });
+      Object.assign(
+        pre.style,
+        flatCode
+          ? {
+              margin: '0',
+              padding: '0',
+              background: 'transparent',
+              border: 'none',
+              overflowX: 'auto',
+              fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              fontSize: '12px',
+              lineHeight: '1.45',
+              color: theme.foreground,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }
+          : {
+              margin: '4px 0',
+              padding: '5px 8px',
+              borderRadius: '3px',
+              background: theme.codeBackground,
+              border: `1px solid ${theme.border}`,
+              overflowX: 'auto',
+              fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              fontSize: '12px',
+              lineHeight: '1.45',
+              color: theme.foreground,
+              whiteSpace: 'pre',
+            },
+      );
       const code = document.createElement('code');
       renderHighlightedCodeToDom(code, codeLines.join('\n'), langHint, theme.foreground);
       pre.appendChild(code);

@@ -36,8 +36,10 @@ export interface SuggestPalette {
   background: string;
   border: string;
   foreground: string;
+  detailForeground: string;
   selectedBackground: string;
   selectedForeground: string;
+  selectedDetailForeground: string;
   hoverBackground: string;
   highlight: string;
   focusHighlight: string;
@@ -52,32 +54,38 @@ const DARK = {
   background: '#252526',
   border: '#454545',
   foreground: '#cccccc',
+  detailForeground: 'rgba(204, 204, 204, 0.65)',
   selectedBackground: '#04395e',
   selectedForeground: '#ffffff',
+  selectedDetailForeground: 'rgba(255, 255, 255, 0.82)',
   hoverBackground: '#2a2d2e',
   highlight: '#2aaaff',
   focusHighlight: '#2aaaff',
-  shadow: 'rgba(0,0,0,0.36)',
+  shadow: 'rgba(0, 0, 0, 0.36)',
   iconDefault: '#cccccc',
   method: '#b180d7',
   field: '#75beff',
   klass: '#ee9d28',
+  typeParam: '#4ec9b0',
 };
 
 const LIGHT = {
   background: '#f3f3f3',
   border: '#c8c8c8',
   foreground: '#616161',
+  detailForeground: 'rgba(97, 97, 97, 0.72)',
   selectedBackground: '#0060c0',
   selectedForeground: '#ffffff',
+  selectedDetailForeground: 'rgba(255, 255, 255, 0.86)',
   hoverBackground: '#e8e8e8',
   highlight: '#0066bf',
   focusHighlight: '#bbe7ff',
-  shadow: 'rgba(0,0,0,0.16)',
+  shadow: 'rgba(0, 0, 0, 0.16)',
   iconDefault: '#616161',
   method: '#652d90',
   field: '#007acc',
   klass: '#d67e00',
+  typeParam: '#267f99',
 };
 
 const ICON_KEY: Record<number, string> = {
@@ -138,12 +146,13 @@ export function ensureSuggestStyle(): void {
   const s = document.createElement('style');
   s.id = STYLE_ID;
   s.textContent = `
-.mono-suggest-widget .mono-suggest-list{scrollbar-width:thin;scrollbar-color:rgba(121,121,121,.4) transparent}
-.mono-suggest-widget .mono-suggest-list::-webkit-scrollbar{width:10px;height:10px}
-.mono-suggest-widget .mono-suggest-list::-webkit-scrollbar-track{background:transparent}
-.mono-suggest-widget .mono-suggest-list::-webkit-scrollbar-thumb{background:rgba(121,121,121,.4)}
-.mono-suggest-widget .mono-suggest-list::-webkit-scrollbar-thumb:hover{background:rgba(100,100,100,.7)}
+.mono-suggest-widget .mono-suggest-list,.mono-suggest-docs{scrollbar-width:thin;scrollbar-color:rgba(121,121,121,.4) transparent}
+.mono-suggest-widget .mono-suggest-list::-webkit-scrollbar,.mono-suggest-docs::-webkit-scrollbar{width:8px;height:8px}
+.mono-suggest-widget .mono-suggest-list::-webkit-scrollbar-track,.mono-suggest-docs::-webkit-scrollbar-track{background:transparent}
+.mono-suggest-widget .mono-suggest-list::-webkit-scrollbar-thumb,.mono-suggest-docs::-webkit-scrollbar-thumb{background:rgba(121,121,121,.4)}
+.mono-suggest-widget .mono-suggest-list::-webkit-scrollbar-thumb:hover,.mono-suggest-docs::-webkit-scrollbar-thumb:hover{background:rgba(100,100,100,.7)}
 .mono-suggest-widget .codicon{line-height:16px}
+.mono-suggest-widget .mono-sg-info-btn:hover{background:rgba(255,255,255,0.14)!important;opacity:1!important}
 `;
   document.head.appendChild(s);
 }
@@ -165,11 +174,15 @@ export function resolveSuggestPalette(o: SuggestWidgetOptions): SuggestPalette {
       case 'variable':
       case 'interface':
       case 'enumMember':
+      case 'constant':
         return iconColor(key, base.field);
       case 'class':
       case 'enum':
       case 'event':
+      case 'struct':
         return iconColor(key, base.klass);
+      case 'typeParameter':
+        return iconColor(key, base.typeParam);
       default:
         return iconColor(key, base.iconDefault);
     }
@@ -178,10 +191,12 @@ export function resolveSuggestPalette(o: SuggestWidgetOptions): SuggestPalette {
     background: o.background ?? c['editorSuggestWidget.background'] ?? c['editorWidget.background'] ?? base.background,
     border: o.border ?? `1px solid ${c['editorSuggestWidget.border'] ?? c['editorWidget.border'] ?? base.border}`,
     foreground,
+    detailForeground: o.detailForeground ?? base.detailForeground,
     selectedBackground:
       o.selectedBackground ?? c['editorSuggestWidget.selectedBackground'] ?? c['list.activeSelectionBackground'] ?? base.selectedBackground,
     selectedForeground:
       o.selectedForeground ?? c['editorSuggestWidget.selectedForeground'] ?? c['list.activeSelectionForeground'] ?? base.selectedForeground,
+    selectedDetailForeground: base.selectedDetailForeground,
     hoverBackground: o.hoverBackground ?? c['list.hoverBackground'] ?? base.hoverBackground,
     highlight:
       o.highlightForeground ?? c['editorSuggestWidget.highlightForeground'] ?? c['list.highlightForeground'] ?? base.highlight,

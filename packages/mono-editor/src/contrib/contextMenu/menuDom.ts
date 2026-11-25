@@ -2,22 +2,42 @@ import type { ResolvedMenuGroup } from '../../platform/menus';
 import type { DEFAULT_MENU_STYLE } from './types';
 
 export const MORE_ICON_SVG =
-  '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>';
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="12" cy="19" r="2.2"/></svg>';
 
 export const BACK_ICON_SVG =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H6"/><polyline points="12 18 6 12 12 6"/></svg>';
+
+const CTX_STYLE_ID = 'mono-ctx-menu-style';
+
+function ensureContextMenuStyle(): void {
+  if (typeof document === 'undefined' || !document.head) return;
+  if (document.getElementById(CTX_STYLE_ID)) return;
+  const s = document.createElement('style');
+  s.id = CTX_STYLE_ID;
+  s.textContent = `
+.mono-ctx-vertical-list{scrollbar-width:none;-ms-overflow-style:none}
+.mono-ctx-vertical-list::-webkit-scrollbar{display:none;width:0;height:0}
+.mono-ctx-menu{scrollbar-width:none;-ms-overflow-style:none}
+.mono-ctx-menu::-webkit-scrollbar{display:none;width:0;height:0}
+`;
+  document.head.appendChild(s);
+}
 
 export function appendSvgIcon(parent: HTMLElement, svgSource: string, size: number): void {
   if (!svgSource || typeof DOMParser === 'undefined') return;
   try {
+    const normalized = /xmlns\s*=/.test(svgSource)
+      ? svgSource
+      : svgSource.replace(/<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"');
     const parser = new DOMParser();
-    const parsed = parser.parseFromString(svgSource, 'image/svg+xml');
+    const parsed = parser.parseFromString(normalized, 'image/svg+xml');
     const rootSvg = parsed.documentElement;
     if (rootSvg && rootSvg.tagName.toLowerCase() === 'svg') {
       const svg = document.importNode(rootSvg, true) as unknown as SVGElement;
       svg.setAttribute('width', String(size));
       svg.setAttribute('height', String(size));
       svg.style.display = 'block';
+      svg.style.flexShrink = '0';
       parent.appendChild(svg);
     }
   } catch { /* ignore malformed icon */ }
@@ -28,6 +48,7 @@ export function applyMenuRootStyle(
   style: typeof DEFAULT_MENU_STYLE,
   vertical: boolean,
 ): void {
+  ensureContextMenuStyle();
   Object.assign(el.style, {
     position: 'absolute',
     display: 'flex',
@@ -42,7 +63,7 @@ export function applyMenuRootStyle(
     zIndex: String(style.zIndex),
     pointerEvents: 'auto',
     userSelect: 'none',
-    touchAction: 'manipulation',
+    touchAction: vertical ? 'pan-y' : 'manipulation',
     boxSizing: 'border-box',
   } as CSSStyleDeclaration);
   (el.style as unknown as { webkitUserSelect: string }).webkitUserSelect = 'none';
@@ -101,28 +122,38 @@ export function renderVerticalMenuList(params: {
 }): { header: HTMLElement | null; rows: HTMLElement[] } {
   const { container, groups, withBackHeader, showIcons, showShortcuts, style, getShortcutLabel, onBack, onInvoke } =
     params;
+  ensureContextMenuStyle();
   const rows: HTMLElement[] = [];
-  let header: HTMLDivElement | null = null;
+  let header: HTMLButtonElement | null = null;
 
   if (withBackHeader) {
-    header = document.createElement('div');
+    header = document.createElement('button');
+    header.type = 'button';
     header.className = 'mono-ctx-back-header';
+    header.title = 'Back';
+    header.setAttribute('aria-label', 'Back');
     Object.assign(header.style, {
       display: 'flex',
       alignItems: 'center',
-      gap: '6px',
-      padding: '4px 8px',
+      justifyContent: 'flex-start',
+      width: '100%',
+      height: '28px',
+      padding: '0 10px',
+      border: 'none',
       borderBottom: '1px solid rgba(128,128,128,0.22)',
-      fontSize: '12px',
-      fontWeight: '600',
+      background: 'transparent',
       color: style.iconColor,
       cursor: 'pointer',
       flexShrink: '0',
+      boxSizing: 'border-box',
     });
-    appendSvgIcon(header, BACK_ICON_SVG, 14);
-    const backLabel = document.createElement('span');
-    backLabel.textContent = 'Back';
-    header.appendChild(backLabel);
+    appendSvgIcon(header, BACK_ICON_SVG, 16);
+    header.addEventListener('pointerenter', () => {
+      header!.style.background = 'rgba(128,128,128,0.14)';
+    });
+    header.addEventListener('pointerleave', () => {
+      header!.style.background = 'transparent';
+    });
     header.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -141,10 +172,18 @@ export function renderVerticalMenuList(params: {
     display: 'flex',
     flexDirection: 'column',
     overflowY: 'auto',
+    overflowX: 'hidden',
     overscrollBehavior: 'contain',
-    padding: '4px 0',
-    minWidth: '190px',
-    maxWidth: '280px',
+    scrollbarWidth: 'none',
+    padding: '3px 0',
+    minWidth: '180px',
+    maxWidth: '260px',
+    maxHeight: withBackHeader ? '192px' : '220px',
+  });
+  (body.style as unknown as { WebkitOverflowScrolling: string }).WebkitOverflowScrolling = 'touch';
+  body.addEventListener('pointerdown', (e) => {
+    // Allow native touch vertical scrolling inside the list without dismissing or passing to canvas
+    e.stopPropagation();
   });
 
   groups.forEach((grp, gIdx) => {
@@ -229,7 +268,7 @@ export function renderVerticalMenuList(params: {
         row.style.background = 'transparent';
       });
       row.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
+        if (e.pointerType === 'mouse') e.preventDefault();
         e.stopPropagation();
       });
       row.addEventListener('click', async (e) => {

@@ -7,11 +7,13 @@ import type { ViewController } from '../../view/ViewController';
 const LINE_SWITCH_DOWN = 0.42;
 const LINE_SWITCH_UP = 0.51;
 const AUTO_SCROLL_EDGE = 56;
+const AUTO_SCROLL_EDGE_X = 48;
 const AUTO_SCROLL_SPEED = 12;
+const AUTO_SCROLL_SPEED_X = 14;
 
 /**
  * Manages directional teardrop hitbox tests, free teardrop dragging with sticky-line
- * hysteresis, and edge auto-scrolling.
+ * hysteresis, and vertical + horizontal (no-wrap) edge auto-scrolling.
  */
 export class TeardropDragController {
   handleDrag: TeardropHit['type'] | null = null;
@@ -20,7 +22,8 @@ export class TeardropDragController {
   private stickyLine: number | null = null;
   private dragAnchor: { lineNumber: number; column: number } | null = null;
   private autoScrollRaf = 0;
-  private autoScrollDelta = 0;
+  private autoScrollDeltaY = 0;
+  private autoScrollDeltaX = 0;
   private disposed = false;
 
   reset(): void {
@@ -77,16 +80,37 @@ export class TeardropDragController {
     root: HTMLElement,
     clientY: number,
     onTick: () => void,
+    horizontal?: { clientX: number; contentLeft: number; allowHorizontal: boolean },
   ): void {
     const rect = root.getBoundingClientRect();
-    let delta = 0;
-    if (clientY < rect.top + AUTO_SCROLL_EDGE) delta = -AUTO_SCROLL_SPEED;
-    else if (clientY > rect.bottom - AUTO_SCROLL_EDGE) delta = AUTO_SCROLL_SPEED;
-    this.autoScrollDelta = delta;
-    if (delta !== 0) {
+    let dy = 0;
+    if (clientY < rect.top + AUTO_SCROLL_EDGE) {
+      const ratio = Math.min(1, Math.max(0.25, (rect.top + AUTO_SCROLL_EDGE - clientY) / AUTO_SCROLL_EDGE));
+      dy = -Math.round(AUTO_SCROLL_SPEED * ratio);
+    } else if (clientY > rect.bottom - AUTO_SCROLL_EDGE) {
+      const ratio = Math.min(1, Math.max(0.25, (clientY - (rect.bottom - AUTO_SCROLL_EDGE)) / AUTO_SCROLL_EDGE));
+      dy = Math.round(AUTO_SCROLL_SPEED * ratio);
+    }
+
+    let dx = 0;
+    if (horizontal?.allowHorizontal) {
+      const leftBound = rect.left + Math.max(0, horizontal.contentLeft);
+      const rightBound = rect.right;
+      if (horizontal.clientX < leftBound + AUTO_SCROLL_EDGE_X) {
+        const ratio = Math.min(1, Math.max(0.3, (leftBound + AUTO_SCROLL_EDGE_X - horizontal.clientX) / AUTO_SCROLL_EDGE_X));
+        dx = -Math.round(AUTO_SCROLL_SPEED_X * ratio);
+      } else if (horizontal.clientX > rightBound - AUTO_SCROLL_EDGE_X) {
+        const ratio = Math.min(1, Math.max(0.3, (horizontal.clientX - (rightBound - AUTO_SCROLL_EDGE_X)) / AUTO_SCROLL_EDGE_X));
+        dx = Math.round(AUTO_SCROLL_SPEED_X * ratio);
+      }
+    }
+
+    this.autoScrollDeltaY = dy;
+    this.autoScrollDeltaX = dx;
+    if (dy !== 0 || dx !== 0) {
       if (!this.autoScrollRaf) {
         const loop = () => {
-          if (this.disposed || !this.handleDrag || this.autoScrollDelta === 0) {
+          if (this.disposed || !this.handleDrag || (this.autoScrollDeltaY === 0 && this.autoScrollDeltaX === 0)) {
             this.autoScrollRaf = 0;
             return;
           }
@@ -101,11 +125,16 @@ export class TeardropDragController {
   }
 
   getAutoScrollDelta(): number {
-    return this.autoScrollDelta;
+    return this.autoScrollDeltaY;
+  }
+
+  getAutoScrollDeltaX(): number {
+    return this.autoScrollDeltaX;
   }
 
   stopAutoScroll(): void {
-    this.autoScrollDelta = 0;
+    this.autoScrollDeltaY = 0;
+    this.autoScrollDeltaX = 0;
     if (this.autoScrollRaf) {
       cancelAnimationFrame(this.autoScrollRaf);
       this.autoScrollRaf = 0;

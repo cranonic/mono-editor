@@ -51,15 +51,20 @@ export class HoverContribution implements IEditorContribution {
   private readonly hover: HoverController;
   private hoverTrigger: HoverTriggerMode;
   private diagnosticsPopup: HoverTriggerMode;
+  private explicitHoverTrigger: HoverTriggerMode | undefined;
   private explicitDiagnosticsPopup: HoverTriggerMode | undefined;
   private delayMs: number;
   private lastMousePosKey = '';
+  private lastTapPointerType = 'mouse';
+  private tapScheduleGuardUntil = 0;
+  private tapScheduledKey = '';
 
   constructor(host: IEditorContributionHost) {
     this.host = host;
     const resolved = resolveHoverAndDiagnosticsTriggers(host.initialOptions, detectCoarsePointer());
     this.hoverTrigger = resolved.hoverTrigger;
     this.diagnosticsPopup = resolved.diagnosticsPopup;
+    this.explicitHoverTrigger = host.initialOptions.hover?.trigger;
     this.explicitDiagnosticsPopup = host.initialOptions.diagnostics?.popup;
     this.delayMs = host.initialOptions.hover?.delay ?? 300;
 
@@ -99,6 +104,7 @@ export class HoverContribution implements IEditorContribution {
       { title: 'Show Hover Docs', category: 'View' },
     );
 
+    host.root.addEventListener('pointerdown', this.onRootPointerDown, { passive: true });
     host.root.addEventListener('pointermove', this.onPointerMove, { passive: true });
     host.root.addEventListener('pointerleave', this.onPointerLeave);
   }
@@ -110,6 +116,7 @@ export class HoverContribution implements IEditorContribution {
 
   onKeyDown(e: KeyboardEvent): boolean {
     if (e.key === 'Escape' && this.hover.isOpen()) {
+      this.clearTapGuard();
       this.hover.hide();
       return true;
     }
@@ -121,31 +128,58 @@ export class HoverContribution implements IEditorContribution {
   }
 
   onInputChange(_ev: InputChangeEvent): void {
+    this.clearTapGuard();
     this.hover.hide();
   }
 
-  onCursorChange(_source: string): void {
+  onCursorChange(source: string): void {
+    const p = this.host.selection.active;
+    const key = `${p.lineNumber}:${p.column}`;
+    if (Date.now() < this.tapScheduleGuardUntil && key === this.tapScheduledKey) {
+      return;
+    }
+    if (source !== 'mouse') this.clearTapGuard();
     this.hover.hide();
   }
 
   onScroll(): void {
+    // Soft-keyboard open or layout resize right after a tap can trigger programmatic scroll/ensureCaretVisible;
+    // keep the tap-scheduled hover alive during the short guard window (user drag/wheel scrolls go through onPointerInteract('scroll')).
+    if (Date.now() < this.tapScheduleGuardUntil) return;
     this.hover.hide();
   }
 
   onOutsidePointerDown(): void {
+    this.clearTapGuard();
     this.hover.hide();
   }
 
+  onPointerTapMeta(info: { clientX: number; clientY: number; pointerType: string }): void {
+    this.lastTapPointerType = info.pointerType || 'mouse';
+  }
+
   onPointerInteract(kind: PointerInteractKind): void {
-    if (kind === 'tap' || kind === 'handle' || kind === 'handleTap' || kind === 'select') {
+    if (kind === 'scroll' || kind === 'handle' || kind === 'handleTap' || kind === 'select') {
+      this.clearTapGuard();
       this.hover.hide();
+      return;
     }
     if (kind === 'tap') {
-      const includeHover = this.hoverTrigger === 'click';
-      const includeDiagnostics = this.diagnosticsPopup === 'click';
+      this.hover.hide();
+      const isTouchTap = this.lastTapPointerType === 'touch' || this.lastTapPointerType === 'pen';
+      const autoHoverOnTouch =
+        this.explicitHoverTrigger === undefined && this.hoverTrigger !== 'off' && isTouchTap;
+      const autoDiagOnTouch =
+        this.explicitDiagnosticsPopup === undefined && this.diagnosticsPopup !== 'off' && isTouchTap;
+
+      const includeHover = this.hoverTrigger === 'click' || autoHoverOnTouch;
+      const includeDiagnostics = this.diagnosticsPopup === 'click' || autoDiagOnTouch;
       if (includeHover || includeDiagnostics) {
         const p = this.host.selection.active;
-        this.hover.schedule(p.lineNumber, p.column, Math.max(250, this.delayMs), {
+        const delay = Math.min(180, Math.max(0, this.delayMs));
+        this.tapScheduledKey = `${p.lineNumber}:${p.column}`;
+        this.tapScheduleGuardUntil = Date.now() + delay + 550;
+        this.hover.schedule(p.lineNumber, p.column, delay, {
           includeHover,
           includeDiagnostics,
         });
@@ -154,10 +188,12 @@ export class HoverContribution implements IEditorContribution {
   }
 
   onColorSwatchClick(_hit: ColorHit): void {
+    this.clearTapGuard();
     this.hover.hide();
   }
 
   onModelChange(model: TextModel): void {
+    this.clearTapGuard();
     this.hover.hide();
     this.hover.setModel(model);
   }
@@ -165,27 +201,33 @@ export class HoverContribution implements IEditorContribution {
   onOptionsChange(patch: Partial<MonoEditorOptions>): void {
     if (!patch.hover && !patch.diagnostics) return;
     if (patch.hover) {
+      if ('trigger' in patch.hover) {
+        this.explicitHoverTrigger = patch.hover.trigger;
+      }
       if (patch.hover.trigger !== undefined) {
         this.hoverTrigger = patch.hover.trigger;
       } else if (patch.hover.enabled === false) {
         this.hoverTrigger = 'off';
-      } else if (patch.hover.enabled === true && this.hoverTrigger === 'off') {
-        this.hoverTrigger = detectCoarsePointer() ? 'click' : 'hover';
       } else if (patch.hover.openOnMouseHover === true) {
         this.hoverTrigger = 'hover';
       } else if (patch.hover.openOnMouseHover === false) {
         this.hoverTrigger = 'click';
+      } else if ('trigger' in patch.hover || patch.hover.enabled === true) {
+        this.hoverTrigger = detectCoarsePointer() ? 'click' : 'hover';
       }
       if (patch.hover.delay !== undefined) this.delayMs = Math.max(0, patch.hover.delay);
       if (patch.hover.sticky !== undefined) this.hover.setSticky(patch.hover.sticky);
     }
-    if (patch.diagnostics?.popup !== undefined) {
+    if (patch.diagnostics && 'popup' in patch.diagnostics) {
       this.explicitDiagnosticsPopup = patch.diagnostics.popup;
-      this.diagnosticsPopup = patch.diagnostics.popup;
-    } else if (this.explicitDiagnosticsPopup === undefined) {
+    }
+    if (this.explicitDiagnosticsPopup !== undefined) {
+      this.diagnosticsPopup = this.explicitDiagnosticsPopup;
+    } else {
       this.diagnosticsPopup = this.hoverTrigger;
     }
     if (this.hoverTrigger === 'off' && this.diagnosticsPopup === 'off') {
+      this.clearTapGuard();
       this.hover.hide();
     }
   }
@@ -195,11 +237,26 @@ export class HoverContribution implements IEditorContribution {
   }
 
   dispose(): void {
+    this.host.root.removeEventListener('pointerdown', this.onRootPointerDown);
     this.host.root.removeEventListener('pointermove', this.onPointerMove);
     this.host.root.removeEventListener('pointerleave', this.onPointerLeave);
     this.host.view.setHoverRangeProvider(null);
     this.hover.dispose();
   }
+
+  private clearTapGuard(): void {
+    this.tapScheduleGuardUntil = 0;
+    this.tapScheduledKey = '';
+  }
+
+  private onRootPointerDown = (e: PointerEvent): void => {
+    if (this.host.isDisposed()) return;
+    const target = e.target as Node | null;
+    if (this.hover.containsNode(target)) return;
+    // Cancel any pending tap-hover if a second tap (double-tap) or new gesture starts
+    this.clearTapGuard();
+    this.hover.cancelTimer();
+  };
 
   private onPointerMove = (e: PointerEvent): void => {
     if (e.pointerType !== 'mouse' || this.host.isDisposed()) return;

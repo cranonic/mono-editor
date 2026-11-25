@@ -387,14 +387,26 @@ export class PointerController {
     if (this.teardrops.handleDrag) {
       if (!this.teardrops.handleMoved && dist < HANDLE_MOVE_THRESH) return;
       this.teardrops.handleMoved = true;
-      this.teardrops.updateEdgeAutoScroll(this.root, e.clientY, () => {
-        this.view.scrollTop = Math.max(0, this.view.scrollTop + this.teardrops.getAutoScrollDelta());
-        this.view.clampScrollPublic();
-        this.teardrops.updateDrag(
-          this.root, this.model, this.selection, this.view, this.getMetrics(),
-          this.lastX, this.lastY, () => this.onInteract('handle'),
-        );
-      });
+      this.teardrops.updateEdgeAutoScroll(
+        this.root,
+        e.clientY,
+        () => {
+          const dy = this.teardrops.getAutoScrollDelta();
+          const dx = this.teardrops.getAutoScrollDeltaX();
+          if (dy !== 0) this.view.scrollTop = Math.max(0, this.view.scrollTop + dy);
+          if (dx !== 0) this.view.scrollLeft = Math.max(0, this.view.scrollLeft + dx);
+          this.view.clampScrollPublic();
+          this.teardrops.updateDrag(
+            this.root, this.model, this.selection, this.view, this.getMetrics(),
+            this.lastX, this.lastY, () => this.onInteract('handle'),
+          );
+        },
+        {
+          clientX: e.clientX,
+          contentLeft: this.view.contentLeft,
+          allowHorizontal: this.view.getWordWrap() === 'off',
+        },
+      );
       this.teardrops.updateDrag(
         this.root, this.model, this.selection, this.view, this.getMetrics(),
         e.clientX, e.clientY, () => this.onInteract('handle'),

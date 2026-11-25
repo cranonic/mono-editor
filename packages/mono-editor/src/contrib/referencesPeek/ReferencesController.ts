@@ -36,7 +36,19 @@ export class ReferencesController implements IEditorContribution {
 
     host.commands.registerCommand(
       MonoCommands.ReferenceSearch,
-      () => this.runFindReferences(),
+      (posArg?: unknown) => {
+        const target =
+          posArg &&
+          typeof posArg === 'object' &&
+          typeof (posArg as { lineNumber?: unknown }).lineNumber === 'number' &&
+          typeof (posArg as { column?: unknown }).column === 'number'
+            ? {
+                lineNumber: (posArg as { lineNumber: number }).lineNumber,
+                column: (posArg as { column: number }).column,
+              }
+            : undefined;
+        return this.runFindReferences(target);
+      },
       { title: 'Find All References', category: 'Go' },
     );
   }
@@ -72,10 +84,10 @@ export class ReferencesController implements IEditorContribution {
     if (patch.colorDecoratorsRules !== undefined) this.colorDecoratorsRules = patch.colorDecoratorsRules;
   }
 
-  async runFindReferences(): Promise<boolean> {
+  async runFindReferences(targetPos?: { lineNumber: number; column: number }): Promise<boolean> {
     if (this.host.isPeekEditor) return false;
     const model = this.host.getModel();
-    const pos = this.host.getPosition();
+    const pos = targetPos ?? this.host.getPosition();
     const langId = this.host.getLanguageIdAtPosition(pos.lineNumber, pos.column);
     const providers = languageFeatures.getReferenceProviders(langId);
     if (!providers.length) return false;

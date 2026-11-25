@@ -326,14 +326,22 @@ export class CodeLensController implements IEditorContribution {
         btn.style.textDecoration = 'none';
       });
 
-      // Fire only on tap/click (pointerup within tap slop) so touch scrolling over a lens strip never misfires.
+      // Stop PointerController on host.root from calling setPointerCapture() and swallowing pointerup,
+      // while preserving tap-slop protection so slight drags do not accidentally trigger commands.
       let downX = 0;
       let downY = 0;
       let pointerActive = false;
+      let handledByPointerUp = false;
       btn.addEventListener('pointerdown', (e) => {
         downX = e.clientX ?? 0;
         downY = e.clientY ?? 0;
         pointerActive = true;
+        handledByPointerUp = false;
+        e.stopPropagation();
+      });
+      btn.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
       });
       btn.addEventListener('pointercancel', () => {
         pointerActive = false;
@@ -345,8 +353,18 @@ export class CodeLensController implements IEditorContribution {
         if (dist <= TAP_SLOP_PX) {
           e.preventDefault();
           e.stopPropagation();
+          handledByPointerUp = true;
           trigger();
         }
+      });
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (handledByPointerUp) {
+          handledByPointerUp = false;
+          return;
+        }
+        trigger();
       });
       btn.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {

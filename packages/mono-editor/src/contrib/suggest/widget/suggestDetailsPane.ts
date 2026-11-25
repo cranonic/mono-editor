@@ -213,14 +213,14 @@ export class SuggestDetailsPane {
         zIndex: '45',
         boxSizing: 'border-box',
         borderRadius: '3px',
-        padding: '8px 10px',
+        padding: '6px 8px',
         overflowY: 'auto',
         overflowX: 'hidden',
         overscrollBehavior: 'contain',
         overflowWrap: 'break-word',
         wordBreak: 'break-word',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
-        fontSize: '12px',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        fontSize: '13px',
         lineHeight: '1.45',
         pointerEvents: 'auto',
       } as CSSStyleDeclaration);
@@ -234,23 +234,25 @@ export class SuggestDetailsPane {
     d.style.background = pal.background;
     d.style.border = pal.border;
     d.style.color = pal.foreground;
-    d.style.boxShadow = `0 0 8px 2px ${pal.shadow}`;
+    d.style.boxShadow = `0 2px 8px ${pal.shadow}`;
     d.style.display = 'block';
     d.style.width = 'auto';
-    d.style.maxWidth = '300px';
+    d.style.maxWidth = '320px';
     d.style.maxHeight = 'none';
     d.textContent = '';
 
     if (detailText) {
       const hdr = document.createElement('div');
       hdr.textContent = detailText;
-      hdr.style.fontFamily = opts.fontFamily ?? 'monospace';
-      hdr.style.fontSize = '11px';
-      hdr.style.opacity = '0.85';
+      hdr.style.fontFamily =
+        opts.fontFamily ?? '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      hdr.style.fontSize = '12px';
+      hdr.style.lineHeight = '1.45';
+      hdr.style.opacity = '0.92';
       hdr.style.overflowWrap = 'break-word';
       if (docText) {
-        hdr.style.paddingBottom = '5px';
-        hdr.style.marginBottom = '5px';
+        hdr.style.paddingBottom = '6px';
+        hdr.style.marginBottom = '6px';
         hdr.style.borderBottom = pal.border;
       }
       d.appendChild(hdr);
@@ -262,7 +264,7 @@ export class SuggestDetailsPane {
         isDark,
         background: pal.background,
         foreground: pal.foreground,
-        mutedForeground: pal.foreground,
+        mutedForeground: pal.detailForeground,
         border: isDark ? '#454545' : '#c8c8c8',
         inputBackground: pal.background,
         inputForeground: pal.foreground,
@@ -274,8 +276,8 @@ export class SuggestDetailsPane {
         hoverBackground: pal.hoverBackground,
         selectionBackground: pal.selectedBackground,
         selectionForeground: pal.selectedForeground,
-        codeBackground: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-        shadow: `0 0 8px 2px ${pal.shadow}`,
+        codeBackground: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+        shadow: `0 2px 8px ${pal.shadow}`,
       });
     }
     this.position(listEl, suspended, caretLine ?? this.lastCaretLine ?? undefined, mode);

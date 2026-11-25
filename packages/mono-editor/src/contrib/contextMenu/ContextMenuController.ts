@@ -191,6 +191,7 @@ export class ContextMenuController {
   }
 
   isOpen(): boolean { return this.open; }
+  getType(): 'horizontal' | 'vertical' { return this.options.type === 'vertical' ? 'vertical' : 'horizontal'; }
   getActivePage(): 'horizontal' | 'moreVertical' | 'vertical' { return this.activePage; }
 
   hide(): void {
@@ -307,7 +308,10 @@ export class ContextMenuController {
     el.className = `mono-ctx-menu ${this.style.className || ''}`.trim();
     el.setAttribute('role', 'menu');
     el.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
+      // Only preventDefault on horizontal bar or mouse; allow touch vertical scroll inside vertical menus
+      if (this.activePage === 'horizontal' || e.pointerType === 'mouse') {
+        e.preventDefault();
+      }
       e.stopPropagation();
     });
     el.addEventListener('mousedown', (e) => {
@@ -484,6 +488,9 @@ export class ContextMenuController {
     const menuRect = this.el.getBoundingClientRect();
     const w = menuRect.width || this.el.offsetWidth || 180;
     const h = menuRect.height || this.el.offsetHeight || 40;
+    const isVertical = this.activePage !== 'horizontal';
+    const effectiveMaxH = this.options.maxHeight ?? (isVertical ? 220 : undefined);
+    const headerH = this.activePage === 'moreVertical' ? 30 : 0;
 
     if (this.lastAnchorGeom) {
       const safe = this.lastAnchorGeom.getSafeArea();
@@ -492,14 +499,15 @@ export class ContextMenuController {
         { width: w, height: h },
         safe,
         this.lastAnchorGeom.gap ?? 8,
-        this.options.maxHeight,
+        effectiveMaxH,
       );
       this.el.style.left = `${res.left}px`;
       this.el.style.top = `${res.top}px`;
-      if (res.maxHeight != null) {
-        this.el.style.maxHeight = `${res.maxHeight}px`;
-        const listEl = this.el.querySelector<HTMLElement>('.mono-ctx-vertical-list');
-        if (listEl) listEl.style.maxHeight = `${Math.max(36, res.maxHeight - 32)}px`;
+      const cap = res.maxHeight ?? effectiveMaxH;
+      if (cap != null) {
+        this.el.style.maxHeight = `${cap}px`;
+        const listEl = this.el.querySelector?.<HTMLElement>('.mono-ctx-vertical-list') ?? null;
+        if (listEl) listEl.style.maxHeight = `${Math.max(40, cap - headerH - 2)}px`;
         else this.el.style.overflowY = 'auto';
       }
       return;
@@ -527,13 +535,16 @@ export class ContextMenuController {
       { width: w, height: h },
       { left: 8, top: 8, right: Math.max(80, rect.width - 8), bottom: Math.max(80, rect.height - 8) },
       gap,
-      this.options.maxHeight,
+      effectiveMaxH,
     );
     this.el.style.left = `${res.left}px`;
     this.el.style.top = `${res.top}px`;
-    if (res.maxHeight != null) {
-      this.el.style.maxHeight = `${res.maxHeight}px`;
-      this.el.style.overflowY = 'auto';
+    const cap = res.maxHeight ?? effectiveMaxH;
+    if (cap != null) {
+      this.el.style.maxHeight = `${cap}px`;
+      const listEl = this.el.querySelector?.<HTMLElement>('.mono-ctx-vertical-list') ?? null;
+      if (listEl) listEl.style.maxHeight = `${Math.max(40, cap - headerH - 2)}px`;
+      else this.el.style.overflowY = 'auto';
     }
   }
 

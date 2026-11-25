@@ -26,6 +26,7 @@ export class ContextMenuContribution implements IContextMenuContribution {
   private readonly host: IEditorContributionHost;
   private readonly menu: ContextMenuController;
   private menuRestore = false;
+  private lastSelectMenuAt = 0;
 
   constructor(host: IEditorContributionHost) {
     this.host = host;
@@ -128,11 +129,15 @@ export class ContextMenuContribution implements IContextMenuContribution {
       return;
     }
     if (kind === 'handleTap') {
-      if (this.menu.isEnabled()) requestAnimationFrame(() => this.showEditorMenu());
+      if (this.menu.isEnabled()) {
+        this.lastSelectMenuAt = Date.now();
+        requestAnimationFrame(() => this.showEditorMenu());
+      }
       return;
     }
     if (kind === 'select') {
       if (!this.host.selection.isEmpty && this.menu.isEnabled()) {
+        this.lastSelectMenuAt = Date.now();
         requestAnimationFrame(() => this.showEditorMenu());
       } else {
         this.menuRestore = false;
@@ -180,6 +185,14 @@ export class ContextMenuContribution implements IContextMenuContribution {
   private onContextMenuDom = (e: MouseEvent): void => {
     if (this.host.isDisposed() || !this.menu.isEnabled()) return;
     e.preventDefault();
+    // On mobile/touch browsers, long-press fires a native `contextmenu` event right after
+    // PointerController's long-press selects the word and opens the configured menu.
+    // Never hijack that selection menu with a vertical menu!
+    const pointerType = (e as unknown as { pointerType?: string }).pointerType;
+    if (pointerType === 'touch' || Date.now() - this.lastSelectMenuAt < 750) {
+      if (!this.menu.isOpen()) this.showEditorMenu();
+      return;
+    }
     const rect = this.host.root.getBoundingClientRect();
     const localX = e.clientX - rect.left;
     const localY = e.clientY - rect.top;
@@ -190,14 +203,11 @@ export class ContextMenuContribution implements IContextMenuContribution {
       top: localY - 4,
       bottom: localY + 4,
     };
-    this.menu.showAnchored(
-      {
-        anchorRects: [anchorRect],
-        gap: 6,
-        getSafeArea: () => this.computeSafeArea(lh),
-      },
-      'vertical',
-    );
+    this.menu.showAnchored({
+      anchorRects: [anchorRect],
+      gap: 6,
+      getSafeArea: () => this.computeSafeArea(lh),
+    });
   };
 
   private syncLiveContextKeys(): void {
