@@ -1,4 +1,6 @@
 import { renderMarkdownToDom } from '../../browser/render/markdownDom';
+import { layoutPopupHorizontally } from '../../browser/view/popupLayout';
+import { capPopupMaxWidth } from '../../common/util/popupPlacement';
 import { DEFAULT_THEME } from '../../common/config/themeTypes';
 import type { IMarker } from '../../common/decorations/types';
 import { createIcon, ensureCodicons } from '../../platform/icons';
@@ -154,7 +156,7 @@ export class HoverWidget {
       left: `${Math.max(4, anchor.x)}px`,
       top: `${Math.max(4, anchor.y)}px`,
       zIndex: '47',
-      maxWidth: `${Math.min(scaledMaxWidth, Math.max(220, (this.host.clientWidth || 600) - 16))}px`,
+      maxWidth: `${capPopupMaxWidth(scaledMaxWidth, this.host.clientWidth)}px`,
       maxHeight: `${Math.min(340, Math.max(120, visibleHostH - 20))}px`,
       display: 'flex',
       flexDirection: 'column',
@@ -346,16 +348,13 @@ export class HoverWidget {
     // Position above the target line by default (like VS Code/Monaco), flipping below if tight at top
     const hostW = this.host.clientWidth || 600;
     const hostH = this.getVisibleHostHeight();
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
+    // Measure at natural width first (shift left before shrinking); see popupLayout.ts
+    const { height: h } = layoutPopupHorizontally(el, anchor.x, hostW);
     const lineTop = anchor.top ?? Math.max(0, anchor.y - 22);
-    let left = Math.max(6, anchor.x);
-    if (left + w > hostW - 6) left = Math.max(6, hostW - w - 6);
     let top = lineTop - h - 4;
     if (top < 6) {
       top = Math.min(hostH - h - 6, anchor.y + 3);
     }
-    el.style.left = `${Math.round(left)}px`;
     el.style.top = `${Math.round(Math.max(4, top))}px`;
   }
 

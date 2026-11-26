@@ -1,6 +1,8 @@
 import type { WidgetBoxRect } from '../../browser/editor/editorTypes';
+import { layoutPopupHorizontally } from '../../browser/view/popupLayout';
 import { renderHighlightedCodeToDom, renderMarkdownToDom } from '../../browser/render/markdownDom';
 import { DEFAULT_THEME } from '../../common/config/themeTypes';
+import { capPopupMaxWidth } from '../../common/util/popupPlacement';
 import { resolveParameterLabelRange } from '../../common/languages/callContext';
 import type { SignatureHelp, SignatureInformation } from '../../common/languages/providers/types';
 import { createIcon, ensureCodicons } from '../../platform/icons';
@@ -215,7 +217,7 @@ export class SignatureHelpWidget {
     Object.assign(el.style, {
       position: 'absolute',
       zIndex: '46',
-      maxWidth: `${Math.min(compactMaxW, Math.max(200, (this.host.clientWidth || 600) - 16))}px`,
+      maxWidth: `${capPopupMaxWidth(compactMaxW, this.host.clientWidth)}px`,
       background: bg,
       border: `1px solid ${border}`,
       borderRadius: '3px',
@@ -246,15 +248,18 @@ export class SignatureHelpWidget {
       nav.className = 'mono-sig-overloads';
       Object.assign(nav.style, {
         display: 'inline-flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        gap: '1px',
+        justifyContent: 'center',
+        gap: '0px',
         flexShrink: '0',
         color: muted,
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         fontSize: `${navFontSize}px`,
+        lineHeight: '1.1',
         fontVariantNumeric: 'tabular-nums',
         userSelect: 'none',
-        paddingRight: '4px',
+        paddingRight: '6px',
         borderRight: `1px solid ${border}`,
       });
       const mkNavBtn = (iconId: 'chevron-up' | 'chevron-down', label: string, cb: () => void) => {
@@ -268,9 +273,9 @@ export class SignatureHelpWidget {
           background: 'transparent',
           color: fg,
           cursor: 'pointer',
-          padding: '2px',
-          minWidth: '20px',
-          minHeight: '20px',
+          padding: '0',
+          minWidth: '22px',
+          minHeight: '16px',
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -289,7 +294,7 @@ export class SignatureHelpWidget {
       const count = document.createElement('span');
       count.className = 'mono-sig-overload-count';
       count.textContent = `${sigIdx + 1}/${help.signatures.length}`;
-      count.style.minWidth = '20px';
+      count.style.minWidth = '22px';
       count.style.textAlign = 'center';
       nav.appendChild(mkNavBtn('chevron-up', 'Previous signature', this.onPrev));
       nav.appendChild(count);
@@ -372,9 +377,11 @@ export class SignatureHelpWidget {
 
     const hostW = this.host.clientWidth || 600;
     const hostH = this.getVisibleHostHeight();
+    // Natural-width measure + shift-left-before-shrink (popupLayout.ts); width is then fixed in px.
+    const fit = layoutPopupHorizontally(el, anchor.x, hostW);
     const pos = computeSignaturePlacement(
       anchor,
-      { width: el.offsetWidth, height: el.offsetHeight },
+      { width: fit.width, height: fit.height },
       { width: hostW, height: hostH },
       anchor.avoidRect,
     );

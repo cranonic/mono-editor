@@ -1321,7 +1321,7 @@ const editorInstance = editor.create(host, {
   errorLens: true,
   codeLens: true,
   linkedEditing: true,
-  rulers: [80],
+  rulers: [],
   scrollbar: {
     vertical: 'auto',
     horizontal: 'auto',
@@ -1359,6 +1359,7 @@ const optRainbowIndependent = document.getElementById('opt-rainbow-independent')
 const optOccurrences = document.getElementById('opt-occurrences') as HTMLInputElement;
 const optScrollbar = document.getElementById('opt-scrollbar') as HTMLSelectElement;
 const optHideVScroll = document.getElementById('opt-hide-vscroll') as HTMLInputElement;
+const optRulers = document.getElementById('opt-rulers') as HTMLSelectElement;
 const optHideHScroll = document.getElementById('opt-hide-hscroll') as HTMLInputElement;
 const optDynamicCaret = document.getElementById('opt-dynamic-caret') as HTMLInputElement;
 const optLineNumbersMode = document.getElementById('opt-line-numbers-mode') as HTMLSelectElement;
@@ -1675,6 +1676,11 @@ const syncScrollbarOptions = () => {
     },
   });
 };
+optRulers.addEventListener('change', () => {
+  editorInstance.updateOptions({
+    rulers: optRulers.value ? optRulers.value.split(',').map((n) => Number(n)) : [],
+  });
+});
 optScrollbar.addEventListener('change', syncScrollbarOptions);
 optHideVScroll.addEventListener('change', syncScrollbarOptions);
 optHideHScroll.addEventListener('change', syncScrollbarOptions);
