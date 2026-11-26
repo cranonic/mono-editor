@@ -1,6 +1,7 @@
 import type { ColorMatch } from '../../common/color/colorTypes';
 import type { RenderMetrics } from '../../common/config/editorOptions';
 import { MouseTargetType } from '../../common/core/enums';
+import type { VirtualSide } from '../../common/core/SelectionState';
 import type { IMouseTarget } from '../../common/core/types';
 import type { TextModel } from '../../common/model/TextModel';
 import type { ViewLineProjection } from '../../common/viewModel/ViewLineProjection';
@@ -8,6 +9,7 @@ import {
   collectInlineVirtualElements,
   mapVirtualXToRealX,
   virtualAdvanceBeforeColumn,
+  virtualSideAtX,
   type InlineGhostRun,
   type InlineVirtualElement,
   type ResolvedInlayHint,
@@ -110,6 +112,25 @@ export function hitTestPosition(
   localY: number,
   round = true,
 ): { lineNumber: number; column: number } {
+  const { lineNumber, column } = resolveHit(ctx, localX, localY, round);
+  return { lineNumber, column };
+}
+
+/**
+ * Which half (before / after) of an inline virtual block (inlay hint, ghost text, swatch) the
+ * point falls on, when the resolved column carries one. Used by teardrop drags so the caret /
+ * selection edge lands on the side the finger is on.
+ */
+export function hitTestVirtualSide(ctx: HitTestContext, localX: number, localY: number): VirtualSide | undefined {
+  return resolveHit(ctx, localX, localY, true).side;
+}
+
+function resolveHit(
+  ctx: HitTestContext,
+  localX: number,
+  localY: number,
+  round: boolean,
+): { lineNumber: number; column: number; side?: VirtualSide } {
   const {
     model,
     renderer,
@@ -159,7 +180,11 @@ export function hitTestPosition(
   );
   const maxCol = seg.isLastSegment ? seg.endCol : Math.max(seg.startCol, seg.endCol - 1);
   col = Math.max(seg.startCol, Math.min(maxCol, col));
-  return { lineNumber: seg.modelLine, column: col };
+  const elems = elementsForLine(renderer, metrics, seg.modelLine, getLineColors, getLineInlayHints, getLineGhostInline);
+  const side = elems.length
+    ? virtualSideAtX(model.getLineContent(seg.modelLine), effectiveX, elems, col, (c, cc) => renderer.measureColumnX(c, cc, metrics))
+    : undefined;
+  return { lineNumber: seg.modelLine, column: col, side };
 }
 
 export function computeTargetAtLocalPoint(

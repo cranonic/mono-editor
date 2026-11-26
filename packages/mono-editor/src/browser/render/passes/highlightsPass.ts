@@ -1,3 +1,4 @@
+import { selectionSides } from '../virtualSides';
 import type { FrameContext, RenderPass } from '../frameContext';
 
 /**
@@ -126,8 +127,10 @@ export const highlightsPass: RenderPass = {
         }
       }
 
-      for (const os of f.orderedSelections) {
+      for (let osi = 0; osi < f.orderedSelections.length; osi++) {
+        const os = f.orderedSelections[osi]!;
         if (os.isEmpty || line < os.startLine || line > os.endLine) continue;
+        const sides = selectionSides(f.opts.selection.selections[osi]);
         let fromCol = 1;
         let toCol = content.length + 1;
         if (line === os.startLine) fromCol = os.startCol;
@@ -136,8 +139,8 @@ export const highlightsPass: RenderPass = {
         const c2 = Math.min(seg.endCol, toCol);
         const extendsPastLine = line < os.endLine && seg.isLastSegment;
         if (c2 > c1 || (extendsPastLine && fromCol <= seg.endCol)) {
-          const x1 = f.segX(content, seg, c1);
-          const x2 = f.segX(content, seg, Math.max(c1, c2));
+          const x1 = f.segX(content, seg, c1, line === os.startLine && c1 === fromCol ? sides.start : undefined);
+          const x2 = f.segX(content, seg, Math.max(c1, c2), line === os.endLine && c2 === toCol ? sides.end : undefined);
           const w = Math.max(x2 - x1, extendsPastLine ? 6 : (line === os.endLine ? 2 : 0));
           ctx.fillStyle = theme.selection;
           ctx.fillRect(x1, y, w || 4, lineHeight);

@@ -1,5 +1,5 @@
 import type { RenderMetrics } from '../../../common/config/editorOptions';
-import type { SelectionState } from '../../../common/core/SelectionState';
+import type { MonoPosition, SelectionState, VirtualSide } from '../../../common/core/SelectionState';
 import type { TextModel } from '../../../common/model/TextModel';
 import type { TeardropHit } from '../../render/CanvasRenderer';
 import type { ViewController } from '../../view/ViewController';
@@ -20,7 +20,7 @@ export class TeardropDragController {
   handleMoved = false;
   private handleLift = 26;
   private stickyLine: number | null = null;
-  private dragAnchor: { lineNumber: number; column: number } | null = null;
+  private dragAnchor: MonoPosition | null = null;
   private autoScrollRaf = 0;
   private autoScrollDeltaY = 0;
   private autoScrollDeltaX = 0;
@@ -153,16 +153,24 @@ export class TeardropDragController {
   ): void {
     if (!this.handleDrag) return;
     const rect = root.getBoundingClientRect();
-    const pos = this.posFromHandleFree(rect, model, view, metrics, clientX, clientY);
+    const hit = this.posFromHandleFree(rect, model, view, metrics, clientX, clientY);
+    const pos = { lineNumber: hit.lineNumber, column: hit.column };
+    // Inlay hint / ghost text / swatch block at this column: the edge goes on the side of the block
+    // the finger is on (left half -> `|name:`, right half -> `name:|`). Display-only; see VirtualSide.
+    const side = hit.side;
 
     let visualType: TeardropHit['type'] = this.handleDrag;
     if (this.handleDrag === 'cursor') {
       selection.setCaret(pos.lineNumber, pos.column);
+      if (side) {
+        selection.anchor.virtualSide = side;
+        selection.active.virtualSide = side;
+      }
     } else if (this.dragAnchor) {
       const anchor = this.dragAnchor;
       if (pos.lineNumber !== anchor.lineNumber || pos.column !== anchor.column) {
         selection.anchor = { ...anchor };
-        selection.active = pos;
+        selection.active = side ? { ...pos, virtualSide: side } : pos;
       }
       const posBeforeAnchor =
         pos.lineNumber < anchor.lineNumber ||
@@ -186,13 +194,13 @@ export class TeardropDragController {
     m: RenderMetrics,
     clientX: number,
     clientY: number,
-  ): { lineNumber: number; column: number } {
+  ): { lineNumber: number; column: number; side?: VirtualSide } {
     const localX = clientX - rect.left;
     const localY = clientY - rect.top;
 
     if (!view.projection.isIdentity() || view.getTopInset() > 0 || view.hasViewZones()) {
       const targetY = localY - this.handleLift - m.lineHeight * 0.45;
-      return view.positionAtPoint(localX, targetY, true);
+      return { ...view.positionAtPoint(localX, targetY, true), side: view.virtualSideAtPoint(localX, targetY) };
     }
 
     const caretMidY = localY - this.handleLift - m.lineHeight * 0.45;
@@ -207,17 +215,17 @@ export class TeardropDragController {
 
     const textX = localX + view.scrollLeft - view.contentLeft - m.paddingLeft;
     const column = view.columnAtX(nextLine, textX, true);
-    return { lineNumber: nextLine, column };
+    const rowMidY = view.getRowGeometry().topOfRow(nextLine - 1) - view.scrollTop + m.lineHeight / 2;
+    return { lineNumber: nextLine, column, side: view.virtualSideAtPoint(localX, rowMidY) };
   }
 
-  private edgePosForHandle(selection: SelectionState, type: TeardropHit['type']): { lineNumber: number; column: number } {
-    if (type === 'cursor') return { lineNumber: selection.active.lineNumber, column: selection.active.column };
+  private edgePosForHandle(selection: SelectionState, type: TeardropHit['type']): MonoPosition {
+    // Copies keep `virtualSide`, so the fixed edge stays on its side of an inlay/ghost block while dragging.
+    if (type === 'cursor') return { ...selection.active };
     const a = selection.anchor;
     const b = selection.active;
     const aBefore = a.lineNumber < b.lineNumber || (a.lineNumber === b.lineNumber && a.column <= b.column);
-    if (type === 'start') {
-      return aBefore ? { lineNumber: a.lineNumber, column: a.column } : { lineNumber: b.lineNumber, column: b.column };
-    }
-    return aBefore ? { lineNumber: b.lineNumber, column: b.column } : { lineNumber: a.lineNumber, column: a.column };
+    if (type === 'start') return aBefore ? { ...a } : { ...b };
+    return aBefore ? { ...b } : { ...a };
   }
 }

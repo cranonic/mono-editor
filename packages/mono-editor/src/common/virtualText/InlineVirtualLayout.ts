@@ -1,4 +1,5 @@
 import type { ColorMatch } from '../color/colorTypes';
+import type { VirtualSide } from '../core/SelectionState';
 import { nextGraphemeOffset } from '../util/grapheme';
 import type { InlineGhostRun, ResolvedInlayHint, VirtualGhostRow } from './ghostTextTypes';
 
@@ -91,7 +92,7 @@ export function collectInlineVirtualElements(inputs: LineVirtualInputs): InlineV
 export function virtualAdvanceBeforeColumn(
   elements: readonly InlineVirtualElement[],
   column: number,
-  includeGhostAtSameColumn = true,
+  includeGhostAtSameColumn: boolean | VirtualSide = true,
 ): number {
   if (!elements.length) return 0;
   let shift = 0;
@@ -99,13 +100,40 @@ export function virtualAdvanceBeforeColumn(
     if (el.column < column) {
       shift += el.widthPx;
     } else if (el.column === column) {
-      if (el.kind === 'ghost' && !includeGhostAtSameColumn) continue;
+      // 'before' / 'after' address the WHOLE virtual block anchored at `column` (caret or selection
+      // edge drawn before / after it); booleans keep the legacy ghost-only rule.
+      if (includeGhostAtSameColumn === 'before') continue;
+      if (includeGhostAtSameColumn === false && el.kind === 'ghost') continue;
       shift += el.widthPx;
     } else {
       break;
     }
   }
   return shift;
+}
+
+/**
+ * Which half of the virtual block anchored at `column` the visual pixel `visualX` falls in:
+ * left half -> 'before', right half (or past it) -> 'after'. `undefined` when no virtual element
+ * is anchored at `column`.
+ */
+export function virtualSideAtX(
+  lineContent: string,
+  visualX: number,
+  elements: readonly InlineVirtualElement[],
+  column: number,
+  measureColumnX: (line: string, col: number) => number,
+): VirtualSide | undefined {
+  let before = 0;
+  let blockW = 0;
+  for (const el of elements) {
+    if (el.column < column) before += el.widthPx;
+    else if (el.column === column) blockW += el.widthPx;
+    else break;
+  }
+  if (blockW <= 0) return undefined;
+  const left = measureColumnX(lineContent, column) + before;
+  return visualX < left + blockW / 2 ? 'before' : 'after';
 }
 
 /**

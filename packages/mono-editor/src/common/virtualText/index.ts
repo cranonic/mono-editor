@@ -7,6 +7,7 @@ export {
   mapVirtualXToRealX,
   virtualAdvanceBeforeColumn,
   virtualElementStartX,
+  virtualSideAtX,
   type InlineVirtualElement,
   type LineVirtualInputs,
 } from './InlineVirtualLayout';

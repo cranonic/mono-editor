@@ -10,7 +10,7 @@ import type {
   RenderWhitespaceMode,
 } from '../../common/config/editorOptions';
 import type { MonoEditorTheme } from '../../common/config/themeTypes';
-import type { SelectionState } from '../../common/core/SelectionState';
+import type { SelectionState, VirtualSide } from '../../common/core/SelectionState';
 import type { IMouseTarget, IPosition, IRange } from '../../common/core/types';
 import type { DecorationRenderItem, IMarker } from '../../common/decorations/types';
 import {
@@ -43,6 +43,7 @@ import {
   computeScreenPosOf,
   computeTargetAtLocalPoint,
   hitTestPosition,
+  hitTestVirtualSide,
   lineColumnAtX,
   measureLineColumnX,
   type HitTestContext,
@@ -415,6 +416,7 @@ export class ViewController {
   positionAtPoint(localX: number, localY: number, round = true): { lineNumber: number; column: number } {
     this.syncProjection(); return hitTestPosition(this.buildHitContext(), localX, localY, round);
   }
+  virtualSideAtPoint(localX: number, localY: number): VirtualSide | undefined { this.syncProjection(); return hitTestVirtualSide(this.buildHitContext(), localX, localY); }
   screenPosOf(line: number, col: number): { x: number; y: number; h: number } {
     this.syncProjection(); return computeScreenPosOf(this.buildHitContext(), line, col);
   }
@@ -545,7 +547,6 @@ export class ViewController {
     });
     this.onPaintCb?.();
   }
-
   hitTestSticky(localX: number, localY: number) { return this.sticky.hitTestSticky(localX, localY, this.getMetrics().lineHeight); }
   hitTestBottomSticky(localX: number, localY: number) { return this.sticky.hitTestBottomSticky(localX, localY, this.cssWidth, this.cssHeight, this.getMetrics().lineHeight); }
 

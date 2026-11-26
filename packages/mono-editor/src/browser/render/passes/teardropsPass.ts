@@ -1,4 +1,6 @@
+import type { VirtualSide } from '../../../common/core/SelectionState';
 import { TEARDROP, type FrameContext, type RenderPass } from '../frameContext';
+import { selectionSides } from '../virtualSides';
 
 const CARET_H = 18;
 const CARET_W = 2;
@@ -65,6 +67,7 @@ function paintTeardropAt(
   col: number,
   type: 'cursor' | 'start' | 'end',
   color: string,
+  side?: VirtualSide,
 ): void {
   const { opts, teardrops } = frame;
   const { metrics, projection, freeHandle = null } = opts;
@@ -81,7 +84,7 @@ function paintTeardropAt(
     lineTop = tipY - lineHeight + 1;
   } else {
     const role = type === 'cursor' ? 'caret' : type === 'start' ? 'selStart' : 'selEnd';
-    cx = frame.xAt(line, col, role);
+    cx = frame.xAt(line, col, role, side);
     const visualRow =
       projection && !projection.isIdentity()
         ? projection.modelToVisual(line, col).visualRow
@@ -114,14 +117,15 @@ export const teardropsPass: RenderPass = {
     }
     const prevA = ctx.globalAlpha;
     ctx.globalAlpha = handleAlpha;
+    const sides = selectionSides(selection.selections[0]);
     if (hasSelection) {
       const startColor = tokenColorAt(primaryRange.startLine, primaryRange.startCol);
       const endColor = tokenColorAt(primaryRange.endLine, primaryRange.endCol);
-      paintTeardropAt(ctx, frame, primaryRange.startLine, primaryRange.startCol, 'start', startColor);
-      paintTeardropAt(ctx, frame, primaryRange.endLine, primaryRange.endCol, 'end', endColor);
+      paintTeardropAt(ctx, frame, primaryRange.startLine, primaryRange.startCol, 'start', startColor, sides.start);
+      paintTeardropAt(ctx, frame, primaryRange.endLine, primaryRange.endCol, 'end', endColor, sides.end);
     } else {
       const cursorColor = tokenColorAt(caretLine, caretCol);
-      paintTeardropAt(ctx, frame, caretLine, caretCol, 'cursor', cursorColor);
+      paintTeardropAt(ctx, frame, caretLine, caretCol, 'cursor', cursorColor, sides.caret);
     }
     ctx.globalAlpha = prevA;
   },

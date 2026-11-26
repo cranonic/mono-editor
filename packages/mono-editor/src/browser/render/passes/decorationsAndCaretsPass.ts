@@ -1,3 +1,4 @@
+import { selectionSides } from '../virtualSides';
 import type { FrameContext, RenderPass } from '../frameContext';
 
 /**
@@ -110,7 +111,7 @@ export const decorationsAndCaretsPass: RenderPass = {
             os.caretCol >= seg.startCol &&
             (os.caretCol < seg.endCol || seg.isLastSegment)
           ) {
-            const cx = f.segCaretX(content, seg, os.caretCol);
+            const cx = f.segCaretX(content, seg, os.caretCol, si === 0 ? selectionSides(f.opts.selection.selections[0]).caret : undefined);
             const caretColor = f.tokenColorAt(os.caretLine, os.caretCol);
             ctx.save();
             ctx.globalAlpha = cursorOpacity;

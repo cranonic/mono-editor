@@ -1,6 +1,14 @@
+/**
+ * Which side of an inline virtual block (inlay hint, ghost text, colour swatch) anchored at this
+ * column a caret / selection edge is drawn on. The model column is the same either way; this is a
+ * display-only hint, set by teardrop drags and dropped whenever the position object is replaced.
+ */
+export type VirtualSide = 'before' | 'after';
+
 export interface MonoPosition {
   lineNumber: number;
   column: number;
+  virtualSide?: VirtualSide;
 }
 
 export interface MonoSelectionRange {

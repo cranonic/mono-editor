@@ -15,7 +15,7 @@ import type {
   RenderWhitespaceMode,
 } from '../../common/config/editorOptions';
 import type { MonoEditorTheme } from '../../common/config/themeTypes';
-import type { SelectionState } from '../../common/core/SelectionState';
+import type { SelectionState, VirtualSide } from '../../common/core/SelectionState';
 import type {
   BracketMatchPair,
   IndentGuideInfo,
@@ -224,11 +224,11 @@ export interface FrameContext {
   measureColumnX: (line: string, col: number) => number;
   measureText: (text: string) => number;
   /** Real text X at `col` (shifts past swatches, inlay hints, and inline ghost text at `<= col`). */
-  segX: (content: string, seg: VisualLine, col: number) => number;
+  segX: (content: string, seg: VisualLine, col: number, side?: VirtualSide) => number;
   /** Caret X at `col` (sits to the LEFT of inline ghost text anchored at `col`). */
-  segCaretX: (content: string, seg: VisualLine, col: number) => number;
+  segCaretX: (content: string, seg: VisualLine, col: number, side?: VirtualSide) => number;
   /** Single source of truth X for caret / selection start / selection end / teardrops. */
-  xAt: (line: number, col: number, role: 'caret' | 'selStart' | 'selEnd') => number;
+  xAt: (line: number, col: number, role: 'caret' | 'selStart' | 'selEnd', side?: VirtualSide) => number;
   /** Element start X inside `seg` for a virtual element (0=swatch, 1=inlay, 2=ghost). */
   segVirtualX: (content: string, seg: VisualLine, col: number, order: number, idx?: number) => number;
   tokenColorAt: (lineNumber: number, col: number) => string;
@@ -492,7 +492,7 @@ export function buildFrameContext(
     return els;
   };
 
-  const segXInternal = (content: string, seg: VisualLine, col: number, includeGhostAtSame: boolean): number => {
+  const segXInternal = (content: string, seg: VisualLine, col: number, includeGhostAtSame: boolean | VirtualSide): number => {
     const vels = virtualElementsForLine(seg.modelLine);
     const colAdv = virtualAdvanceBeforeColumn(vels, col, includeGhostAtSame);
     const originAdv = seg.startCol === 1 ? 0 : virtualAdvanceBeforeColumn(vels, seg.startCol, true);
@@ -503,16 +503,16 @@ export function buildFrameContext(
     return textX0 + seg.wrapIndentPx + (measureColumnX(content, col) - originPx) + (colAdv - originAdv);
   };
 
-  const segX = (content: string, seg: VisualLine, col: number): number => segXInternal(content, seg, col, true);
-  const segCaretX = (content: string, seg: VisualLine, col: number): number => segXInternal(content, seg, col, false);
-  const xAt = (line: number, col: number, role: 'caret' | 'selStart' | 'selEnd'): number => {
+  const segX = (content: string, seg: VisualLine, col: number, side?: VirtualSide): number => segXInternal(content, seg, col, side ?? true);
+  const segCaretX = (content: string, seg: VisualLine, col: number, side?: VirtualSide): number => segXInternal(content, seg, col, side ?? false);
+  const xAt = (line: number, col: number, role: 'caret' | 'selStart' | 'selEnd', side?: VirtualSide): number => {
     const clampedLine = Math.max(1, Math.min(model.getLineCount(), line));
     const content = model.getLineContent(clampedLine);
     const seg =
       projection && !projection.isIdentity()
         ? projection.modelToVisual(clampedLine, col).visualLine
         : getVisualLine(clampedLine - 1);
-    return role === 'caret' ? segCaretX(content, seg, col) : segX(content, seg, col);
+    return role === 'caret' ? segCaretX(content, seg, col, side) : segX(content, seg, col, side);
   };
   const segVirtualX = (content: string, seg: VisualLine, col: number, order: number, idx = 0): number => {
     const vels = virtualElementsForLine(seg.modelLine);
