@@ -86,6 +86,15 @@ export class SuggestContribution implements IEditorContribution {
         kindVisibility: buildKindVisibilityMap(opts.suggest),
         getTokenTypeAt: (ln, col) => host.getTokenTypeAt(ln, col),
         getLanguageIdAtPosition: (ln, col) => host.getLanguageIdAtPosition(ln, col),
+        getModelLike:
+          typeof host.modelAsFeatureLike === 'function'
+            ? (effectiveLang) => {
+                const base = host.modelAsFeatureLike();
+                return effectiveLang && effectiveLang !== base.getLanguageId()
+                  ? { ...base, getLanguageId: () => effectiveLang }
+                  : base;
+              }
+            : undefined,
         onVisibilityChange: (visible, rect) => {
           host.setSuggestWidgetRect(rect);
           host.setContext('suggestWidgetVisible', visible);

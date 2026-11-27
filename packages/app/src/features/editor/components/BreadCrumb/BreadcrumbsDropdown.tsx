@@ -95,10 +95,11 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
   const longPressTriggeredRef = useRef(false);
 
   const [filter, setFilter] = useState('');
-  // -1 = no row highlighted by default on open (VS Code / preview.webp behavior)
+  // -1 = no row highlighted when nothing matches; matched isCurrent row is highlighted on open
   const [selectedIdx, setSelectedIdx] = useState(-1);
   const [loading, setLoading] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
+  const autoScrolledKeyRef = useRef<string | null>(null);
 
   // File/folder tree state
   const [rootPathItems, setRootPathItems] = useState<readonly IBreadcrumbItem[]>([]);
@@ -121,6 +122,7 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
 
   // Reset picker tree state when switching active breadcrumb segment
   useEffect(() => {
+    autoScrolledKeyRef.current = null;
     setFilter('');
     setSelectedIdx(-1);
     setScrollTop(0);
@@ -224,14 +226,60 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
     }
   }, [activeItem.id, isCoarse]);
 
+  // Auto-jump scroll + highlight the clicked/current block or file once rows are ready
+  useEffect(() => {
+    if (loading || isFiltering) return;
+    const scrollKey = `${activeItem.id}:${dirStack.length}:${treeRows.length}`;
+    if (autoScrolledKeyRef.current === scrollKey) return;
+    if (treeRows.length === 0) return;
+
+    const currentIdx = treeRows.findIndex((r) => r.isCurrent);
+    autoScrolledKeyRef.current = scrollKey;
+
+    if (currentIdx >= 0) {
+      setSelectedIdx(currentIdx);
+      const scrollToCurrent = () => {
+        const listEl = listRef.current;
+        if (!listEl) return;
+        const viewportH = listEl.clientHeight || maxH;
+        const stickyCount = Math.min(maxSticky, treeRows[currentIdx]?.ancestorIndices.length ?? 0);
+        const stickyPad = stickyCount * rowHeight;
+        const idealTop =
+          currentIdx * rowHeight - Math.max(stickyPad + rowHeight, Math.floor((viewportH - rowHeight) / 2));
+        const clampedTop = Math.max(0, Math.min(idealTop, Math.max(0, listEl.scrollHeight - viewportH)));
+        listEl.scrollTop = clampedTop;
+        setScrollTop(clampedTop);
+      };
+      // Run immediately and after layout paint so sticky overlay & scroll position stay exact
+      scrollToCurrent();
+      const raf = window.requestAnimationFrame(scrollToCurrent);
+      return () => window.cancelAnimationFrame(raf);
+    } else {
+      // No current item matched — do NOT highlight row 0 by default
+      setSelectedIdx(-1);
+    }
+  }, [activeItem.id, dirStack.length, loading, isFiltering, treeRows, rowHeight, maxH, maxSticky]);
+
   // Scroll focused row into view when navigating with keyboard
   useEffect(() => {
     if (selectedIdx < 0) return;
     const listEl = listRef.current;
     if (!listEl) return;
     const activeEl = listEl.querySelector<HTMLElement>(`[data-bc-idx="${selectedIdx}"]`);
-    activeEl?.scrollIntoView({ block: 'nearest' });
-  }, [selectedIdx]);
+    if (!activeEl) return;
+    const stickyOffset = stickyIndices.length * rowHeight;
+    const rowTop = activeEl.offsetTop;
+    const rowBottom = rowTop + rowHeight;
+    if (rowTop < listEl.scrollTop + stickyOffset) {
+      const next = Math.max(0, rowTop - stickyOffset);
+      listEl.scrollTop = next;
+      setScrollTop(next);
+    } else if (rowBottom > listEl.scrollTop + listEl.clientHeight) {
+      const next = Math.max(0, rowBottom - listEl.clientHeight);
+      listEl.scrollTop = next;
+      setScrollTop(next);
+    }
+  }, [selectedIdx, stickyIndices.length, rowHeight]);
 
   // Clean up any pending long-press timer on unmount
   const clearLongPress = useCallback(() => {
@@ -773,7 +821,16 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
             role="listbox"
             aria-label={isSymbolMode ? 'Outline symbols' : 'Files and folders'}
             onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-            onMouseLeave={!isCoarse ? () => setSelectedIdx((prev) => (isFiltering ? prev : -1)) : undefined}
+            onMouseLeave={
+              !isCoarse
+                ? () =>
+                    setSelectedIdx((prev) => {
+                      if (isFiltering) return prev;
+                      const currentIdx = filteredRows.findIndex((r) => r.isCurrent);
+                      return currentIdx >= 0 ? currentIdx : -1;
+                    })
+                : undefined
+            }
           >
             {loading && <div className="ms-bc-empty">Loading…</div>}
             {!loading && filteredRows.length === 0 && (

@@ -35,8 +35,18 @@ export function bootstrapExtensions() {
               mode: 'file', title: 'Select MS Code Extension', buttonText: 'Install', filters: [{ label: 'Extension Packages', extensions: ['msxt', 'zip'] }]
             });
             if (selectedPath) {
-              if (!selectedPath.toLowerCase().endsWith('.msxt')) alert('Invalid file type!');
-              else await useExtensionStore.getState().installLocalExtension(selectedPath);
+              const lower = selectedPath.toLowerCase();
+              if (!lower.endsWith('.msxt') && !lower.endsWith('.zip')) {
+                const { useNotificationStore } = await import('@/store/notificationStore');
+                useNotificationStore.getState().addNotification({
+                  type: 'error',
+                  title: 'Invalid Extension Package',
+                  message: 'Please select a .msxt or .zip extension package.',
+                  source: 'Extensions',
+                });
+              } else {
+                await useExtensionStore.getState().installLocalExtension(selectedPath);
+              }
             }
           }
         },

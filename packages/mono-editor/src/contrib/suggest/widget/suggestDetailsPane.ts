@@ -9,7 +9,7 @@ import {
   type SuggestDocsCaretBand,
   type SuggestDocsPlacementResult,
 } from '../../../common/util/suggestDocsPlacement';
-import type { CompletionItem } from '../../../common/languages/providers/types';
+import { CompletionItemKind, type CompletionItem } from '../../../common/languages/providers/types';
 import type { SuggestDocsMode, SuggestPalette, SuggestWidgetOptions } from './suggestStyle';
 
 export type BoxRect = SuggestDocsBoxRect;
@@ -70,7 +70,13 @@ export class SuggestDetailsPane {
     caretLine?: CaretLineBand,
     mode: Exclude<SuggestDocsMode, 'off'> = 'auto',
   ): void {
-    if (!listEl || suspended || !item) {
+    if (
+      !listEl ||
+      suspended ||
+      !item ||
+      item.kind === CompletionItemKind.Keyword ||
+      item.kind === CompletionItemKind.Text
+    ) {
       this.hide();
       return;
     }
@@ -102,7 +108,7 @@ export class SuggestDetailsPane {
         overflowX: 'hidden',
         overscrollBehavior: 'contain',
         overflowWrap: 'break-word',
-        wordBreak: 'break-word',
+        wordBreak: 'normal',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         fontSize: '13px',
         lineHeight: '1.45',
@@ -155,6 +161,7 @@ export class SuggestDetailsPane {
       const isDark = opts.themeType !== 'light';
       renderMarkdownToDom(d, docText, {
         isDark,
+        editorBackground: pal.background,
         background: pal.background,
         foreground: pal.foreground,
         mutedForeground: pal.detailForeground,
@@ -169,9 +176,9 @@ export class SuggestDetailsPane {
         hoverBackground: pal.hoverBackground,
         selectionBackground: pal.selectedBackground,
         selectionForeground: pal.selectedForeground,
-        codeBackground: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+        codeBackground: 'transparent',
         shadow: `0 2px 8px ${pal.shadow}`,
-      }, undefined, { codeFontFamily: opts.fontFamily });
+      }, undefined, { flatCodeBlocks: true, codeFontFamily: opts.fontFamily });
     }
     this.position(listEl, suspended, caretLine ?? this.lastCaretLine ?? undefined, mode);
   }

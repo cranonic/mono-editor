@@ -21,6 +21,11 @@
     "paths": {
       "@/*": ["./src/*"],
       "@mono/editor": ["../mono-editor/src/index.ts"],
+      "typescript": ["./node_modules/typescript/lib/typescript.d.ts"],
+      "typescript/*": ["./node_modules/typescript/*"],
+      "react": ["./node_modules/@types/react/index.d.ts"],
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime.d.ts"],
+      "react/jsx-dev-runtime": ["./node_modules/@types/react/jsx-dev-runtime.d.ts"],
       "vscode": ["./src/shims/vscode.ts"]
     }
   },

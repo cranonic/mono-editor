@@ -421,7 +421,7 @@ export const suggestionProperties: IConfigurationSection['properties'] = {
   'editor.hover.trigger': {
     title: 'Hover Trigger Mode',
     type: 'select',
-    defaultValue: 'hover',
+    defaultValue: 'click',
     order: 81,
     subCategory: 'Hover',
     tags: ['hover', 'mono'],
@@ -465,7 +465,7 @@ export const suggestionProperties: IConfigurationSection['properties'] = {
   'editor.hover.openOnMouseHover': {
     title: 'Open Hover On Mouse Hover',
     type: 'boolean',
-    defaultValue: true,
+    defaultValue: false,
     order: 85,
     subCategory: 'Hover',
     tags: ['hover', 'mono'],

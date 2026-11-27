@@ -5,8 +5,7 @@ import {
   virtualElementStartX,
 } from '../../../common/virtualText';
 import {
-  COLOR_SWATCH_ADVANCE,
-  COLOR_SWATCH_SIZE,
+  getColorSwatchMetrics,
   type FrameContext,
   type RenderPass,
 } from '../frameContext';
@@ -28,12 +27,13 @@ function paintStickyLineContent(
   lineHeight: number,
 ): { swatchAdvanceAt: (col: number) => number } {
   const { opts, tokenColors, measureColumnX, measureText } = frame;
-  const { theme, getLineTokens, cssWidth } = opts;
+  const { theme, getLineTokens, cssWidth, metrics } = opts;
+  const swatch = getColorSwatchMetrics(metrics.fontSize);
   const lineColors = frame.colorsForLine(line);
   const swatchEls = lineColors.length
     ? collectInlineVirtualElements({
         colors: lineColors,
-        swatchAdvancePx: COLOR_SWATCH_ADVANCE,
+        swatchAdvancePx: swatch.advance,
         measureText,
       })
     : [];
@@ -80,32 +80,33 @@ function paintStickyLineContent(
 
   // Paint inline color swatches in sticky header (aligned identically with real line)
   if (lineColors.length) {
-    const swatchY = Math.round(y + (lineHeight - COLOR_SWATCH_SIZE) / 2);
+    const swatchSize = swatch.size;
+    const swatchY = Math.round(y + (lineHeight - swatchSize) / 2);
     for (const cm of lineColors) {
       const baseRealX = measureColumnX(content, cm.startColumn);
       const sx = Math.round(textX0 + virtualElementStartX(baseRealX, swatchEls, cm.startColumn, 0) + 1);
-      if (sx + COLOR_SWATCH_SIZE < frame.contentLeft || sx > cssWidth) continue;
+      if (sx + swatchSize < frame.contentLeft || sx > cssWidth) continue;
 
       if (cm.rgba.a < 0.999) {
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(sx, swatchY, COLOR_SWATCH_SIZE, COLOR_SWATCH_SIZE);
+        ctx.fillRect(sx, swatchY, swatchSize, swatchSize);
         ctx.fillStyle = '#b0b0b0';
-        const half = Math.floor(COLOR_SWATCH_SIZE / 2);
+        const half = Math.floor(swatchSize / 2);
         ctx.fillRect(sx, swatchY, half, half);
-        ctx.fillRect(sx + half, swatchY + half, COLOR_SWATCH_SIZE - half, COLOR_SWATCH_SIZE - half);
+        ctx.fillRect(sx + half, swatchY + half, swatchSize - half, swatchSize - half);
       }
 
       ctx.fillStyle = rgbaToCss(cm.rgba);
-      ctx.fillRect(sx, swatchY, COLOR_SWATCH_SIZE, COLOR_SWATCH_SIZE);
+      ctx.fillRect(sx, swatchY, swatchSize, swatchSize);
       ctx.strokeStyle = frame.dark ? 'rgba(255, 255, 255, 0.42)' : 'rgba(15, 23, 42, 0.35)';
       ctx.lineWidth = 1;
-      ctx.strokeRect(sx + 0.5, swatchY + 0.5, COLOR_SWATCH_SIZE - 1, COLOR_SWATCH_SIZE - 1);
+      ctx.strokeRect(sx + 0.5, swatchY + 0.5, swatchSize - 1, swatchSize - 1);
 
       frame.stickyColorHits.push({
         match: cm,
         x: sx - 2,
         y,
-        w: COLOR_SWATCH_ADVANCE + 2,
+        w: swatch.advance + 2,
         h: lineHeight,
       });
     }

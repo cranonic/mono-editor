@@ -18,8 +18,19 @@ const SEMANTIC_LEGEND = {
 };
 
 export function registerSemanticTokens(state: LspState): void {
+  const serverLegend = (state.serverCapabilities?.semanticTokensProvider as any)?.legend;
+  const legend =
+    serverLegend &&
+    Array.isArray(serverLegend.tokenTypes) &&
+    Array.isArray(serverLegend.tokenModifiers)
+      ? {
+          tokenTypes: serverLegend.tokenTypes,
+          tokenModifiers: serverLegend.tokenModifiers,
+        }
+      : SEMANTIC_LEGEND;
+
   const provider: any = {
-    getLegend: () => SEMANTIC_LEGEND,
+    getLegend: () => legend,
     provideDocumentSemanticTokens: async (model: monaco.editor.ITextModel) => {
       if (!state.initialized) return null;
       try {

@@ -5,7 +5,16 @@
 
 import type * as monaco from '@/core/mono';
 
+export interface ILspTransport {
+  readonly kind: 'websocket' | 'worker';
+  readonly isOpen: boolean;
+  send(msg: object): void;
+  close(): void;
+}
+
 export interface LspOptions {
+  mode?: 'web-worker' | 'terminal';
+  workerFactory?: () => Worker;
   hover?: boolean;
   completion?: boolean;
   linting?: boolean;
@@ -39,8 +48,12 @@ export interface JsonRpcNotification {
 }
 
 export interface LspState {
-  /** Active WebSocket to the language server (null when disconnected). */
+  /** Active WebSocket to the language server (null when disconnected or in worker mode). */
   ws: WebSocket | null;
+  /** Unified transport abstraction (WebSocket or Web Worker). */
+  transport: ILspTransport | null;
+  /** Active server mode ('web-worker' or 'terminal'). */
+  mode: 'web-worker' | 'terminal';
   /** Language id the connection was opened for (e.g. "typescript"). */
   languageId: string;
   /** Workspace root URI sent during initialize. */
@@ -61,17 +74,17 @@ export interface LspState {
   isInitializing: boolean;
   /** Monaco provider disposables registered for this connection. */
   disposables: monaco.IDisposable[];
-  /** Model-id → LSP file URI map. */
+  /** Model-key → LSP file URI map. */
   modelUriMap: Map<string, string>;
   /** Set of URIs already sent via textDocument/didOpen. */
   openedUris: Set<string>;
   /**
-   * Per-model content-change listeners (model.id → disposable).
+   * Per-model content-change listeners (modelKey → disposable).
    * Keeps the language server in sync while the user types so diagnostics
    * / inlay hints refresh without requiring a tab switch.
    */
   contentListeners: Map<string, monaco.IDisposable>;
-  /** Debounce timers for didChange (model.id → timeout handle). */
+  /** Debounce timers for didChange (modelKey → timeout handle). */
   changeDebounceTimers: Map<string, ReturnType<typeof setTimeout>>;
   /** Monotonic JSON-RPC request id. */
   msgId: number;
@@ -90,6 +103,8 @@ export interface LspState {
 export function createInitialState(): LspState {
   return {
     ws: null,
+    transport: null,
+    mode: 'terminal',
     languageId: '',
     rootUri: 'file:///sdcard',
     initializationOptions: {},

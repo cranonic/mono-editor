@@ -41,7 +41,7 @@ class SnippetRegistry {
     this.registeredLanguages.add(languageId);
 
     const provider = monaco.languages.registerCompletionItemProvider(languageId, {
-      triggerCharacters: ['!', ':', '>', '*', '.', '#', '+', '('],
+      triggerCharacters: ['!', ':', '>', '*', '.', '#', '+'],
       provideCompletionItems: (model: any, position: any) => {
         try {
           const wordUntil = model.getWordUntilPosition(position);

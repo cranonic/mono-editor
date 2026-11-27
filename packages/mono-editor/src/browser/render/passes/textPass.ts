@@ -3,8 +3,7 @@ import { MarkerSeverity, MarkerTag, type IMarker } from '../../../common/decorat
 import type { SemanticTokenSpan } from '../../../common/languages/semanticTokens';
 import { INLAY_CHIP_PAD_X } from '../../../common/virtualText';
 import {
-  COLOR_SWATCH_ADVANCE,
-  COLOR_SWATCH_SIZE,
+  getColorSwatchMetrics,
   type FrameContext,
   type RenderPass,
 } from '../frameContext';
@@ -372,33 +371,35 @@ export const textPass: RenderPass = {
       // Whitespace rendering (dots & tab arrows)
       paintWhitespaceChars(ctx, f, content, seg, y, lineHeight);
 
-      // Inline Color Swatches
+      // Inline Color Swatches (scaled dynamically with editor fontSize)
       if (segColors.length) {
-        const swatchY = Math.round(y + (lineHeight - COLOR_SWATCH_SIZE) / 2);
+        const swatch = getColorSwatchMetrics(fontSize);
+        const swatchSize = swatch.size;
+        const swatchY = Math.round(y + (lineHeight - swatchSize) / 2);
         for (const cm of segColors) {
           const sx = Math.round(f.segVirtualX(content, seg, cm.startColumn, 0) + 1);
-          if (sx + COLOR_SWATCH_SIZE < f.contentLeft || sx > cssWidth) continue;
+          if (sx + swatchSize < f.contentLeft || sx > cssWidth) continue;
 
           if (cm.rgba.a < 0.999) {
             ctx.fillStyle = '#ffffff';
-            ctx.fillRect(sx, swatchY, COLOR_SWATCH_SIZE, COLOR_SWATCH_SIZE);
+            ctx.fillRect(sx, swatchY, swatchSize, swatchSize);
             ctx.fillStyle = '#b0b0b0';
-            const half = Math.floor(COLOR_SWATCH_SIZE / 2);
+            const half = Math.floor(swatchSize / 2);
             ctx.fillRect(sx, swatchY, half, half);
-            ctx.fillRect(sx + half, swatchY + half, COLOR_SWATCH_SIZE - half, COLOR_SWATCH_SIZE - half);
+            ctx.fillRect(sx + half, swatchY + half, swatchSize - half, swatchSize - half);
           }
 
           ctx.fillStyle = rgbaToCss(cm.rgba);
-          ctx.fillRect(sx, swatchY, COLOR_SWATCH_SIZE, COLOR_SWATCH_SIZE);
+          ctx.fillRect(sx, swatchY, swatchSize, swatchSize);
           ctx.strokeStyle = f.dark ? 'rgba(255, 255, 255, 0.42)' : 'rgba(15, 23, 42, 0.35)';
           ctx.lineWidth = 1;
-          ctx.strokeRect(sx + 0.5, swatchY + 0.5, COLOR_SWATCH_SIZE - 1, COLOR_SWATCH_SIZE - 1);
+          ctx.strokeRect(sx + 0.5, swatchY + 0.5, swatchSize - 1, swatchSize - 1);
 
           f.colorHits.push({
             match: cm,
             x: sx - 2,
             y,
-            w: COLOR_SWATCH_ADVANCE + 2,
+            w: swatch.advance + 2,
             h: lineHeight,
           });
         }

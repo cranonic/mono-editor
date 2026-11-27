@@ -19,11 +19,14 @@ export class CodeActionController implements IEditorContribution {
   private readonly widget: CodeActionLightbulbWidget;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private lightbulbMode: LightbulbEnabledMode;
+  private featuresSub: { dispose(): void } | null = null;
+  private actionProviders = new WeakMap<CodeAction, { resolveCodeAction?: (a: CodeAction, token: { isCancellationRequested: boolean }) => CodeAction | Promise<CodeAction | null | undefined> | null | undefined }>();
 
   constructor(host: IEditorContributionHost) {
     this.host = host;
     this.lightbulbMode = host.initialOptions.lightbulb?.enabled ?? 'on';
     this.widget = new CodeActionLightbulbWidget(host.root);
+    this.featuresSub = languageFeatures.onDidChange(() => this.scheduleLightbulb());
 
     host.keybindings.add({
       id: MonoCommands.QuickFix,
@@ -91,6 +94,8 @@ export class CodeActionController implements IEditorContribution {
   dispose(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    this.featuresSub?.dispose();
+    this.featuresSub = null;
     this.widget.dispose();
   }
 
@@ -117,8 +122,11 @@ export class CodeActionController implements IEditorContribution {
           p.provideCodeActions(modelLike, range, { markers: overlappingMarkers }, token),
         );
         if (!list) continue;
-        if (Array.isArray(list)) actions.push(...list);
-        else if (list.actions?.length) actions.push(...list.actions);
+        const found = Array.isArray(list) ? list : (list.actions ?? []);
+        for (const a of found) {
+          this.actionProviders.set(a, p as any);
+          actions.push(a);
+        }
       } catch (e) {
         console.warn('[mono codeAction]', e);
       }
@@ -127,13 +135,25 @@ export class CodeActionController implements IEditorContribution {
   }
 
   private executeCodeAction(action: CodeAction): void {
-    if (action.edit) this.host.applyWorkspaceEdit(action.edit, 'codeAction');
-    if (action.command) {
-      void this.host.executeCommand(action.command.id, ...(action.command.arguments ?? []));
-    }
-    this.widget.hideAll();
-    this.host.focus();
-    this.scheduleLightbulb();
+    void (async () => {
+      let resolved = action;
+      const prov = this.actionProviders.get(action);
+      if (!resolved.edit && prov && typeof prov.resolveCodeAction === 'function') {
+        try {
+          const r = await Promise.resolve(prov.resolveCodeAction(resolved, { isCancellationRequested: false }));
+          if (r) resolved = r;
+        } catch (e) {
+          console.warn('[mono codeAction resolve]', e);
+        }
+      }
+      if (resolved.edit) this.host.applyWorkspaceEdit(resolved.edit, 'codeAction');
+      if (resolved.command) {
+        void this.host.executeCommand(resolved.command.id, ...(resolved.command.arguments ?? []));
+      }
+      this.widget.hideAll();
+      this.host.focus();
+      this.scheduleLightbulb();
+    })();
   }
 
   private scheduleLightbulb(): void {

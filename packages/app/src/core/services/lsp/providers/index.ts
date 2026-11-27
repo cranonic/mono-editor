@@ -10,7 +10,11 @@ import type { LspOptions } from '../types';
 
 import { registerCompletion }        from './completion';
 import { registerHover }             from './hover';
-import { registerDefinition }        from './definition';
+import {
+  registerDefinition,
+  registerTypeDefinition,
+  registerImplementation,
+} from './definition';
 import { registerReferences }        from './references';
 import { registerDocumentSymbol }    from './documentSymbol';
 import { registerDocumentHighlight } from './documentHighlight';
@@ -72,6 +76,12 @@ export function registerProviders(state: LspState, options: LspOptions = {}): vo
     if (options.hover !== false)             registerHover(state);
     if (options.references !== false || options.definition !== false) {
       registerDefinition(state);
+      if (serverHas(caps, 'typeDefinitionProvider')) {
+        registerTypeDefinition(state);
+      }
+      if (serverHas(caps, 'implementationProvider')) {
+        registerImplementation(state);
+      }
     }
     if (options.references !== false && serverHas(caps, 'referencesProvider')) {
       registerReferences(state);

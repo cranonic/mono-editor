@@ -208,15 +208,15 @@ export function buildMonoEditorOptions(
   const codeLensFontFamily = String(settings['editor.codeLensFontFamily'] ?? '').trim();
 
   // Hover
-  const rawHoverTrigger = String(settings['editor.hover.trigger'] ?? 'hover');
+  const rawHoverTrigger = String(settings['editor.hover.trigger'] ?? 'click');
   const hoverTrigger: 'click' | 'hover' | 'off' = (
-    ['click', 'hover', 'off'].includes(rawHoverTrigger) ? rawHoverTrigger : 'hover'
+    ['click', 'hover', 'off'].includes(rawHoverTrigger) ? rawHoverTrigger : 'click'
   ) as 'click' | 'hover' | 'off';
 
   // Diagnostics popup
-  const rawDiagPopup = String(settings['editor.diagnostics.popup'] ?? 'hover');
+  const rawDiagPopup = String(settings['editor.diagnostics.popup'] ?? 'click');
   const diagPopup: 'hover' | 'click' | 'off' = (
-    ['hover', 'click', 'off'].includes(rawDiagPopup) ? rawDiagPopup : 'hover'
+    ['hover', 'click', 'off'].includes(rawDiagPopup) ? rawDiagPopup : 'click'
   ) as 'hover' | 'click' | 'off';
 
   // Context menu (native Mono Editor menu)
@@ -525,7 +525,7 @@ export function buildMonoEditorOptions(
       hidingDelay: Math.max(0, num(settings['editor.hover.hidingDelay'], 300)),
       sticky: bool(settings['editor.hover.sticky'], true),
       above: bool(settings['editor.hover.above'], true),
-      openOnMouseHover: bool(settings['editor.hover.openOnMouseHover'], true),
+      openOnMouseHover: bool(settings['editor.hover.openOnMouseHover'], false),
     },
     diagnostics: {
       popup: diagPopup,

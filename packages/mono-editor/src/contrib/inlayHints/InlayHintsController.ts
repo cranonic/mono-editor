@@ -65,19 +65,44 @@ export class InlayHintsController implements IEditorContribution {
   private liftRaf = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private seq = 0;
+  private featuresSub: { dispose(): void } | null = null;
+  private providerSubs: Array<{ dispose(): void }> = [];
 
   constructor(host: IEditorContributionHost) {
     this.host = host;
-    this.enabled = host.initialOptions.inlayHints?.enabled !== false;
+    const optEnabled = host.initialOptions.inlayHints?.enabled as unknown;
+    this.enabled = optEnabled !== false && optEnabled !== 'off';
     this.onClickMode = host.initialOptions.inlayHints?.onClick ?? 'placeCursor';
     host.view.setLineInlayHintsProvider((ln) => this.getHintsForLine(ln));
+    this.featuresSub = languageFeatures.onDidChange(() => {
+      this.bindProviderEmitters();
+      this.scheduleFetch(40);
+    });
+    this.bindProviderEmitters();
     this.scheduleFetch(60);
+  }
+
+  private bindProviderEmitters(): void {
+    for (const s of this.providerSubs) {
+      try { s.dispose(); } catch { /* ignore */ }
+    }
+    this.providerSubs = [];
+    if (this.host.isDisposed()) return;
+    const providers = languageFeatures.getInlayHintsProviders(this.host.getModel().getLanguageId());
+    for (const p of providers) {
+      const ev = (p as { onDidChangeInlayHints?: (l: () => void) => { dispose(): void } }).onDidChangeInlayHints;
+      if (typeof ev === 'function') {
+        const sub = ev(() => this.scheduleFetch(40));
+        if (sub && typeof sub.dispose === 'function') this.providerSubs.push(sub);
+      }
+    }
   }
 
   onModelChange(_model: TextModel): void {
     this.byLine.clear();
     this.liftState.clear();
     this.stopLiftAnim();
+    this.bindProviderEmitters();
     this.scheduleFetch(60);
   }
 
@@ -101,13 +126,15 @@ export class InlayHintsController implements IEditorContribution {
 
   onOptionsChange(patch: Partial<MonoEditorOptions>): void {
     if (patch.inlayHints?.enabled !== undefined) {
-      this.enabled = patch.inlayHints.enabled;
+      const val = patch.inlayHints.enabled as unknown;
+      this.enabled = val !== false && val !== 'off';
       if (!this.enabled) {
         this.byLine.clear();
         this.liftState.clear();
         this.stopLiftAnim();
         this.host.view.schedulePaint();
       } else {
+        this.bindProviderEmitters();
         this.scheduleFetch(30);
       }
     }
@@ -177,6 +204,12 @@ export class InlayHintsController implements IEditorContribution {
   dispose(): void {
     this.cancelTimer();
     this.stopLiftAnim();
+    this.featuresSub?.dispose();
+    this.featuresSub = null;
+    for (const s of this.providerSubs) {
+      try { s.dispose(); } catch { /* ignore */ }
+    }
+    this.providerSubs = [];
     this.host.view.setLineInlayHintsProvider(null);
     this.byLine.clear();
     this.liftState.clear();

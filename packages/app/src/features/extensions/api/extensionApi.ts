@@ -5,6 +5,7 @@ import { loadExtensionJsonSafely , loadManifestSafely } from '../services/extens
 import { useExtensionStore } from '../store/extensionStore'; 
 import { fs } from '@/core/fileSystem';
 import { supabase } from '@/core/server/supabaseClient';
+import { isBuiltinStoreDir, loadBuiltinText } from '../builtin/builtinExtensions';
 
 /**
  * Connects to the remote Supabase catalog repository to retrieve a paginated index 
@@ -93,15 +94,16 @@ async function resolveContributionData(storeDir: string, data: any) {
  */
 async function loadTextSafely(storeDir: string, filePath: string | undefined, fallbackText: string): Promise<string> {
   if (!filePath) return fallbackText;
+  if (isBuiltinStoreDir(storeDir)) {
+    return loadBuiltinText(storeDir, filePath) ?? fallbackText;
+  }
   try {
-    // const targetPath = `ms-storage://${storeDir}/${filePath}`;
-    
     const targetPath = (storeDir.startsWith('/') || storeDir.startsWith('file://'))
       ? `${storeDir}/${filePath}`
       : `ms-storage://${storeDir}/${filePath}`;
-      
+
     return await fs.readFile(targetPath);
-  } catch (err) {
+  } catch {
     return fallbackText;
   }
 }

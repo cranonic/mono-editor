@@ -198,7 +198,7 @@ export class SignatureHelpWidget {
 
     const resolved = this.theme ?? resolveWidgetTheme(DEFAULT_THEME);
     const isDark = resolved.isDark;
-    const bg = resolved.background || (isDark ? '#252526' : '#f3f3f3');
+    const bg = resolved.editorBackground || (isDark ? '#1e1e1e' : '#ffffff');
     const border = resolved.border || (isDark ? '#454545' : '#c8c8c8');
     const fg = resolved.foreground || (isDark ? '#cccccc' : '#616161');
     const muted = resolved.mutedForeground;
@@ -240,7 +240,8 @@ export class SignatureHelpWidget {
       padding: '5px 8px',
       fontFamily: this.fontFamily,
       fontSize: `${codeFontSize}px`,
-      wordBreak: 'break-word',
+      wordBreak: 'normal',
+      overflowWrap: 'break-word',
     });
 
     if (help.signatures.length > 1) {
@@ -307,6 +308,9 @@ export class SignatureHelpWidget {
     sigEl.style.flex = '1';
     sigEl.style.minWidth = '0';
     sigEl.style.lineHeight = '1.45';
+    sigEl.style.whiteSpace = 'pre-wrap';
+    sigEl.style.wordBreak = 'normal';
+    sigEl.style.overflowWrap = 'break-word';
     const range = resolveParameterLabelRange(
       sig.label,
       activeParam?.label,
@@ -356,14 +360,20 @@ export class SignatureHelpWidget {
         const pWrap = document.createElement('div');
         pWrap.className = 'mono-sig-param-doc';
         pWrap.style.marginBottom = sigDoc ? '4px' : '0';
-        renderMarkdownToDom(pWrap, paramDoc, resolved, undefined, { codeFontFamily: this.fontFamily });
+        renderMarkdownToDom(pWrap, paramDoc, resolved, undefined, {
+          flatCodeBlocks: true,
+          codeFontFamily: this.fontFamily,
+        });
         body.appendChild(pWrap);
       }
       if (sigDoc) {
         const sWrap = document.createElement('div');
         sWrap.className = 'mono-sig-overview-doc';
         sWrap.style.color = muted;
-        renderMarkdownToDom(sWrap, sigDoc, resolved, undefined, { codeFontFamily: this.fontFamily });
+        renderMarkdownToDom(sWrap, sigDoc, resolved, undefined, {
+          flatCodeBlocks: true,
+          codeFontFamily: this.fontFamily,
+        });
         body.appendChild(sWrap);
       }
       el.appendChild(body);

@@ -85,6 +85,16 @@ export const getScopeStackAtPosition = async (
  * @param fallbackEditor A fallback reference fallback instance used if viewports are uncalculated.
  */
 export const getActiveEditor = (fallbackEditor?: any) => {
-  const editors = monaco.editor.getEditors();
-  return editors.find(e => (e.getDomNode()?.clientWidth || 0) > 0) || fallbackEditor;
+  const editors = monaco.editor.getEditors?.() ?? [];
+  const visible = editors.find((e: any) => {
+    const dom = e?.getDomNode?.() ?? e?.getContainerDomNode?.() ?? e?.domElement;
+    if (dom && typeof dom.clientWidth === 'number') {
+      return dom.clientWidth > 0 && dom.clientHeight > 0;
+    }
+    return true;
+  });
+  if (visible) return visible;
+  if (editors.length > 0) return editors[editors.length - 1];
+  const globalMono = typeof window !== 'undefined' ? (window as any).__monoEditor : undefined;
+  return globalMono || fallbackEditor;
 };

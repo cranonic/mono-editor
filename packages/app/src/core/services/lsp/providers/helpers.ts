@@ -64,9 +64,12 @@ export function completionKind(kind?: number): monaco.languages.CompletionItemKi
     1:  K.Text,          2:  K.Method,       3:  K.Function,
     4:  K.Constructor,   5:  K.Field,        6:  K.Variable,
     7:  K.Class,         8:  K.Interface,    9:  K.Module,
-    10: K.Property,      12: K.Value,        14: K.Keyword,
-    17: K.File,          18: K.Reference,    22: K.Struct,
-    23: K.Event,         25: K.TypeParameter,
+    10: K.Property,      11: K.Unit,         12: K.Value,
+    13: K.Enum,          14: K.Keyword,      15: K.Snippet,
+    16: K.Color,         17: K.File,         18: K.Reference,
+    19: K.Folder,        20: K.EnumMember,   21: K.Constant,
+    22: K.Struct,        23: K.Event,        24: K.Operator,
+    25: K.TypeParameter,
   };
   return map[kind ?? 1] ?? K.Text;
 }

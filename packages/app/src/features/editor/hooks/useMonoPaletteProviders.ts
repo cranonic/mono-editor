@@ -204,7 +204,11 @@ export function useMonoPaletteProviders(editor: MonoEditorPaletteHost | null | u
       name: 'Go to Line/Column',
       provideItems: (search) => {
         const activeEd = (editor ?? (window as any).__monoEditor) as any;
-        const total = activeEd?.getLineCount?.() ?? 1;
+        const model = activeEd?.getModel?.();
+        const total = Math.max(
+          1,
+          Number(model?.getLineCount?.() ?? activeEd?.getLineCount?.() ?? 1) || 1,
+        );
         const trimmed = (search || '').trim();
         if (!trimmed) {
           const cur = activeEd?.getPosition?.();
@@ -218,7 +222,13 @@ export function useMonoPaletteProviders(editor: MonoEditorPaletteHost | null | u
           return [{ id: 'err', label: 'Invalid line number', readonly: true }];
         }
         line = Math.max(1, Math.min(total, line));
-        const maxCol = (activeEd?.getModel?.()?.getLineLength?.(line) ?? 0) + 1;
+        const lineLen =
+          typeof model?.getLineLength === 'function'
+            ? model.getLineLength(line)
+            : typeof model?.getLineContent === 'function'
+              ? String(model.getLineContent(line) ?? '').length
+              : 0;
+        const maxCol = lineLen + 1;
         col = Number.isNaN(col) ? 1 : Math.max(1, Math.min(maxCol, col));
         return [
           {

@@ -143,7 +143,18 @@ export function bootstrapExplorer() {
         defaultHeight: 280,
         minHeight: 50,
         actions: [
-          { id: 'symbols-refresh', icon: 'refresh', label: 'Refresh Symbols' }
+          {
+            id: 'symbols-collapse-all',
+            icon: 'collapse-all',
+            label: 'Collapse/Expand All',
+            onClick: () => window.dispatchEvent(new CustomEvent('ms-outline-collapse-all')),
+          },
+          {
+            id: 'symbols-refresh',
+            icon: 'refresh',
+            label: 'Refresh Symbols',
+            onClick: () => window.dispatchEvent(new CustomEvent('ms-outline-refresh')),
+          },
         ],
       },
       

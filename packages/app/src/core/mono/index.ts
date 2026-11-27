@@ -234,6 +234,12 @@ export const languages = {
   registerDefinitionProvider(selector: any, provider: any) {
     return registerForSelector(selector, rawLanguages.registerDefinitionProvider, provider);
   },
+  registerTypeDefinitionProvider(selector: any, provider: any) {
+    return registerForSelector(selector, rawLanguages.registerTypeDefinitionProvider, provider);
+  },
+  registerImplementationProvider(selector: any, provider: any) {
+    return registerForSelector(selector, rawLanguages.registerImplementationProvider, provider);
+  },
   registerReferenceProvider(selector: any, provider: any) {
     return registerForSelector(selector, rawLanguages.registerReferenceProvider, provider);
   },

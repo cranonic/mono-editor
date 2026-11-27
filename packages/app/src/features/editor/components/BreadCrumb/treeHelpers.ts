@@ -32,7 +32,33 @@ export function isMatchingActiveSymbol(
   if (sym.name !== activeItem.label) return false;
   const r = activeItem.range ?? activeItem.selectionRange;
   if (!r) return false;
-  return sym.range.startLineNumber === r.startLineNumber;
+  if (sym.range.startLineNumber === r.startLineNumber) return true;
+  if (sym.selectionRange && sym.selectionRange.startLineNumber === r.startLineNumber) return true;
+  return false;
+}
+
+/**
+ * Finds the deepest symbol in a hierarchical DocumentSymbol tree whose range
+ * contains `lineNumber`. Used by Sidebar Outline for cursor-following highlight.
+ */
+export function findDeepestSymbolAtLine(
+  symbols: readonly DocumentSymbol[],
+  lineNumber: number,
+): DocumentSymbol | null {
+  let match: DocumentSymbol | null = null;
+  for (const sym of symbols) {
+    const start = sym.range?.startLineNumber ?? 0;
+    const end = sym.range?.endLineNumber ?? start;
+    if (lineNumber >= start && lineNumber <= Math.max(start, end)) {
+      match = sym;
+      if (sym.children && sym.children.length > 0) {
+        const deeper = findDeepestSymbolAtLine(sym.children, lineNumber);
+        if (deeper) return deeper;
+      }
+      return match;
+    }
+  }
+  return match;
 }
 
 /**

@@ -39,12 +39,14 @@ import {
 
 export type { RenderMetrics };
 
-/** Horizontal pixel advance reserved for each inline Monaco-style color bullet swatch. */
 export const COLOR_SWATCH_SIZE = 11;
 export const COLOR_SWATCH_GAP = 5;
 export const COLOR_SWATCH_ADVANCE = COLOR_SWATCH_SIZE + COLOR_SWATCH_GAP;
-
-/** Smaller width; body hangs below tip (tip stays on baseline). */
+export function getColorSwatchMetrics(fontSize: number): { size: number; gap: number; advance: number } {
+  const fs = Math.max(6, fontSize || 14);
+  const size = Math.max(8, Math.round(fs * 0.78)), gap = Math.max(3, Math.round(fs * 0.35));
+  return { size, gap, advance: size + gap };
+}
 export const TEARDROP = { w: 26, h: 34 };
 
 export interface TeardropHit {
@@ -318,14 +320,14 @@ export function resolveDynamicCaretColor(
   return softenDynamicColor(rawColor, isDark);
 }
 
-export function colorAdvanceBefore(colors: readonly ColorMatch[] | undefined, col: number): number {
+export function colorAdvanceBefore(colors: readonly ColorMatch[] | undefined, col: number, fontSize?: number): number {
   if (!colors || !colors.length) return 0;
   let count = 0;
   for (const c of colors) {
     if (c.startColumn <= col) count++;
     else break;
   }
-  return count * COLOR_SWATCH_ADVANCE;
+  return count * (fontSize !== undefined ? getColorSwatchMetrics(fontSize).advance : COLOR_SWATCH_ADVANCE);
 }
 
 export function buildFrameContext(
@@ -485,7 +487,7 @@ export function buildFrameContext(
         ? []
         : collectInlineVirtualElements({
             colors, inlayHints: inlays, ghostRuns: ghosts,
-            swatchAdvancePx: COLOR_SWATCH_ADVANCE, measureText,
+            swatchAdvancePx: getColorSwatchMetrics(metrics.fontSize).advance, measureText,
           });
       lineVirtualCache.set(ln, els);
     }

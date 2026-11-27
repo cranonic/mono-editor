@@ -8,6 +8,11 @@ import { syncExtensionConfigurations }                      from '../services/ex
 import { ExtensionHost }                                    from '../services/extensionHost';
 import { installExtensionFromLocal,
          installExtensionFromCloud }                        from '../services/extensionInstaller';
+import {
+  BUILTIN_EXTENSIONS,
+  isBuiltinStoreDir,
+  toBuiltinExtensionModel,
+} from '../builtin/builtinExtensions';
 import { loadManifestSafely } from '../services/extensionLoader';
 import { fs }                                               from '@/core/fileSystem';
 import { supabase }                                         from '@/core/server/supabaseClient';
@@ -88,11 +93,47 @@ export const useExtensionStore = create<ExtensionStoreState>()(
 
         set({ isLoading: true, error: null });
 
-        const persistedRecords  = get().records;
+        const persistedRecords: Record<string, ExtensionRecord> = { ...get().records };
         const localExtensions: Extension[] = [];
+        const seenIds = new Set<string>();
+
+        // Phase 0 — register bundled workspace built-in extensions (e.g. packages/extensions/ts)
+        let recordsChanged = false;
+        for (const builtin of BUILTIN_EXTENSIONS) {
+          const existing = persistedRecords[builtin.id];
+          if (!existing) {
+            persistedRecords[builtin.id] = {
+              state: 'installed-enabled',
+              installedAt: Date.now(),
+              version: builtin.manifest.version || '1.0.0',
+              installedFrom: builtin.storeDir,
+            };
+            recordsChanged = true;
+          } else if (isBuiltinStoreDir(existing.installedFrom) && existing.version !== builtin.manifest.version) {
+            persistedRecords[builtin.id] = {
+              ...existing,
+              version: builtin.manifest.version || existing.version,
+              installedFrom: builtin.storeDir,
+            };
+            recordsChanged = true;
+          }
+
+          // Only add built-in model if user has not overridden it with a custom local/cloud install
+          if (!existing || isBuiltinStoreDir(existing.installedFrom)) {
+            localExtensions.push(toBuiltinExtensionModel(builtin));
+            seenIds.add(builtin.id);
+          }
+        }
 
         // Phase 1 — restore installed extensions from the local filesystem
         for (const [id, record] of Object.entries(persistedRecords)) {
+          if (seenIds.has(id)) continue;
+          // If a previously bundled built-in extension was omitted from this build, prune its stale record cleanly.
+          if (isBuiltinStoreDir(record.installedFrom)) {
+            delete persistedRecords[id];
+            recordsChanged = true;
+            continue;
+          }
           try {
             const manifest = await loadManifestSafely(record.installedFrom) as ExtensionManifest;
             localExtensions.push({
@@ -112,7 +153,11 @@ export const useExtensionStore = create<ExtensionStoreState>()(
 
         await syncExtensionConfigurations(localExtensions, persistedRecords);
         await ExtensionHost.initAllEnabledExtensions(persistedRecords);
-        set({ allExtensions: localExtensions, isLoading: false });
+        set({
+          allExtensions: localExtensions,
+          ...(recordsChanged ? { records: persistedRecords } : {}),
+          isLoading: false,
+        });
 
         // Phase 2 — background: merge registry data + check for updates
         get().fetchMarketplace(0, true);
@@ -441,6 +486,7 @@ export const useExtensionStore = create<ExtensionStoreState>()(
             } as any,
           };
 
+          await ExtensionHost.deactivateExtension(completeManifest.id);
           await syncExtensionConfigurations(nextExts, nextRecords);
           set({ allExtensions: nextExts, records: nextRecords, isLoading: false });
           await ExtensionHost.activateExtension(completeManifest.id, storeDir);
@@ -490,6 +536,7 @@ export const useExtensionStore = create<ExtensionStoreState>()(
           };
 
           // 3. Sync & Start Engine 
+          await ExtensionHost.deactivateExtension(completeManifest.id);
           await syncExtensionConfigurations(nextExts, nextRecords);
           set({ allExtensions: nextExts, records: nextRecords, isLoading: false });
           

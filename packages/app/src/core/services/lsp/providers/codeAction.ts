@@ -41,11 +41,12 @@ export function registerCodeAction(state: LspState): void {
             if (item.command && !item.edit && !item.title) {
               // rare shape
             }
-            const action: monaco.languages.CodeAction = {
+            const action: monaco.languages.CodeAction & { __lspCodeAction?: any } = {
               title: item.title || item.command?.title || 'Code Action',
               kind: item.kind || 'quickfix',
               isPreferred: item.isPreferred,
               diagnostics: context.markers,
+              __lspCodeAction: item,
             };
 
             if (item.edit) {
@@ -64,6 +65,29 @@ export function registerCodeAction(state: LspState): void {
         } catch {
           return { actions: [], dispose: () => {} };
         }
+      },
+
+      resolveCodeAction: async (action: any, token: any) => {
+        if (!state.initialized || token?.isCancellationRequested) return action;
+        if (action.edit) return action;
+        const raw = action.__lspCodeAction;
+        if (!raw) return action;
+        try {
+          const resolved: any = await sendRequest(state, 'codeAction/resolve', raw);
+          if (resolved?.edit) {
+            action.edit = workspaceEditToMonaco(resolved.edit);
+          }
+          if (resolved?.command && !action.command) {
+            action.command = {
+              id: resolved.command.command || resolved.command.id,
+              title: resolved.command.title || action.title,
+              arguments: resolved.command.arguments,
+            };
+          }
+        } catch {
+          /* optional resolve */
+        }
+        return action;
       },
     })
   );

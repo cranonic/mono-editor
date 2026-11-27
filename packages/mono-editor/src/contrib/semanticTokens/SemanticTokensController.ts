@@ -22,6 +22,7 @@ export class SemanticTokensController implements IEditorContribution {
   private rangeTimer: ReturnType<typeof setTimeout> | null = null;
   private fullSeq = 0;
   private rangeSeq = 0;
+  private featuresSub: { dispose(): void } | null = null;
 
   constructor(host: IEditorContributionHost) {
     this.host = host;
@@ -29,6 +30,10 @@ export class SemanticTokensController implements IEditorContribution {
     host.view.setLineSemanticTokensProvider((ln) =>
       this.enabled ? this.cache.getLineSpans(ln) : [],
     );
+    this.featuresSub = languageFeatures.onDidChange(() => {
+      this.scheduleFull(40);
+      this.scheduleRange(40);
+    });
     this.scheduleFull(80);
     this.scheduleRange(60);
   }
@@ -66,6 +71,8 @@ export class SemanticTokensController implements IEditorContribution {
     if (this.rangeTimer) clearTimeout(this.rangeTimer);
     this.fullTimer = null;
     this.rangeTimer = null;
+    this.featuresSub?.dispose();
+    this.featuresSub = null;
     this.host.view.setLineSemanticTokensProvider(null);
     this.cache.clear();
   }
@@ -92,7 +99,11 @@ export class SemanticTokensController implements IEditorContribution {
     if (!this.enabled || this.host.isDisposed()) return;
     const model = this.host.getModel();
     const providers = languageFeatures.getDocumentSemanticTokensProviders(model.getLanguageId());
-    if (!providers.length) return;
+    if (!providers.length) {
+      this.cache.clear();
+      this.host.view.schedulePaint();
+      return;
+    }
 
     const my = ++this.fullSeq;
     const provider = providers[0]!;

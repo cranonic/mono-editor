@@ -17,6 +17,7 @@ import {
   type CompletionContext,
   type CompletionItem,
   type CompletionProvider,
+  type ModelLike,
 } from '../../common/languages/providers/types';
 import type { TextModel } from '../../common/model/TextModel';
 import {
@@ -27,7 +28,12 @@ import {
 import {
   ensureDefaultCompletionProviders,
   filterAndSortSuggestions,
+  isBuiltinCompletionProvider,
+  isMemberAccessContext,
+  isSnippetCompletionItem,
+  isSuppressedSuggestOpenBracket,
   labelOfCompletion,
+  orderCompletionProviders,
   scoreCompletionMatch,
 } from './suggestFilter';
 import {
@@ -86,6 +92,7 @@ export class SuggestController {
   private kindVisibility: Partial<Record<number, boolean>> = {};
   private getTokenTypeAt?: (lineNumber: number, column: number) => string | null;
   private getLanguageIdAtPosition?: (lineNumber: number, column: number) => string;
+  private getModelLike?: (effectiveLang?: string) => ModelLike;
   private onVisibilityChange?: (visible: boolean, rect: WidgetBoxRect | null) => void;
   private onTabFallback?: () => void;
   private anchorPos: { lineNumber: number; column: number } | null = null;
@@ -183,6 +190,7 @@ export class SuggestController {
     if (Object.keys(widgetPatch).length > 0) this.widget.setOptions(widgetPatch);
     if (opts.getTokenTypeAt !== undefined) this.getTokenTypeAt = opts.getTokenTypeAt;
     if (opts.getLanguageIdAtPosition !== undefined) this.getLanguageIdAtPosition = opts.getLanguageIdAtPosition;
+    if (opts.getModelLike !== undefined) this.getModelLike = opts.getModelLike;
     if (opts.onVisibilityChange !== undefined) this.onVisibilityChange = opts.onVisibilityChange;
     if (opts.onTabFallback !== undefined) this.onTabFallback = opts.onTabFallback;
     this.ghost.setCallbacks({
@@ -262,17 +270,11 @@ export class SuggestController {
   }
 
   async onType(typedText: string): Promise<void> {
-    if (this.disposed || !typedText || typedText.includes('\n')) {
-      this.cancel();
-      return;
-    }
+    if (this.disposed || !typedText || typedText.includes('\n')) { this.cancel(); return; }
     const ch = typedText[typedText.length - 1]!;
+    if (isSuppressedSuggestOpenBracket(typedText) || isSuppressedSuggestOpenBracket(ch)) { this.cancel(); return; }
     const triggers = this.collectTriggerCharacters();
-
-    if (this.suggestOnTriggerCharacters && triggers.has(ch)) {
-      await this.trigger(ch, false);
-      return;
-    }
+    if (this.suggestOnTriggerCharacters && triggers.has(ch)) { await this.trigger(ch, false); return; }
 
     if (/[A-Za-z0-9_$]/.test(ch)) {
       const prefix = this.currentPrefix();
@@ -311,7 +313,7 @@ export class SuggestController {
     const pos = this.selection.active;
     const line = this.model.getLineContent(pos.lineNumber);
     const prevCh = pos.column > 1 ? line[pos.column - 2] : '';
-    if (prevCh && this.suggestOnTriggerCharacters && this.collectTriggerCharacters().has(prevCh)) {
+    if (prevCh && !isSuppressedSuggestOpenBracket(prevCh) && this.suggestOnTriggerCharacters && this.collectTriggerCharacters().has(prevCh)) {
       this.anchorPos = { lineNumber: pos.lineNumber, column: pos.column };
       await this.trigger(prevCh, false);
       return;
@@ -461,18 +463,22 @@ export class SuggestController {
     triggerCharacter: string | undefined,
     mySeq: number,
   ): Promise<CompletionItem[] | null> {
-    const providers = languageFeatures.getCompletionProviders(lang);
+    const providers = orderCompletionProviders(languageFeatures.getCompletionProviders(lang));
     const context: CompletionContext = { triggerKind: triggerCharacter ? 1 : 0, triggerCharacter };
     const token = { isCancellationRequested: false };
     const modelLike = this.modelAsLike(lang);
+    const memberAccess = isMemberAccessContext(this.model.getLineContent(pos.lineNumber), pos.column, triggerCharacter);
 
     const all: CompletionItem[] = [];
+    let gotExternalItems = false;
     for (const p of providers) {
+      if (gotExternalItems && isBuiltinCompletionProvider(p)) continue;
       try {
         const list = await Promise.resolve(p.provideCompletionItems(modelLike, pos, context, token));
         if (mySeq !== this.seq || this.disposed) return null;
         const items = Array.isArray(list) ? list : list?.suggestions;
         if (items?.length) {
+          if (!isBuiltinCompletionProvider(p)) gotExternalItems = true;
           for (const it of items) {
             this.itemProviders.set(it, p);
             all.push(it);
@@ -484,6 +490,7 @@ export class SuggestController {
     }
 
     if (
+      !memberAccess &&
       this.wordBasedSuggestions !== 'off' &&
       completionOptions.wordBasedSuggestions !== false &&
       this.kindVisibility[CompletionItemKind.Text] !== false
@@ -492,8 +499,11 @@ export class SuggestController {
       for (const wi of wordItems) all.push(wi);
     }
 
+    const inString =
+      (this.getTokenTypeAt?.(pos.lineNumber, Math.max(1, pos.column - 1)) ?? null) === 'string';
     const seen = new Set<string>();
     return all.filter((it) => {
+      if (inString && isSnippetCompletionItem(it)) return false;
       const lab = labelOfCompletion(it);
       if (!lab || seen.has(lab)) return false;
       seen.add(lab);
@@ -564,14 +574,19 @@ export class SuggestController {
     return { x: p.x, y: p.y + p.h, top: p.y };
   }
 
-  private modelAsLike(effectiveLang?: string) {
+  private modelAsLike(effectiveLang?: string): ModelLike {
+    const lang = effectiveLang ?? this.model.getLanguageId();
+    if (this.getModelLike) return this.getModelLike(lang);
     return {
       getValue: () => this.model.getValue(),
       getLineContent: (n: number) => this.model.getLineContent(n),
       getLineCount: () => this.model.getLineCount(),
       getOffsetAt: (l: number, c: number) => this.model.getOffsetAt(l, c),
       getPositionAt: (o: number) => this.model.getPositionAt(o),
-      getLanguageId: () => effectiveLang ?? this.model.getLanguageId(),
+      getLanguageId: () => lang,
+      getVersionId: () => this.model.getVersionId(),
+      getWordAtPosition: (p) => this.model.getWordAtPosition(p),
+      getWordUntilPosition: (p) => this.model.getWordUntilPosition(p),
     };
   }
 }

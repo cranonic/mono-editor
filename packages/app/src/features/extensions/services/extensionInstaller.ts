@@ -7,14 +7,32 @@ import type { Extension, ExtensionManifest } from '../types';
 import { parseJSONC } from '@/utils/jsoncUtils';
 
 // -------- helper is binary ? ---------
-function isBinary(relativePath : string){
-  const isBinary = /\.(png|jpe?g|gif|webp|ico|woff2?|ttf|eot)$/i.test(relativePath);
-  return isBinary ;
+function isBinary(relativePath: string) {
+  return /\.(png|jpe?g|gif|webp|ico|woff2?|ttf|eot|wasm)$/i.test(relativePath);
 }
 
 /**
- * Parses and extracts a local, packaged application extension archive file directly 
- * into the sandbox system storage layer.
+ * Locate manifest.json(c) either at zip root or inside a single top-level directory
+ * (e.g. when a user zips the `ts/` folder directly into `ts.msxt`).
+ */
+function findManifestEntry(zip: JSZip): { entry: JSZip.JSZipObject; stripPrefix: string } | null {
+  const direct = zip.file('manifest.jsonc') || zip.file('manifest.json');
+  if (direct) return { entry: direct, stripPrefix: '' };
+
+  for (const [relPath, entry] of Object.entries(zip.files)) {
+    if (entry.dir) continue;
+    const normalized = relPath.replace(/^\/+/, '');
+    const parts = normalized.split('/');
+    if (parts.length === 2 && (parts[1] === 'manifest.jsonc' || parts[1] === 'manifest.json')) {
+      return { entry, stripPrefix: `${parts[0]}/` };
+    }
+  }
+  return null;
+}
+
+/**
+ * Parses and extracts a local, packaged application extension archive file (.msxt / .zip)
+ * directly into the sandbox system storage layer.
  *
  * @param localFilePath Source path pointing to the compressed asset bundle location.
  * @returns Resolves with the populated extension metadata and its isolated target storage directory.
@@ -23,28 +41,43 @@ export const installExtensionFromLocal = async (
   localFilePath: string
 ): Promise<{ manifest: Extension; storeDir: string }> => {
   try {
-    const fileResult = await Filesystem.readFile({ path: localFilePath });
-    const base64Data = fileResult.data as string;
+    let base64Data: string;
+    try {
+      const fileResult = await Filesystem.readFile({ path: localFilePath });
+      base64Data = fileResult.data as string;
+    } catch {
+      base64Data = await fs.readFile(localFilePath);
+    }
 
     const zip = await JSZip.loadAsync(base64Data, { base64: true });
 
-    const manifestFile = zip.file('manifest.jsonc') || zip.file('manifest.json');
-    if (!manifestFile) {
+    const found = findManifestEntry(zip);
+    if (!found) {
       throw new Error('Invalid .msxt package: manifest.json(c) is missing.');
     }
 
-    const manifestStr = await manifestFile.async('string');
+    const manifestStr = await found.entry.async('string');
     const rawManifest = parseJSONC(manifestStr) as ExtensionManifest;
 
     const storeDir = `extensions/${rawManifest.id}`;
     const internalBasePath = `ms-storage://${storeDir}`;
 
-    for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+    for (const [rawPath, zipEntry] of Object.entries(zip.files)) {
       if (zipEntry.dir) {
-        continue; 
+        continue;
       }
-      
-      // image → base64 & code→ string
+      const normalized = rawPath.replace(/^\/+/, '');
+      if (found.stripPrefix && !normalized.startsWith(found.stripPrefix)) {
+        continue;
+      }
+      const relativePath = found.stripPrefix
+        ? normalized.slice(found.stripPrefix.length)
+        : normalized;
+      if (!relativePath || relativePath.includes('..')) {
+        continue;
+      }
+
+      // image/font/wasm → base64 & code/json/md → string
       const fileContent = await zipEntry.async(isBinary(relativePath) ? 'base64' : 'string');
       await fs.writeFile(`${internalBasePath}/${relativePath}`, fileContent);
     }
@@ -53,15 +86,14 @@ export const installExtensionFromLocal = async (
     const completeExtension: Extension = {
       ...rawManifest,
       storeDir,
-      downloads: 0,       
-      rating: 0,          
+      downloads: 0,
+      rating: 0,
       isBuiltIn: false,
-      isVerified: false,  
-      zipSize: 'Local'
+      isVerified: false,
+      zipSize: 'Local',
     };
 
     return { manifest: completeExtension, storeDir };
-
   } catch (error: any) {
     throw new Error(`Failed to install extension: ${error.message}`);
   }

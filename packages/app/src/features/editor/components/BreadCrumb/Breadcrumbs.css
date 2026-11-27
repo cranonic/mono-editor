@@ -240,7 +240,9 @@
 }
 
 .ms-bc-option.is-current:not(.is-selected) {
-  font-weight: 500;
+  background-color: var(--bc-hover-bg, rgba(255, 255, 255, 0.08));
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--bc-hl, #2aaaff);
 }
 
 /* Continuous vertical indent guide lines (VS Code tree style) */

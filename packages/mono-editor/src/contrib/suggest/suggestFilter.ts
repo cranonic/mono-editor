@@ -6,9 +6,59 @@ import { languageFeatures } from '../../common/languages/languageFeaturesService
 import {
   CompletionItemKind,
   type CompletionItem,
+  type CompletionProvider,
 } from '../../common/languages/providers/types';
 
+const BUILTIN_PROVIDER_TAG = Symbol('mono.builtinDefaultCompletionProvider');
 let defaultProvidersRegistered = false;
+
+function tagBuiltin(provider: CompletionProvider): CompletionProvider {
+  (provider as CompletionProvider & { [BUILTIN_PROVIDER_TAG]?: boolean })[BUILTIN_PROVIDER_TAG] = true;
+  return provider;
+}
+
+export function isBuiltinCompletionProvider(provider: CompletionProvider): boolean {
+  return Boolean((provider as CompletionProvider & { [BUILTIN_PROVIDER_TAG]?: boolean })[BUILTIN_PROVIDER_TAG]);
+}
+
+/** Order external/LSP providers before built-in fallback keyword lists so rich LSP items win deduplication. */
+export function orderCompletionProviders(providers: readonly CompletionProvider[]): CompletionProvider[] {
+  const external: CompletionProvider[] = [];
+  const builtins: CompletionProvider[] = [];
+  for (const p of providers) {
+    if (isBuiltinCompletionProvider(p)) builtins.push(p);
+    else external.push(p);
+  }
+  return external.length > 0 ? [...external, ...builtins] : [...providers];
+}
+
+/** True when cursor is completing an object property/method after `.` or `?.` (e.g. `document.|`, `document.qu|`). */
+export function isMemberAccessContext(
+  lineContent: string,
+  column: number,
+  triggerCharacter?: string,
+): boolean {
+  if (triggerCharacter === '.') return true;
+  const before = lineContent.slice(0, Math.max(0, column - 1));
+  return /(?:\?\.|\.)\s*[A-Za-z0-9_$]*$/.test(before) && !/\.\.\.\s*[A-Za-z0-9_$]*$/.test(before);
+}
+
+/** Opening brackets `(`, `{`, `[` (including auto-closed pairs) must not pop up the completion palette immediately. */
+export function isSuppressedSuggestOpenBracket(typedText: string): boolean {
+  return (
+    typedText === '(' ||
+    typedText === '{' ||
+    typedText === '[' ||
+    typedText === '()' ||
+    typedText === '{}' ||
+    typedText === '[]'
+  );
+}
+
+/** True when a completion item represents a snippet (suppressed inside strings across all language servers). */
+export function isSnippetCompletionItem(item: CompletionItem): boolean {
+  return item.kind === CompletionItemKind.Snippet;
+}
 
 const JS_KEYWORDS = [
   'function', 'const', 'let', 'var', 'if', 'else', 'return', 'for', 'while',
@@ -57,7 +107,7 @@ export function ensureDefaultCompletionProviders(): void {
   if (defaultProvidersRegistered) return;
   defaultProvidersRegistered = true;
 
-  languageFeatures.registerCompletionItemProvider('css', {
+  languageFeatures.registerCompletionItemProvider('css', tagBuiltin({
     triggerCharacters: [':', '-'],
     provideCompletionItems(model, pos) {
       const line = model.getLineContent(pos.lineNumber).slice(0, Math.max(0, pos.column - 1));
@@ -81,9 +131,9 @@ export function ensureDefaultCompletionProviders(): void {
         })),
       };
     },
-  });
+  }));
 
-  languageFeatures.registerCompletionItemProvider('html', {
+  languageFeatures.registerCompletionItemProvider('html', tagBuiltin({
     triggerCharacters: ['<', ' '],
     provideCompletionItems(model, pos) {
       const before = model.getLineContent(pos.lineNumber).slice(0, Math.max(0, pos.column - 1));
@@ -107,10 +157,13 @@ export function ensureDefaultCompletionProviders(): void {
         })),
       };
     },
-  });
+  }));
 
-  const jsProvider = {
-    provideCompletionItems() {
+  const jsProvider = tagBuiltin({
+    provideCompletionItems(model, pos, context) {
+      if (isMemberAccessContext(model.getLineContent(pos.lineNumber), pos.column, context?.triggerCharacter)) {
+        return { suggestions: [] };
+      }
       return {
         suggestions: JS_KEYWORDS.map((k) => ({
           label: k,
@@ -120,11 +173,15 @@ export function ensureDefaultCompletionProviders(): void {
         })),
       };
     },
-  };
+  });
   languageFeatures.registerCompletionItemProvider('javascript', jsProvider);
+  languageFeatures.registerCompletionItemProvider('javascriptreact', jsProvider);
   languageFeatures.registerCompletionItemProvider('plaintext', jsProvider);
-  languageFeatures.registerCompletionItemProvider('typescript', {
-    provideCompletionItems() {
+  const tsProvider = tagBuiltin({
+    provideCompletionItems(model, pos, context) {
+      if (isMemberAccessContext(model.getLineContent(pos.lineNumber), pos.column, context?.triggerCharacter)) {
+        return { suggestions: [] };
+      }
       return {
         suggestions: [...JS_KEYWORDS, ...TS_EXTRA_KEYWORDS].map((k) => ({
           label: k,
@@ -135,6 +192,8 @@ export function ensureDefaultCompletionProviders(): void {
       };
     },
   });
+  languageFeatures.registerCompletionItemProvider('typescript', tsProvider);
+  languageFeatures.registerCompletionItemProvider('typescriptreact', tsProvider);
 }
 
 export function labelOfCompletion(item: CompletionItem): string {

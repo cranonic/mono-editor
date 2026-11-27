@@ -36,45 +36,59 @@ function toMonacoLocation(loc: any): monaco.languages.Location | null {
   };
 }
 
+async function queryLocations(
+  state: LspState,
+  method: string,
+  model: monaco.editor.ITextModel,
+  position: monaco.Position | monaco.IPosition,
+  token?: monaco.CancellationToken,
+): Promise<monaco.languages.Location[] | null> {
+  if (!state.initialized) return null;
+  if (token?.isCancellationRequested) return null;
+
+  try {
+    const docUri = getDocUri(model, state);
+    const result: any = await sendRequest(state, method, {
+      textDocument: { uri: docUri },
+      position: toLspPosition(position as monaco.Position),
+    });
+
+    if (!result) return null;
+    const locations = Array.isArray(result) ? result : [result];
+    const mapped = locations
+      .map(toMonacoLocation)
+      .filter((x): x is monaco.languages.Location => x != null);
+
+    return mapped.length ? mapped : null;
+  } catch (err: any) {
+    console.warn(`[LSP] ${method} failed (${state.languageId}):`, err?.message || err);
+    return null;
+  }
+}
+
 export function registerDefinition(state: LspState): void {
   state.disposables.push(
     monaco.languages.registerDefinitionProvider(state.languageId, {
-      provideDefinition: async (model, position, token) => {
-        if (!state.initialized) return null;
-        if (token?.isCancellationRequested) return null;
+      provideDefinition: (model, position, token) =>
+        queryLocations(state, 'textDocument/definition', model, position, token),
+    }),
+  );
+}
 
-        try {
-          const docUri = getDocUri(model, state);
-          console.log(
-            `[LSP] definition request lang=${state.languageId} uri=${docUri} ` +
-              `pos=${position.lineNumber}:${position.column}`,
-          );
+export function registerTypeDefinition(state: LspState): void {
+  state.disposables.push(
+    monaco.languages.registerTypeDefinitionProvider(state.languageId, {
+      provideTypeDefinition: (model, position, token) =>
+        queryLocations(state, 'textDocument/typeDefinition', model, position, token),
+    }),
+  );
+}
 
-          const result: any = await sendRequest(state, 'textDocument/definition', {
-            textDocument: { uri: docUri },
-            position: toLspPosition(position),
-          });
-
-          if (!result) {
-            console.log('[LSP] definition: empty result');
-            return null;
-          }
-
-          const locations = Array.isArray(result) ? result : [result];
-          const mapped = locations
-            .map(toMonacoLocation)
-            .filter((x): x is monaco.languages.Location => x != null);
-
-          console.log(`[LSP] definition: ${mapped.length} location(s)`);
-          return mapped.length ? mapped : null;
-        } catch (err: any) {
-          console.warn(
-            `[LSP] definition failed (${state.languageId}):`,
-            err?.message || err,
-          );
-          return null;
-        }
-      },
+export function registerImplementation(state: LspState): void {
+  state.disposables.push(
+    monaco.languages.registerImplementationProvider(state.languageId, {
+      provideImplementation: (model, position, token) =>
+        queryLocations(state, 'textDocument/implementation', model, position, token),
     }),
   );
 }

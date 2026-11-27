@@ -1,6 +1,6 @@
 // src/core/services/lsp/LspTransport.ts
 
-import type { LspState, JsonRpcRequest, JsonRpcNotification } from './types';
+import type { LspState, ILspTransport, JsonRpcRequest, JsonRpcNotification } from './types';
 
 /** Shared TextEncoder instance utilized across framing calculations to protect multi-byte characters */
 const ENCODER = new TextEncoder();
@@ -10,51 +10,100 @@ const ENCODER = new TextEncoder();
 /**
  * Wraps raw stringified payloads inside canonical Content-Length headers.
  * Uses exact byte-length evaluations instead of string character counts.
- * 
- * @param body Unframed stringified JSON-RPC message payload.
  */
-function frame(body: string): string {
+export function frame(body: string): string {
   return `Content-Length: ${ENCODER.encode(body).length}\r\n\r\n${body}`;
+}
+
+/**
+ * Wraps a WebSocket in the unified ILspTransport interface (Content-Length framed).
+ */
+export function createWebSocketTransport(ws: WebSocket): ILspTransport {
+  return {
+    kind: 'websocket',
+    get isOpen() {
+      return ws.readyState === WebSocket.OPEN;
+    },
+    send(msg: object) {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      ws.send(frame(JSON.stringify(msg)));
+    },
+    close() {
+      ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null;
+      if (ws.readyState < WebSocket.CLOSING) ws.close();
+    },
+  };
+}
+
+/**
+ * Wraps a browser Web Worker in the unified ILspTransport interface (structured postMessage JSON-RPC).
+ */
+export function createWorkerTransport(worker: Worker): ILspTransport {
+  let open = true;
+  return {
+    kind: 'worker',
+    get isOpen() {
+      return open;
+    },
+    send(msg: object) {
+      if (!open) return;
+      worker.postMessage(msg);
+    },
+    close() {
+      open = false;
+      worker.onmessage = null;
+      worker.onerror = null;
+      try {
+        worker.terminate();
+      } catch {
+        /* ignore */
+      }
+    },
+  };
+}
+
+/** True when either the unified transport or legacy raw WebSocket is open. */
+export function isTransportOpen(state: LspState): boolean {
+  if (state.transport) return state.transport.isOpen;
+  return state.ws !== null && state.ws.readyState === WebSocket.OPEN;
+}
+
+function sendRaw(state: LspState, payload: object): void {
+  if (state.transport) {
+    state.transport.send(payload);
+    return;
+  }
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.send(frame(JSON.stringify(payload)));
+  }
 }
 
 // ─── PUBLIC LOW-LEVEL TRANSPORT OPERATIONS ────────────────────────────────────
 
 /**
- * Transmits a fire-and-forget asynchronous notification to the language server port.
- * Does not spawn pending message listeners or register tracking indices.
- * 
- * @param state The central language server operational state cache context.
- * @param method Destination RPC routing method token string.
- * @param params Associated contextual configurations dispatched with notifications.
+ * Transmits a fire-and-forget asynchronous notification to the language server.
  */
 export function sendNotify(state: LspState, method: string, params: unknown): void {
-  if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
-  
+  if (!isTransportOpen(state)) return;
+
   console.log(`[LSP] [NOTIFY →] ${method}`);
-  const body = JSON.stringify({ jsonrpc: '2.0', method, params } as JsonRpcNotification);
-  state.ws.send(frame(body));
+  sendRaw(state, { jsonrpc: '2.0', method, params } as JsonRpcNotification);
 }
 
 /**
  * Executes an asynchronous request-response RPC interaction cycle.
- * Mounts a strict 10,000ms terminal lifecycle timeout protection barrier.
- * 
- * @param state The central language server operational state cache context.
- * @param method Destination RPC routing method token string.
- * @param params Associated query configurations dispatched with requests.
  */
 export function sendRequest(state: LspState, method: string, params: unknown): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
-      return reject(new Error('WebSocket connection has dropped or is not currently open'));
+    if (!isTransportOpen(state)) {
+      return reject(new Error('LSP transport is closed or not currently open'));
     }
-    
+
     const id = state.msgId++;
     state.pendingRequests.set(id, { resolve, reject });
     console.log(`[LSP] [REQUEST →] ${method} (id: ${id})`);
-    
-    const body = JSON.stringify({ jsonrpc: '2.0', id, method, params } as JsonRpcRequest);
-    state.ws.send(frame(body));
+
+    sendRaw(state, { jsonrpc: '2.0', id, method, params } as JsonRpcRequest);
 
     // Cold start on Android (pyright + node via linker) can exceed 10s
     const timeoutMs = method === 'initialize' ? 45_000 : 15_000;
@@ -73,16 +122,10 @@ export function sendRequest(state: LspState, method: string, params: unknown): P
 
 /**
  * Forwards matching resolution data back to the server following an explicit internal query request.
- * 
- * @param state The central language server operational state cache context.
- * @param id Original tracking message transaction ID provided by the host client.
- * @param result Formatted diagnostic block mapping required system attributes.
  */
 export function sendResponse(state: LspState, id: number, result: any): void {
-  if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
-  
-  const body = JSON.stringify({ jsonrpc: '2.0', id, result });
-  state.ws.send(frame(body));
+  if (!isTransportOpen(state)) return;
+  sendRaw(state, { jsonrpc: '2.0', id, result });
 }
 
 /**

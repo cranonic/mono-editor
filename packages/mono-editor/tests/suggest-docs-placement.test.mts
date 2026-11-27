@@ -105,4 +105,32 @@ function overlaps(
   }
 }
 
+// 6. Reject overly compressed right-side placement -> falls back to 'above', then 'below'
+{
+  // list right edge = 280; host width = 440 -> right availW = 440 - 4 - 284 = 152px (< 220px min side width)
+  const listRect = { left: 20, top: 180, width: 260, height: 140 };
+  const caretLine = { top: 154, bottom: 176 };
+  const hostSize = { width: 440, height: 480 };
+  const resAbove = placeSuggestDocs({
+    listRect,
+    caretLine,
+    naturalSize: { width: 280, height: 100 },
+    hostSize,
+  });
+  assert.ok(resAbove);
+  assert.equal(resAbove.placement, 'above', 'rejects overly compressed right side and falls back to above');
+  assert.ok(resAbove.width >= 260, 'uses full comfortable width above instead of squishing on the right');
+
+  // Same compressed right side, but no room above cursor -> falls back to 'below'
+  const resBelow = placeSuggestDocs({
+    listRect: { left: 20, top: 44, width: 260, height: 140 },
+    caretLine: { top: 18, bottom: 40 },
+    naturalSize: { width: 280, height: 100 },
+    hostSize,
+  });
+  assert.ok(resBelow);
+  assert.equal(resBelow.placement, 'below', 'falls back to below when right is compressed and above has no room');
+  assert.ok(resBelow.width >= 260, 'uses comfortable width below');
+}
+
 console.log('suggest-docs-placement tests passed');

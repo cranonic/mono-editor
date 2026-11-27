@@ -406,7 +406,9 @@ export class SuggestWidget {
           this.acceptSelected();
         },
         onPointerAccept: (idx) => {
-          if (Date.now() - this.lastTouchAcceptAt < 350) return;
+          const now = Date.now();
+          if (now - this.lastTouchAcceptAt < 350) return;
+          this.lastTouchAcceptAt = now;
           this.index = idx;
           haptic('light');
           this.acceptSelected();

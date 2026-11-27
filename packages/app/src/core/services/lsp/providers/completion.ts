@@ -171,6 +171,23 @@ export function registerCompletion(state: LspState): void {
               }
             }
 
+            const mapTextEdits = (edits: any[] | undefined) => {
+              if (!Array.isArray(edits) || edits.length === 0) return undefined;
+              return edits
+                .filter((e) => e && e.range)
+                .map((e) => ({
+                  range: {
+                    startLineNumber: (e.range.start?.line ?? 0) + 1,
+                    startColumn: (e.range.start?.character ?? 0) + 1,
+                    endLineNumber: (e.range.end?.line ?? 0) + 1,
+                    endColumn: (e.range.end?.character ?? 0) + 1,
+                  },
+                  text: e.newText ?? '',
+                }));
+            };
+
+            const additionalTextEdits = mapTextEdits(item.additionalTextEdits);
+
             const suggestion: monaco.languages.CompletionItem & { __lspItem?: any } = {
               label:         String(item.label).trim(),
               kind:          completionKind(item.kind),
@@ -179,9 +196,12 @@ export function registerCompletion(state: LspState): void {
               insertText,
               range,
               insertTextRules,
-              sortText: '1_' + String(item.label).trim(),
+              ...(additionalTextEdits ? { additionalTextEdits } : {}),
+              ...(item.filterText ? { filterText: item.filterText } : {}),
+              ...(item.preselect ? { preselect: true } : {}),
+              sortText: item.sortText ?? ('1_' + String(item.label).trim()),
             };
-            // Keep raw LSP item so resolveCompletionItem can fetch MDN docs
+            // Keep raw LSP item so resolveCompletionItem can fetch docs & auto-import edits
             suggestion.__lspItem = item;
             return suggestion;
           });
@@ -200,7 +220,7 @@ export function registerCompletion(state: LspState): void {
         }
       },
 
-      // Lazy MDN / detail when user highlights a completion item
+      // Lazy docs / detail / auto-import additionalTextEdits when user highlights or accepts an item
       resolveCompletionItem: async (item, token) => {
         if (!state.initialized) return item;
         if (token?.isCancellationRequested) return item;
@@ -224,6 +244,19 @@ export function registerCompletion(state: LspState): void {
           }
           if (resolved.detail != null && resolved.detail !== '') {
             item.detail = resolved.detail;
+          }
+          if (Array.isArray(resolved.additionalTextEdits) && resolved.additionalTextEdits.length > 0) {
+            item.additionalTextEdits = resolved.additionalTextEdits
+              .filter((e: any) => e && e.range)
+              .map((e: any) => ({
+                range: {
+                  startLineNumber: (e.range.start?.line ?? 0) + 1,
+                  startColumn: (e.range.start?.character ?? 0) + 1,
+                  endLineNumber: (e.range.end?.line ?? 0) + 1,
+                  endColumn: (e.range.end?.character ?? 0) + 1,
+                },
+                text: e.newText ?? '',
+              }));
           }
           // Keep data for further resolves
           if (resolved.data != null) raw.data = resolved.data;

@@ -20,6 +20,7 @@ import { useTabStore } from '@/store/tabStore';
 import { commands } from '@/core/extensionAPI/registry/commandRegistry';
 import { monoKeybindingBridge } from '@/core/keybindings/monoKeybindingBridge';
 import { Breadcrumbs } from './components/BreadCrumb/Breadcrumbs';
+import { useTermisStore } from '@/features/termis/store/termisStore';
 import './CodeEditor.css';
 
 interface CodeEditorProps {
@@ -99,6 +100,11 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ tabId, filePath, tab }) 
     }
     monoKeybindingBridge.attach(editor);
 
+    // Open MS Code's Problems panel from hover footer "View Problem" action
+    const subViewProblems = editor.registerCommand('workbench.actions.view.problems', () => {
+      useTermisStore.getState().setActiveView('problems');
+    });
+
     // Expose active Mono editor for console/debugging
     const w = window as any;
     w.__monoEditor = editor;
@@ -155,6 +161,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ tabId, filePath, tab }) 
       sub.dispose();
       subGotoLine?.dispose();
       subGotoSymbol?.dispose();
+      subViewProblems.dispose();
       useActiveEditorStore.getState().unregisterEditor(tabId, editor);
       const w = window as any;
       if (w.__monoEditor === editor) w.__monoEditor = null;

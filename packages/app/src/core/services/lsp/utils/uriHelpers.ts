@@ -1,14 +1,40 @@
 // src/core/services/lsp/utils/uriHelpers.ts
 //
-// Normalize file URIs between Monaco model URIs, on-disk Android paths,
-// and the form expected by language servers (file:///sdcard/...).
+// Normalize file URIs between Mono/Monaco model URIs, on-disk Android paths,
+// browser virtual workspaces, and LSP file:// URIs.
 //
 // Critical: path segments MUST be percent-encoded (spaces → %20).
-// JDT LS / Java URI.create() rejects unencoded spaces:
-//   Illegal character in path: file:///sdcard/Ay/Typescript Test
 
+import { Capacitor } from '@capacitor/core';
 import type * as monaco from '@/core/mono';
 import type { LspState } from '../types';
+
+const fallbackModelKeys = new WeakMap<object, string>();
+let nextFallbackModelId = 1;
+
+/**
+ * Stable unique key for a Mono or Monaco text model.
+ * Prevents collisions on `IMonoTextModel` instances where `.id` is undefined.
+ */
+export function getModelKey(model: monaco.editor.ITextModel | null | undefined): string {
+  if (!model) return 'unknown-model';
+  if (typeof (model as any).id === 'string' && (model as any).id) {
+    return (model as any).id;
+  }
+  const uriStr = model.uri?.toString?.() ?? (model as any).uriString;
+  if (typeof uriStr === 'string' && uriStr) {
+    return uriStr;
+  }
+  if (typeof model === 'object') {
+    let key = fallbackModelKeys.get(model as object);
+    if (!key) {
+      key = `mono-model-${nextFallbackModelId++}`;
+      fallbackModelKeys.set(model as object, key);
+    }
+    return key;
+  }
+  return String(model);
+}
 
 /**
  * Encode an absolute filesystem path as a valid file:// URI.
@@ -26,17 +52,14 @@ function pathToFileUri(absPath: string): string {
     .map((seg) => (seg === '' ? '' : encodeURIComponent(seg)))
     .join('/');
 
-  // encoded is like /sdcard/Ay/Typescript%20Test → file:///sdcard/...
   return `file://${encoded}`;
 }
 
 /**
  * Strip file:// scheme and return a decoded filesystem path (starts with /).
  */
-function fileUriToPath(uri: string): string {
+export function fileUriToPath(uri: string): string {
   let rest = uri.replace(/^file:\/\//i, '');
-  // file:///sdcard/... → rest = /sdcard/...  (three slashes → leading / kept)
-  // file://localhost/sdcard → rare; treat as path
   if (!rest.startsWith('/')) rest = `/${rest}`;
   try {
     return decodeURIComponent(rest);
@@ -47,11 +70,10 @@ function fileUriToPath(uri: string): string {
 
 /**
  * Canonicalize a path or URI into a stable file:// URI that language servers
- * on Android understand. Maps /storage/emulated/0 → /sdcard.
- * Always percent-encodes path segments (required by JDT LS / java.net.URI).
+ * understand. Maps /storage/emulated/0 → /sdcard and percent-encodes segments.
  */
 export function toLspUri(input: string): string {
-  if (!input) return 'file:///sdcard';
+  if (!input) return 'file:///workspace';
 
   const u = input.trim();
 
@@ -63,41 +85,48 @@ export function toLspUri(input: string): string {
     return pathToFileUri(u);
   }
 
-  // Relative / bare path
-  return pathToFileUri(`/sdcard/${u.replace(/^\.\//, '')}`);
+  return pathToFileUri(`/workspace/${u.replace(/^\.\//, '')}`);
 }
 
 /**
- * Convert an LSP file:// URI back to a form Monaco / the rest of the app uses.
- * Prefer the original storage path when present; otherwise keep /sdcard.
- * Output remains a file:// URI with encoding preserved via toLspUri rules.
+ * Convert an LSP file:// URI back to a form Mono / the rest of the app uses.
+ * Maps /sdcard → /storage/emulated/0 only on native Android so web workspace paths stay intact.
  */
 export function fromLspUri(lspUri: string): string {
   if (!lspUri) return '';
-  const path = fileUriToPath(lspUri).replace(/^\/sdcard/i, '/storage/emulated/0');
+  let path = fileUriToPath(lspUri);
+  if (Capacitor.isNativePlatform()) {
+    path = path.replace(/^\/sdcard/i, '/storage/emulated/0');
+  }
   return pathToFileUri(path);
 }
 
 /**
  * Resolve the document URI that should be sent to the language server for a
- * given Monaco model. Prefer the explicit mapping registered via
+ * given editor model. Prefer the explicit mapping registered via
  * registerModelUri(); fall back to the model's own URI.
  */
 export function getDocUri(
   model: monaco.editor.ITextModel,
   state: LspState,
 ): string {
-  const mapped = state.modelUriMap.get(model.id);
+  const key = getModelKey(model);
+  const mapped = state.modelUriMap.get(key);
   if (mapped) {
-    // Re-canonicalize in case an older unencoded URI was cached
     return toLspUri(mapped);
   }
 
-  const mu = model.uri.toString();
+  const mu = model?.uri?.toString?.() ?? '';
   if (mu && !mu.startsWith('inmemory:')) {
     return toLspUri(mu);
   }
 
-  // Last resort: synthetic path from model id
-  return toLspUri(`/sdcard/untitled-${model.id}`);
+  const lang = model?.getLanguageId?.() ?? '';
+  const ext =
+    lang === 'typescriptreact' ? '.tsx'
+      : lang === 'typescript' ? '.ts'
+      : lang === 'javascriptreact' ? '.jsx'
+      : lang === 'javascript' ? '.js'
+      : '';
+  return toLspUri(`/workspace/untitled-${key.replace(/[^a-zA-Z0-9_-]/g, '_')}${ext}`);
 }

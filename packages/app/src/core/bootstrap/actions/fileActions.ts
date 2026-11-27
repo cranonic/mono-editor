@@ -5,6 +5,7 @@ import { useTabStore } from '@/store/tabStore';
 import { useEditorViewStateStore } from '@/features/editor/store/editorViewStateStore';
 import { useExplorerStore } from '@/features/explorer/store/exploreStore';
 import { useFilePickerStore } from '@/store/filePickerStore';
+import { useTermisStore } from '@/features/termis/store/termisStore';
 import { fs } from '@/core/fileSystem';
 
 export function registerFileActions(): void {
@@ -147,5 +148,13 @@ export function registerFileActions(): void {
       });
     },
     { title: 'New File', category: 'File', icon: 'new-file', shortcut: 'Ctrl+N' },
+  );
+
+  commands.registerCommand(
+    'workbench.actions.view.problems',
+    () => {
+      useTermisStore.getState().setActiveView('problems');
+    },
+    { title: 'View: Focus on Problems View', category: 'View' },
   );
 }

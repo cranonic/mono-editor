@@ -7,6 +7,7 @@ import type {
 } from '../languages/languageConfigurationTypes';
 import type { TextModel, UndoKind } from '../model/TextModel';
 import { nextGraphemeOffset } from '../util/grapheme';
+import { hasUnmatchedClosingBracket } from './bracketBalance';
 
 export interface TypingPolicy {
   autoClosingBrackets: AutoClosingBehavior;
@@ -148,6 +149,13 @@ export function tryOvertypeOrAutoCloseChar(
 
   const openPair = pairs.find((p) => p.open === ch && p.close.length === 1);
   if (openPair && shouldAutoClosePair(openPair, lineNumber, column, lineText, policy)) {
+    const isQuote = isQuotePair(openPair.open, openPair.close);
+    if (
+      !isQuote &&
+      hasUnmatchedClosingBracket(model, lineNumber, column, openPair.open, openPair.close)
+    ) {
+      return null;
+    }
     const off = model.getOffsetAt(lineNumber, column);
     const caretCol = column + openPair.open.length;
     model.replaceRange(

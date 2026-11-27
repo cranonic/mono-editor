@@ -88,6 +88,7 @@ function appendInlineMarkdown(
   text: string,
   theme: ResolvedWidgetTheme,
   codeFontFamily: string,
+  flatCode = false,
 ): void {
   // Match inline code (`...`), bold (**...**), italic (*...*), or links ([label](url))
   const tokenRe = /`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)/g;
@@ -102,12 +103,18 @@ function appendInlineMarkdown(
       const code = document.createElement('code');
       code.textContent = match[1];
       Object.assign(code.style, {
+        display: 'inline',
         fontFamily: codeFontFamily,
-        fontSize: '0.92em',
-        padding: '1px 4px',
-        borderRadius: '3px',
-        background: theme.codeBackground,
+        fontSize: '0.94em',
+        lineHeight: 'inherit',
+        padding: flatCode ? '0' : '1px 4px',
+        borderRadius: flatCode ? '0' : '3px',
+        border: 'none',
+        background: flatCode ? 'transparent' : theme.codeBackground,
         color: theme.foreground,
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'normal',
+        overflowWrap: 'break-word',
       });
       parent.appendChild(code);
     } else if (match[2] !== undefined) {
@@ -128,8 +135,14 @@ function appendInlineMarkdown(
         a.href = href;
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
-        a.style.color = theme.focusBorder;
-        a.style.textDecoration = 'underline';
+        Object.assign(a.style, {
+          color: theme.isDark ? '#3794ff' : '#006ab1',
+          textDecoration: 'underline',
+          cursor: 'pointer',
+          pointerEvents: 'auto',
+        });
+        a.addEventListener('pointerdown', (e) => e.stopPropagation());
+        a.addEventListener('click', (e) => e.stopPropagation());
         parent.appendChild(a);
       } else {
         parent.appendChild(document.createTextNode(label));
@@ -195,13 +208,15 @@ export function renderMarkdownToDom(
               padding: '0',
               background: 'transparent',
               border: 'none',
+              borderRadius: '0',
               overflowX: 'auto',
               fontFamily: codeFontFamily,
               fontSize: '0.94em',
               lineHeight: '1.45',
               color: theme.foreground,
               whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
+              wordBreak: 'normal',
+              overflowWrap: 'break-word',
             }
           : {
               margin: '4px 0',
@@ -214,10 +229,27 @@ export function renderMarkdownToDom(
               fontSize: '0.92em',
               lineHeight: '1.45',
               color: theme.foreground,
-              whiteSpace: 'pre',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'normal',
+              overflowWrap: 'break-word',
             },
       );
       const code = document.createElement('code');
+      Object.assign(code.style, {
+        display: 'inline',
+        margin: '0',
+        padding: '0',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '0',
+        fontFamily: 'inherit',
+        fontSize: 'inherit',
+        lineHeight: 'inherit',
+        color: 'inherit',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'normal',
+        overflowWrap: 'break-word',
+      });
       renderHighlightedCodeToDom(code, codeLines.join('\n'), langHint, theme.foreground);
       pre.appendChild(code);
       container.appendChild(pre);
@@ -248,7 +280,7 @@ export function renderMarkdownToDom(
         margin: '4px 0 2px',
         color: theme.foreground,
       });
-      appendInlineMarkdown(h, heading[2]!, theme, codeFontFamily);
+      appendInlineMarkdown(h, heading[2]!, theme, codeFontFamily, flatCode);
       container.appendChild(h);
       i++;
       continue;
@@ -264,7 +296,7 @@ export function renderMarkdownToDom(
       while (i < lines.length && /^\s*[-*]\s+/.test(lines[i]!)) {
         const li = document.createElement('li');
         li.style.margin = '2px 0';
-        appendInlineMarkdown(li, lines[i]!.replace(/^\s*[-*]\s+/, ''), theme, codeFontFamily);
+        appendInlineMarkdown(li, lines[i]!.replace(/^\s*[-*]\s+/, ''), theme, codeFontFamily, flatCode);
         ul.appendChild(li);
         i++;
       }
@@ -295,8 +327,10 @@ export function renderMarkdownToDom(
     Object.assign(p.style, {
       margin: '3px 0',
       lineHeight: '1.45',
+      wordBreak: 'normal',
+      overflowWrap: 'break-word',
     });
-    appendInlineMarkdown(p, paraLines.join(' '), theme, codeFontFamily);
+    appendInlineMarkdown(p, paraLines.join(' '), theme, codeFontFamily, flatCode);
     container.appendChild(p);
   }
 }

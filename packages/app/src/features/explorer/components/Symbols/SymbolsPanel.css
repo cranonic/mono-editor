@@ -1,0 +1,141 @@
+/* src/features/explorer/components/Symbols/SymbolsPanel.css */
+
+.ms-outline-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 80px;
+  color: var(--outline-fg, var(--ms-text-main, #cccccc));
+  font-size: 13px;
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+}
+
+.ms-outline-sticky-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  background-color: var(--outline-bg, var(--ms-bg-sidebar, #1e1e1e));
+  border-bottom: 1px solid var(--outline-border, var(--ms-border-light, rgba(255, 255, 255, 0.1)));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
+}
+
+.ms-outline-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 0 8px 0;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(121, 121, 121, 0.4) transparent;
+}
+
+.ms-outline-empty {
+  padding: 10px 16px;
+  font-size: 12px;
+  color: var(--ms-text-faded, #888);
+}
+
+.ms-outline-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px 0 8px;
+  font-size: 13px;
+  line-height: var(--outline-row-h, 24px);
+  height: var(--outline-row-h, 24px);
+  cursor: pointer;
+  white-space: nowrap;
+  box-sizing: border-box;
+  -webkit-touch-callout: none;
+}
+
+.ms-outline-row.is-sticky-row {
+  background-color: var(--outline-bg, var(--ms-bg-sidebar, #1e1e1e));
+}
+
+.ms-outline-row:hover:not(.is-active) {
+  background-color: var(--outline-hover-bg, rgba(255, 255, 255, 0.06));
+}
+
+.ms-outline-row.is-active {
+  background-color: var(--outline-sel-bg, rgba(4, 57, 94, 0.65));
+  color: var(--outline-sel-fg, #ffffff);
+  box-shadow: inset 2px 0 0 var(--outline-hl, #2aaaff);
+}
+
+.ms-outline-guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ms-outline-indent-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: var(--outline-guide, rgba(255, 255, 255, 0.12));
+  pointer-events: none;
+}
+
+.ms-outline-indent-guide.is-active {
+  background-color: var(--outline-guide-active, rgba(255, 255, 255, 0.34));
+}
+
+.ms-outline-twisty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 100%;
+  flex-shrink: 0;
+  color: var(--outline-detail, rgba(204, 204, 204, 0.72));
+}
+
+.ms-outline-twisty.is-clickable {
+  cursor: pointer;
+}
+
+.ms-outline-twisty.is-clickable:hover {
+  color: var(--outline-fg, #ffffff);
+}
+
+.ms-outline-row.is-active .ms-outline-twisty {
+  color: var(--outline-sel-fg, #ffffff);
+}
+
+.ms-outline-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.ms-outline-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ms-outline-detail {
+  font-size: 85%;
+  color: var(--outline-detail, rgba(204, 204, 204, 0.62));
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.ms-outline-row.is-active .ms-outline-detail {
+  color: var(--outline-sel-fg, #ffffff);
+  opacity: 0.85;
+}

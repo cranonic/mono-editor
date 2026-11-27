@@ -1,7 +1,7 @@
 // textDocument/hover → Monaco HoverProvider (MDN docs for HTML tags/attrs)
 import * as monaco from '@/core/mono';
 import type { LspState } from '../types';
-import { sendRequest } from '../LspTransport';
+import { sendRequest, sendNotify } from '../LspTransport';
 import { getDocUri } from '../utils/uriHelpers';
 import { toLspPosition } from './helpers';
 
@@ -38,8 +38,19 @@ export function registerHover(state: LspState): void {
         if (token?.isCancellationRequested) return null;
 
         try {
+          const uri = getDocUri(model, state);
+          if (typeof model.getValue === 'function') {
+            sendNotify(state, 'textDocument/didChange', {
+              textDocument: {
+                uri,
+                version: typeof model.getVersionId === 'function' ? model.getVersionId() : 1,
+              },
+              contentChanges: [{ text: model.getValue() }],
+            });
+          }
+
           const result: any = await sendRequest(state, 'textDocument/hover', {
-            textDocument: { uri: getDocUri(model, state) },
+            textDocument: { uri },
             position: toLspPosition(position),
           });
 

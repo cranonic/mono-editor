@@ -5,6 +5,10 @@ import { executeSandboxed } from '@/core/extensionAPI/sandbox/createSandbox';
 import { loadManifestSafely } from './extensionLoader';
 import { fs } from '@/core/fileSystem';
 import { createOutputAPI } from '@/core/extensionAPI/modules/window/outputAPI';
+import {
+  isBuiltinStoreDir,
+  getBuiltinExtension,
+} from '../builtin/builtinExtensions';
 
 interface ActiveExtension {
   subscriptions: Array<{ dispose: () => void }>;
@@ -55,10 +59,8 @@ const logHost = (msg: string, isError = false) => {
 export const ExtensionHost = {
   
   /**
-   * Activates an extension by loading its manifest, executing its main script inside a sandbox, 
-   * and registering its lifecycle hooks.
-   * @param extId The unique identifier of the extension.
-   * @param storeDir The directory path where the extension is stored.
+   * Activates an extension by loading its manifest, executing its main script inside a sandbox
+   * (or directly for bundled built-in extensions), and registering its lifecycle hooks.
    */
   activateExtension: async (extId: string, storeDir: string): Promise<void> => {
     if (activeMap.has(extId)) {
@@ -68,12 +70,43 @@ export const ExtensionHost = {
 
     try {
       logHost(`Booting up extension: ${extId}`);
-      
+
+      // Bundled built-in extension (e.g. packages/extensions/ts)
+      if (isBuiltinStoreDir(storeDir)) {
+        const builtin = getBuiltinExtension(storeDir) ?? getBuiltinExtension(extId);
+        if (!builtin) {
+          throw new Error(`Built-in extension not found: ${extId}`);
+        }
+        const mscodeAPI = createMSCodeAPI(extId);
+        const context = {
+          subscriptions: [] as Array<{ dispose: () => void }>,
+          extensionId: extId,
+          extensionPath: builtin.storeDir,
+          extension: {
+            id: extId,
+            extensionPath: builtin.storeDir,
+            isActive: true,
+            manifestJSON: builtin.manifest,
+          },
+        };
+        activeMap.set(extId, { ...context, manifest: builtin.manifest, deactivate: builtin.deactivate });
+        try {
+          await builtin.activate(context, mscodeAPI);
+        } catch (activationError) {
+          activeMap.delete(extId);
+          throw activationError;
+        }
+        logHost(`✅ Activated (Built-in): ${extId}`);
+        return;
+      }
+
       const manifest = await loadManifestSafely(storeDir);
-      const extensionPath = `ms-storage://${storeDir}`;
+      const extensionPath = (storeDir.startsWith('/') || storeDir.startsWith('file://'))
+        ? storeDir
+        : `ms-storage://${storeDir}`;
 
       // Data-only extensions (like themes or snippets) don't have a main script
-      if (!manifest.main) {
+      if (!manifest.main && !manifest.source) {
         activeMap.set(extId, { 
           subscriptions: [], 
           extensionId: extId, 
@@ -84,8 +117,19 @@ export const ExtensionHost = {
         return;
       }
 
-      const scriptPath = `${extensionPath}/${manifest.main}`;
-      const code = await fs.readFile(scriptPath);
+      const mainEntry = (manifest.main || manifest.source).replace(/^\.\//, '');
+      let scriptPath = `${extensionPath}/${mainEntry}`;
+      let code: string;
+      try {
+        code = await fs.readFile(scriptPath);
+      } catch (mainErr) {
+        if (manifest.source && manifest.source !== manifest.main) {
+          scriptPath = `${extensionPath}/${String(manifest.source).replace(/^\.\//, '')}`;
+          code = await fs.readFile(scriptPath);
+        } else {
+          throw mainErr;
+        }
+      }
       
       // css inject
       try {

@@ -40,6 +40,8 @@ export interface SuggestDocsPlacementResult {
 const DEFAULT_MARGIN = 4;
 const DEFAULT_GAP = 4;
 const DEFAULT_MIN_WIDTH = 140;
+const DEFAULT_SIDE_MIN_WIDTH = 220;
+const SIDE_MIN_COMPRESSION_RATIO = 0.72;
 const DEFAULT_MIN_HEIGHT = 44;
 const DEFAULT_MAX_WIDTH = 340;
 
@@ -73,7 +75,7 @@ function verticalBandForRight(
  * Pure non-overlapping placement solver for the completion documentation popup.
  *
  * Priority order (default `'auto'` / `'side'`):
- *  1. right of the completion list (if there is room);
+ *  1. right of the completion list (only when comfortable width exists without heavy compression);
  *  2. above the cursor line (if there is room);
  *  3. below the completion list.
  *
@@ -104,7 +106,13 @@ export function placeSuggestDocs(input: PlaceSuggestDocsInput): SuggestDocsPlace
   const tryRight = (): SuggestDocsPlacementResult | null => {
     const startX = listRect.left + listRect.width + gap;
     const availW = hostW - margin - startX;
-    const reqW = Math.min(minW, desiredW);
+    // Fail right-side placement if the pane would be overly compressed horizontally;
+    // prefer falling back to above -> below where full readable width is available.
+    const sideFloor = input.minWidth ?? DEFAULT_SIDE_MIN_WIDTH;
+    const reqW = Math.min(
+      desiredW,
+      Math.max(sideFloor, Math.round(desiredW * SIDE_MIN_COMPRESSION_RATIO)),
+    );
     const band = verticalBandForRight(listRect, caretLine, hostH, margin);
     const availH = Math.max(0, band.maxBottom - band.minTop);
     if (availW < reqW || availH < minH) return null;

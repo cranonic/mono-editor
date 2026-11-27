@@ -31,6 +31,15 @@ export class SignatureHelpContribution implements IEditorContribution {
         fontSize: host.getFontSize(),
         fontFamily: host.getFontFamily(),
         getLanguageIdAtPosition: (ln, col) => host.getLanguageIdAtPosition(ln, col),
+        getModelLike:
+          typeof host.modelAsFeatureLike === 'function'
+            ? (effectiveLang) => {
+                const base = host.modelAsFeatureLike();
+                return effectiveLang && effectiveLang !== base.getLanguageId()
+                  ? { ...base, getLanguageId: () => effectiveLang }
+                  : base;
+              }
+            : undefined,
         getAvoidRect: () => host.getSuggestWidgetRect(),
         isSuggestVisible: () => host.isSuggestVisible(),
       },

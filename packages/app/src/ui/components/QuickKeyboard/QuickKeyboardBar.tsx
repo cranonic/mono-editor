@@ -352,6 +352,8 @@ export const QuickKeyboardBar: React.FC = () => {
     (action: string) => {
       if (action === 'ctrl' || action === 'alt' || action === 'shift') {
         toggleModifier(action as ModifierKey);
+        const editor = getActiveMonoEditor();
+        if (editor) preserveMonoFocus(editor);
         return;
       }
 
@@ -413,6 +415,9 @@ export const QuickKeyboardBar: React.FC = () => {
 
       if (commands.hasCommand(action)) {
         void commands.executeCommand(action);
+        if (!action.includes('showCommands') && !action.includes('Find') && !action.includes('gotoLine')) {
+          preserveMonoFocus(editor);
+        }
         if (hasModifier) consumeArmedModifiers();
         return;
       }
@@ -448,7 +453,6 @@ export const QuickKeyboardBar: React.FC = () => {
     <div
       className="ms-quick-keyboard"
       style={floatingStyle}
-      tabIndex={-1}
       onMouseDown={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -481,10 +485,10 @@ export const QuickKeyboardBar: React.FC = () => {
           : k.label || k.action;
 
         return (
-          <button
+          <div
             key={k.id}
-            type="button"
-            tabIndex={-1}
+            role="button"
+            aria-label={title}
             className={`ms-qk-btn${modClass}`}
             aria-pressed={isModKey ? modState !== 'off' : undefined}
             data-mod-state={isModKey ? modState : undefined}
@@ -514,7 +518,7 @@ export const QuickKeyboardBar: React.FC = () => {
                 Math.abs(t.clientX - start.x) > TAP_MOVE_TOLERANCE_PX ||
                 Math.abs(t.clientY - start.y) > TAP_MOVE_TOLERANCE_PX;
               if (moved) return;
-              // Prevent synthetic focus-stealing mousedown/click so Android soft keyboard stays open
+              // Prevent synthetic focus-stealing mousedown/click so mobile soft keyboard stays open
               e.preventDefault();
               e.stopPropagation();
               lastTouchTapAtRef.current = performance.now();
@@ -533,7 +537,7 @@ export const QuickKeyboardBar: React.FC = () => {
             {k.icon ? <Icon name={k.icon as any} size={14} /> : k.label}
             {modState === 'armed' && <span className="ms-qk-mod-dot" aria-hidden="true" />}
             {modState === 'locked' && <span className="ms-qk-mod-lock" aria-hidden="true" />}
-          </button>
+          </div>
         );
       })}
     </div>

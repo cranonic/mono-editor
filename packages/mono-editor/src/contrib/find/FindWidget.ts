@@ -21,6 +21,7 @@ export interface FindWidgetCallbacks {
 const DEFAULT_WIDGET_THEME: ResolvedWidgetTheme = {
   isDark: true,
   background: '#252526',
+  editorBackground: '#1e1e1e',
   foreground: '#cccccc',
   mutedForeground: '#9d9d9d',
   border: '#454545',

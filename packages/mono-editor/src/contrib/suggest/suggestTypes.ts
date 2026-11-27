@@ -8,7 +8,7 @@ import type {
   TabCompletionMode,
   WordBasedSuggestionsMode,
 } from '../../common/config/editorOptions';
-import type { GhostTextItem } from '../../common/languages/providers/types';
+import type { GhostTextItem, ModelLike } from '../../common/languages/providers/types';
 import type { SuggestDocsMode } from './SuggestWidget';
 
 export type QuickSuggestionsOption =
@@ -42,6 +42,7 @@ export interface SuggestControllerOptions {
   kindVisibility?: Partial<Record<number, boolean>>;
   getTokenTypeAt?: (lineNumber: number, column: number) => string | null;
   getLanguageIdAtPosition?: (lineNumber: number, column: number) => string;
+  getModelLike?: (effectiveLang?: string) => ModelLike;
   onVisibilityChange?: (visible: boolean, rect: WidgetBoxRect | null) => void;
   setGhostTexts?: (items: readonly GhostTextItem[]) => void;
   clearGhostTexts?: (owner?: string) => void;

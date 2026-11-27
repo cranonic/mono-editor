@@ -11,14 +11,40 @@ export const getWorkspaceHash = async (path: string | null): Promise<string> => 
 
 //  LAYER 1: USER SETTINGS (Global Configuration)
 const USER_SETTINGS_FILE = 'storage/user/settings.json';
+let settingsWriteChain: Promise<void> = Promise.resolve();
 
 export const saveUserSettingsText = async (jsoncText: string) => {
-  try {
-    await Filesystem.writeFile({
-      path: USER_SETTINGS_FILE, data: jsoncText, directory: Directory.Data,
-      encoding: Encoding.UTF8, recursive: true
-    });
-  } catch (e) { console.error("Failed to save user settings:", e); }
+  const runWrite = async () => {
+    try {
+      await Filesystem.writeFile({
+        path: USER_SETTINGS_FILE,
+        data: jsoncText,
+        directory: Directory.Data,
+        encoding: Encoding.UTF8,
+        recursive: true,
+      });
+    } catch (e: any) {
+      const msg = String(e?.message || e || '');
+      if (msg.includes('already exist')) {
+        try {
+          await Filesystem.writeFile({
+            path: USER_SETTINGS_FILE,
+            data: jsoncText,
+            directory: Directory.Data,
+            encoding: Encoding.UTF8,
+            recursive: false,
+          });
+          return;
+        } catch (retryErr) {
+          console.error('Failed to save user settings:', retryErr);
+          return;
+        }
+      }
+      console.error('Failed to save user settings:', e);
+    }
+  };
+  settingsWriteChain = settingsWriteChain.then(runWrite, runWrite);
+  return settingsWriteChain;
 };
 
 export const loadUserSettingsText = async (): Promise<string | null> => {

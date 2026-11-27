@@ -633,14 +633,18 @@ export const syncExtensionConfigurations = async (
     });
   }
 
-  // Verify missing default configuration variables, safe-applying presets into memory tables
+  // Verify missing default configuration variables, safe-applying presets in a single batched write
   const currentSettings = useSettingsStore.getState().settings;
+  const defaultsToApply: Record<string, unknown> = {};
   Object.entries(extensionSettingsProps).forEach(([key, settingDef]: [string, any]) => {
     if (currentSettings[key] === undefined && settingDef.default !== undefined) {
-      useSettingsStore.getState().updateSetting(key, settingDef.default);
+      defaultsToApply[key] = settingDef.default;
       logSync(`   Default applied: '${key}' = ${JSON.stringify(settingDef.default)}`);
     }
   });
+  if (Object.keys(defaultsToApply).length > 0) {
+    useSettingsStore.getState().mergeDefaults(defaultsToApply);
+  }
 
   // Re-evaluate current workspace visual theme rules to apply changes gracefully
   useThemeStore.getState().sync();

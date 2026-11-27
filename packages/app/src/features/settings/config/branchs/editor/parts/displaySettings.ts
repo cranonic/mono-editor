@@ -236,7 +236,7 @@ export const displayProperties: IConfigurationSection['properties'] = {
   'editor.diagnostics.popup': {
     title: 'Diagnostics Popup Trigger',
     type: 'select',
-    defaultValue: 'hover',
+    defaultValue: 'click',
     order: 30,
     subCategory: 'Diagnostics',
     tags: ['display', 'diagnostics', 'mono'],

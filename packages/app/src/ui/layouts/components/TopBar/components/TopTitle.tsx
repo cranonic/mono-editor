@@ -196,12 +196,20 @@ function resolveEntry(
     }
   }
 
+  // Normalize legacy persisted topBar Rename entry (missing icon key / broad when clause)
+  let resolvedIcon = entry.icon;
+  let resolvedWhen = entry.when;
+  if (entry.id === 'title.actions.rename_file') {
+    if (!resolvedIcon) resolvedIcon = (entry as any).edit || 'edit';
+    if (resolvedWhen === 'activeTabType' || !resolvedWhen) resolvedWhen = "activeTabType == 'code'";
+  }
+
   return {
     id:       entry.id ?? `user-action-${idx}`,
     label:    entry.label,
-    icon:     entry.icon,
+    icon:     resolvedIcon,
     shortcut: entry.shortcut,
-    when:     entry.when,
+    when:     resolvedWhen,
     order:    entry.order ?? baseOrder,
     checked:  checked,
     children: children?.length ? children : undefined,
@@ -268,7 +276,7 @@ export const TopTitle: React.FC = () => {
   // deduplicates, and sorts by order — this is what was missing.
   const resolvedActions = useMemo(
     () => getResolvedMenu(MENU_ID, dynamicItems),
-    [dynamicItems],
+    [dynamicItems, activeTabId, activeTab?.type],
   );
 
   // ── maxOverflow auto-calc ──────────────────────────────────────────────────

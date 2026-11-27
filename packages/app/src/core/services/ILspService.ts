@@ -31,14 +31,25 @@ export interface ILspService {
    */
   waitUntilReady(): Promise<void>;
 
+  /** Active transport mode ('web-worker' | 'terminal'). */
+  readonly mode?: 'web-worker' | 'terminal';
+
+  /** Currently connected primary language ID. */
+  readonly languageId?: string;
+
   /**
-   * Provisions network sockets and bootstraps the asynchronous LSP initialization protocol layers.
+   * Provisions network sockets or a Web Worker and bootstraps the asynchronous LSP initialization protocol layers.
    * 
    * @param languageId Context identifier matching target editor configurations (e.g., 'typescript').
-   * @param url Absolute remote proxy endpoint or web socket server channel path.
+   * @param url Absolute remote proxy endpoint or 'worker://...' channel path.
    * @param options Secondary operational configurations mapping custom compiler settings.
    */
   connect(languageId: string, url: string, options?: Record<string, any>): void;
+
+  /**
+   * Connects directly to an in-browser Web Worker language server speaking JSON-RPC 2.0.
+   */
+  connectWorker?(languageId: string, workerFactory: () => Worker, options?: Record<string, any>): void;
 
   /**
    * severs underlying web communication channels, wipes diagnostic maps, 
@@ -70,6 +81,21 @@ export interface ILspService {
    * @param model Target Monaco document tracking model instance.
    */
   notifyDocumentOpen(model: monaco.editor.ITextModel): void;
+
+  /**
+   * Pushes multi-file workspace snapshots to the Web Worker LSP virtual filesystem.
+   */
+  syncWorkspaceFiles?(files: Array<{ uri: string; text: string }>, removeUris?: string[]): void;
+
+  /**
+   * Resolves the canonical LSP URI mapped to a given editor model.
+   */
+  getDocUriForModel?(model: monaco.editor.ITextModel): string;
+
+  /**
+   * Sends an LSP request and awaits the JSON-RPC response.
+   */
+  request?(method: string, params: unknown): Promise<unknown>;
 
   /**
    * Direct pipeline allowing execution layers to fire off low-level custom notification strings.

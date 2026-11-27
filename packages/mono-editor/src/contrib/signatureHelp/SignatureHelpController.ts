@@ -4,6 +4,7 @@ import type { SelectionState } from '../../common/core/SelectionState';
 import { analyzeCallContext } from '../../common/languages/callContext';
 import { languageFeatures } from '../../common/languages/languageFeaturesService';
 import type {
+  ModelLike,
   SignatureHelp,
   SignatureHelpContext,
   SignatureHelpResult,
@@ -19,6 +20,7 @@ export interface SignatureHelpControllerOptions {
   fontSize?: number;
   fontFamily?: string;
   getLanguageIdAtPosition?: (lineNumber: number, column: number) => string;
+  getModelLike?: (effectiveLang?: string) => ModelLike;
   getAvoidRect?: () => WidgetBoxRect | null;
   isSuggestVisible?: () => boolean;
 }
@@ -43,6 +45,7 @@ export class SignatureHelpController {
   private triggerMode: 'auto' | 'manual' = 'auto';
   private cycle = false;
   private getLanguageIdAtPosition?: (lineNumber: number, column: number) => string;
+  private getModelLike?: (effectiveLang?: string) => ModelLike;
   private getAvoidRect?: () => WidgetBoxRect | null;
   private isSuggestVisible?: () => boolean;
 
@@ -84,6 +87,7 @@ export class SignatureHelpController {
       this.widget.setOptions({ fontSize: opts.fontSize, fontFamily: opts.fontFamily });
     }
     if (opts.getLanguageIdAtPosition !== undefined) this.getLanguageIdAtPosition = opts.getLanguageIdAtPosition;
+    if (opts.getModelLike !== undefined) this.getModelLike = opts.getModelLike;
     if (opts.getAvoidRect !== undefined) this.getAvoidRect = opts.getAvoidRect;
     if (opts.isSuggestVisible !== undefined) this.isSuggestVisible = opts.isSuggestVisible;
   }
@@ -313,7 +317,8 @@ export class SignatureHelpController {
     this.widget.dispose();
   }
 
-  private buildModelLike(lang: string) {
+  private buildModelLike(lang: string): ModelLike {
+    if (this.getModelLike) return this.getModelLike(lang);
     return {
       getValue: () => this.model.getValue(),
       getLineContent: (n: number) => this.model.getLineContent(n),
@@ -321,6 +326,9 @@ export class SignatureHelpController {
       getOffsetAt: (l: number, c: number) => this.model.getOffsetAt(l, c),
       getPositionAt: (o: number) => this.model.getPositionAt(o),
       getLanguageId: () => lang,
+      getVersionId: () => this.model.getVersionId(),
+      getWordAtPosition: (p) => this.model.getWordAtPosition(p),
+      getWordUntilPosition: (p) => this.model.getWordUntilPosition(p),
     };
   }
 

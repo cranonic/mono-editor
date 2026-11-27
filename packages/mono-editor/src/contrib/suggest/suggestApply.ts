@@ -38,6 +38,44 @@ export function shouldSmartAcceptCompletionOnEnter(
   return raw !== prefix;
 }
 
+function resolveCompletionEditRange(
+  raw: unknown,
+  insertMode: SuggestInsertMode,
+): { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number } | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const candidate =
+    'startLineNumber' in raw
+      ? raw
+      : 'insert' in raw || 'replace' in raw
+        ? insertMode === 'replace'
+          ? (raw as { replace?: unknown; insert?: unknown }).replace ??
+            (raw as { insert?: unknown }).insert
+          : (raw as { insert?: unknown; replace?: unknown }).insert ??
+            (raw as { replace?: unknown }).replace
+        : null;
+  if (!candidate || typeof candidate !== 'object') return null;
+  const r = candidate as {
+    startLineNumber?: unknown;
+    startColumn?: unknown;
+    endLineNumber?: unknown;
+    endColumn?: unknown;
+  };
+  if (
+    typeof r.startLineNumber === 'number' && Number.isFinite(r.startLineNumber) &&
+    typeof r.startColumn === 'number' && Number.isFinite(r.startColumn) &&
+    typeof r.endLineNumber === 'number' && Number.isFinite(r.endLineNumber) &&
+    typeof r.endColumn === 'number' && Number.isFinite(r.endColumn)
+  ) {
+    return {
+      startLineNumber: r.startLineNumber,
+      startColumn: r.startColumn,
+      endLineNumber: r.endLineNumber,
+      endColumn: r.endColumn,
+    };
+  }
+  return null;
+}
+
 export function applyCompletionToModel(
   model: TextModel,
   selection: SelectionState,
@@ -56,10 +94,15 @@ export function applyCompletionToModel(
 
   let start: number;
   let end: number;
-  const editRange = item.textEdit?.range ?? item.range;
+  const editRange = resolveCompletionEditRange(item.textEdit?.range ?? item.range, opts.insertMode);
   if (editRange) {
     start = model.getOffsetAt(editRange.startLineNumber, editRange.startColumn);
     end = model.getOffsetAt(editRange.endLineNumber, editRange.endColumn);
+    if (end < start) {
+      const tmp = start;
+      start = end;
+      end = tmp;
+    }
   } else {
     const a = selection.active;
     end = model.getOffsetAt(a.lineNumber, a.column);

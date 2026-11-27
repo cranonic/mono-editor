@@ -2,6 +2,7 @@ import type { MonoEditorTheme } from '../../common/config/themeTypes';
 
 export interface ResolvedWidgetTheme {
   isDark: boolean;
+  editorBackground: string;
   background: string;
   foreground: string;
   mutedForeground: string;
@@ -69,6 +70,7 @@ export function resolveWidgetTheme(
 
   return {
     isDark: dark,
+    editorBackground: c['editor.background'] ?? editorTheme.background ?? (dark ? '#1e1e1e' : '#ffffff'),
     background: c['editorWidget.background'] ?? fallbackBg,
     foreground:
       c['editorWidget.foreground'] ??

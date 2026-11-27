@@ -81,6 +81,19 @@ export class HoverContribution implements IEditorContribution {
       },
       {
         getLanguageIdAtPosition: (ln, col) => host.getLanguageIdAtPosition(ln, col),
+        getTokenTypeAt:
+          typeof host.getTokenTypeAt === 'function'
+            ? (ln, col) => host.getTokenTypeAt(ln, col)
+            : undefined,
+        getModelLike:
+          typeof host.modelAsFeatureLike === 'function'
+            ? (effectiveLang) => {
+                const base = host.modelAsFeatureLike();
+                return effectiveLang && effectiveLang !== base.getLanguageId()
+                  ? { ...base, getLanguageId: () => effectiveLang }
+                  : base;
+              }
+            : undefined,
         getMarkers: () => host.getMarkers(),
         onRangeChange: () => host.view.schedulePaint(),
         executeCommand: (id, ...args) => host.executeCommand(id, ...args),
@@ -98,14 +111,22 @@ export class HoverContribution implements IEditorContribution {
       weight: 4,
       handler: () => {
         const p = this.host.getPosition();
-        void this.hover.showAt(p.lineNumber, p.column, { includeHover: true, includeDiagnostics: true });
+        void this.hover.showAt(p.lineNumber, p.column, {
+          includeHover: true,
+          includeDiagnostics: true,
+          autoHideOnMouseLeave: false,
+        });
       },
     });
     host.commands.registerCommand(
       MonoCommands.ShowHover,
       () => {
         const p = this.host.getPosition();
-        return this.hover.showAt(p.lineNumber, p.column, { includeHover: true, includeDiagnostics: true });
+        return this.hover.showAt(p.lineNumber, p.column, {
+          includeHover: true,
+          includeDiagnostics: true,
+          autoHideOnMouseLeave: false,
+        });
       },
       { title: 'Show Hover Docs', category: 'View' },
     );
@@ -117,7 +138,11 @@ export class HoverContribution implements IEditorContribution {
 
   showAtCaret(): Promise<boolean> {
     const p = this.host.getPosition();
-    return this.hover.showAt(p.lineNumber, p.column, { includeHover: true, includeDiagnostics: true });
+    return this.hover.showAt(p.lineNumber, p.column, {
+      includeHover: true,
+      includeDiagnostics: true,
+      autoHideOnMouseLeave: false,
+    });
   }
 
   onKeyDown(e: KeyboardEvent): boolean {
@@ -188,7 +213,7 @@ export class HoverContribution implements IEditorContribution {
         const p = this.host.selection.active;
         this.tapScheduledKey = `${p.lineNumber}:${p.column}`;
         this.tapScheduleGuardUntil = Date.now() + 900;
-        this.hover.schedule(p.lineNumber, p.column, 160, scope);
+        this.hover.schedule(p.lineNumber, p.column, 160, { ...scope, autoHideOnMouseLeave: false });
       }
       return;
     }
@@ -199,7 +224,7 @@ export class HoverContribution implements IEditorContribution {
         const p = this.host.selection.active;
         this.tapScheduledKey = `${p.lineNumber}:${p.column}`;
         this.tapScheduleGuardUntil = Date.now() + 900;
-        void this.hover.showAt(p.lineNumber, p.column, scope);
+        void this.hover.showAt(p.lineNumber, p.column, { ...scope, autoHideOnMouseLeave: false });
       }
     }
   }

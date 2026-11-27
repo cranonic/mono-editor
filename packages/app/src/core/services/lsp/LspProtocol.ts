@@ -24,7 +24,7 @@ const CLIENT_CAPABILITIES = {
         snippetSupport: true,
         commitCharactersSupport: true,
         documentationFormat: ['markdown', 'plaintext'],
-        resolveSupport: { properties: ['documentation', 'detail'] },
+        resolveSupport: { properties: ['documentation', 'detail', 'additionalTextEdits'] },
       },
     },
     hover: {
@@ -39,6 +39,14 @@ const CLIENT_CAPABILITIES = {
       },
     },
     definition: {
+      dynamicRegistration: true,
+      linkSupport: true,
+    },
+    typeDefinition: {
+      dynamicRegistration: true,
+      linkSupport: true,
+    },
+    implementation: {
       dynamicRegistration: true,
       linkSupport: true,
     },
@@ -99,7 +107,7 @@ const CLIENT_CAPABILITIES = {
     colorProvider: {
       dynamicRegistration: true,
     },
-    publishDiagnostics: { relatedInformation: true },
+    publishDiagnostics: { relatedInformation: true, tagSupport: { valueSet: [1, 2] } },
     semanticTokens: {
       dynamicRegistration: true,
       requests: { full: true, range: true },
@@ -120,8 +128,6 @@ const CLIENT_CAPABILITIES = {
 // ─── WORKSPACE PROFILE HELPERS ────────────────────────────────────────────────
 /**
  * Extracts a legible visual tag label out of deep system absolute file paths.
- * 
- * @param rootUri The baseline configuration directory address pointer.
  */
 export function getWorkspaceName(rootUri: string): string {
   const parts = decodeURI(rootUri).replace('file://', '').split('/').filter(Boolean);
@@ -131,9 +137,6 @@ export function getWorkspaceName(rootUri: string): string {
 // ─── HANDSHAKE SUBSYSTEM INITIATION ───────────────────────────────────────────
 /**
  * Orchestrates the two-way initialize/initialized handshake lifecycle with the language server.
- * Flips the operational state flag once negotiation is confirmed.
- * 
- * @param state The central language server operational state cache context.
  */
 export async function initializeLsp(state: LspState): Promise<void> {
   // Merge host defaults with extension-provided options (e.g. tsserver.path)
@@ -145,10 +148,10 @@ export async function initializeLsp(state: LspState): Promise<void> {
   console.log(
     '[LSP] initialize → rootUri=',
     state.rootUri,
+    ' mode=',
+    state.mode,
     ' initOptKeys=',
     Object.keys(initializationOptions),
-    ' tsserver=',
-    JSON.stringify((initializationOptions as any).tsserver ?? null),
   );
 
   try {
@@ -169,16 +172,8 @@ export async function initializeLsp(state: LspState): Promise<void> {
       '[LSP] Handshake OK. Server caps:',
       Object.keys(caps).join(', ') || '(none)',
     );
-    console.log(
-      '[LSP] inlayHintProvider=',
-      caps.inlayHintProvider != null ? JSON.stringify(caps.inlayHintProvider) : 'MISSING',
-      ' init.preferences.inlay=',
-      prefs
-        ? `paramNames=${prefs.includeInlayParameterNameHints} types=${prefs.includeInlayVariableTypeHints}`
-        : 'NO_PREFS',
-    );
 
-    // Push settings so TLS applies inlay prefs even if workspace/configuration
+    // Push settings so TLS / worker applies inlay & format prefs even if workspace/configuration
     // was answered before preferences were ready.
     if (prefs && typeof prefs === 'object') {
       try {
@@ -186,6 +181,7 @@ export async function initializeLsp(state: LspState): Promise<void> {
           settings: {
             typescript: {
               preferences: prefs,
+              format: (initializationOptions as any)?.formatOptions,
               inlayHints: {
                 parameterNames: {
                   enabled: prefs.includeInlayParameterNameHints ?? 'all',
@@ -209,6 +205,7 @@ export async function initializeLsp(state: LspState): Promise<void> {
             },
             javascript: {
               preferences: prefs,
+              format: (initializationOptions as any)?.formatOptions,
               inlayHints: {
                 parameterNames: {
                   enabled: prefs.includeInlayParameterNameHints ?? 'all',
@@ -223,7 +220,6 @@ export async function initializeLsp(state: LspState): Promise<void> {
             },
           },
         });
-        console.log('[LSP] workspace/didChangeConfiguration sent (inlay prefs)');
       } catch (e) {
         console.warn('[LSP] didChangeConfiguration failed:', e);
       }
@@ -239,13 +235,6 @@ export async function initializeLsp(state: LspState): Promise<void> {
 }
 
 // ─── DIAGNOSTICS & TELEMETRY HANDLERS ─────────────────────────────────────────
-/**
- * Intercepts incoming `textDocument/publishDiagnostics` asynchronous notifications 
- * and maps the diagnostic errors into active Monaco structural text decorations.
- * 
- * @param state The central language server operational state cache context.
- * @param params Structural diagnostic notification parameters sent from the server.
- */
 /** Decode path for loose comparison (ignore encoding + /sdcard vs storage). */
 function uriPathKey(uri: string): string {
   if (!uri) return '';
@@ -254,7 +243,6 @@ function uriPathKey(uri: string): string {
     p = decodeURIComponent(p);
   } catch { /* keep */ }
   p = p.replace(/^\/storage\/emulated\/0/i, '/sdcard');
-  // strip trailing slash
   if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
   return p.toLowerCase();
 }
@@ -266,21 +254,32 @@ export function handlePublishDiagnostics(state: LspState, params: any): void {
   const localKey = uriPathKey(localUri);
   const diags = params?.diagnostics ?? [];
 
-  // Match model by: mapped getDocUri, monaco uri, or normalized path key
-  const model = monaco.editor.getModels().find((m) => {
+  const matchesModel = (m: any): boolean => {
+    if (!m) return false;
     const docUri = getDocUri(m, state);
-    const mUri = m.uri.toString();
-    if (docUri === lspUri || mUri === localUri || mUri === lspUri) return true;
+    const mUri = m.uri?.toString?.() ?? '';
+    if (docUri === lspUri || (mUri && (mUri === localUri || mUri === lspUri))) return true;
     const mk = uriPathKey(docUri);
     const mu = uriPathKey(mUri);
-    return (diagKey && (mk === diagKey || mu === diagKey || mu === localKey));
-  });
+    return Boolean(diagKey && (mk === diagKey || (mu && (mu === diagKey || mu === localKey))));
+  };
 
-  if (!model) {
-    console.warn(
-      `[LSP] publishDiagnostics: no model for uri=${lspUri} ` +
-        `(models=${monaco.editor.getModels().map((m) => m.uri.toString()).join(' | ')})`,
-    );
+  // Search BOTH standalone models AND active MonoEditor models
+  const matchedModels = new Set<any>();
+  for (const m of monaco.editor.getModels()) {
+    if (matchesModel(m)) matchedModels.add(m);
+  }
+
+  const matchedEditors: any[] = [];
+  for (const ed of monaco.editor.getEditors()) {
+    const m = ed?.getModel?.();
+    if (m && matchesModel(m)) {
+      matchedModels.add(m);
+      matchedEditors.push(ed);
+    }
+  }
+
+  if (matchedModels.size === 0) {
     return;
   }
 
@@ -292,12 +291,24 @@ export function handlePublishDiagnostics(state: LspState, params: any): void {
     endColumn: (d.range?.end?.character ?? 0) + 1,
     message: d.message ?? '',
     source: d.source ?? state.languageId,
+    ...(d.code !== undefined ? { code: String(d.code) } : {}),
+    ...(Array.isArray(d.tags) ? { tags: d.tags } : {}),
   }));
 
-  monaco.editor.setModelMarkers(model, 'lsp', markers);
-  console.log(
-    `[LSP] diagnostics applied: ${markers.length} marker(s) on ${model.uri.toString()}`,
-  );
+  for (const model of matchedModels) {
+    try {
+      monaco.editor.setModelMarkers(model, 'lsp', markers);
+    } catch { /* ignore */ }
+  }
+  for (const ed of matchedEditors) {
+    try {
+      if (typeof ed.setModelMarkers === 'function') {
+        ed.setModelMarkers('lsp', markers);
+      }
+    } catch { /* ignore */ }
+  }
+
+  console.log(`[LSP] diagnostics applied: ${markers.length} marker(s) on ${lspUri}`);
 }
 
 /**

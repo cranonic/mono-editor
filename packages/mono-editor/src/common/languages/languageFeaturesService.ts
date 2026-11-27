@@ -134,7 +134,9 @@ export class LanguageFeaturesRegistry {
     return registerInMap(this.hover, languageId, provider);
   }
   registerInlayHintsProvider(languageId: string, provider: InlayHintsProvider) {
-    return registerInMap(this.inlayHints, languageId, provider);
+    const sub = registerInMap(this.inlayHints, languageId, provider);
+    this.fireChange();
+    return { dispose: () => { sub.dispose(); this.fireChange(); } };
   }
   registerFoldingRangeProvider(languageId: string, provider: FoldingRangeProvider) {
     const sub = registerInMap(this.folding, languageId, provider);
@@ -183,10 +185,14 @@ export class LanguageFeaturesRegistry {
     return registerInMap(this.selectionRange, languageId, provider);
   }
   registerDocumentSemanticTokensProvider(languageId: string, provider: DocumentSemanticTokensProvider) {
-    return registerInMap(this.semanticTokens, languageId, provider);
+    const sub = registerInMap(this.semanticTokens, languageId, provider);
+    this.fireChange();
+    return { dispose: () => { sub.dispose(); this.fireChange(); } };
   }
   registerDocumentRangeSemanticTokensProvider(languageId: string, provider: DocumentRangeSemanticTokensProvider) {
-    return registerInMap(this.rangeSemanticTokens, languageId, provider);
+    const sub = registerInMap(this.rangeSemanticTokens, languageId, provider);
+    this.fireChange();
+    return { dispose: () => { sub.dispose(); this.fireChange(); } };
   }
   registerDocumentPasteEditProvider(languageId: string, provider: DocumentPasteEditProvider) {
     return registerInMap(this.pasteEdit, languageId, provider);
@@ -195,7 +201,9 @@ export class LanguageFeaturesRegistry {
     return registerInMap(this.rename, languageId, provider);
   }
   registerCodeActionProvider(languageId: string, provider: CodeActionProvider) {
-    return registerInMap(this.codeAction, languageId, provider);
+    const sub = registerInMap(this.codeAction, languageId, provider);
+    this.fireChange();
+    return { dispose: () => { sub.dispose(); this.fireChange(); } };
   }
   registerColorProvider(languageId: string, provider: DocumentColorProvider) {
     return registerInMap(this.color, languageId, provider);

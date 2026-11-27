@@ -3,6 +3,7 @@ import type { SelectionState } from '../../common/core/SelectionState';
 import type { IRange } from '../../common/core/types';
 import type { IMarker } from '../../common/decorations/types';
 import { languageFeatures } from '../../common/languages/languageFeaturesService';
+import type { ModelLike } from '../../common/languages/providers/types';
 import type { TextModel } from '../../common/model/TextModel';
 import { MonoCommands } from '../../platform/keybindings/KeybindingService';
 import type { ResolvedWidgetTheme } from '../../platform/theme/widgetTheme';
@@ -13,10 +14,13 @@ export type HoverTriggerMode = 'click' | 'hover' | 'off';
 export interface HoverShowScope {
   includeHover?: boolean;
   includeDiagnostics?: boolean;
+  autoHideOnMouseLeave?: boolean;
 }
 
 export interface HoverControllerCallbacks {
   getLanguageIdAtPosition?: (lineNumber: number, column: number) => string;
+  getTokenTypeAt?: (lineNumber: number, column: number) => string | null;
+  getModelLike?: (effectiveLang?: string) => ModelLike;
   getMarkers?: () => IMarker[];
   onRangeChange?: (range: IRange | null) => void;
   executeCommand?: (id: string, ...args: unknown[]) => Promise<unknown>;
@@ -50,6 +54,7 @@ export class HoverController {
   private activeAnchorPos: { lineNumber: number; column: number } | null = null;
   private sticky = true;
   private hidingDelay = 300;
+  private autoHideOnMouseLeave = true;
   private cb: HoverControllerCallbacks;
 
   constructor(
@@ -71,7 +76,7 @@ export class HoverController {
       ...options,
       onMouseEnter: () => this.cancelHideTimer(),
       onMouseLeave: () => {
-        if (this.sticky) this.scheduleHide(this.hidingDelay);
+        if (this.sticky && this.autoHideOnMouseLeave) this.scheduleHide(this.hidingDelay);
       },
     });
   }
@@ -185,23 +190,33 @@ export class HoverController {
     this.cancelHideTimer();
 
     const lang = this.cb.getLanguageIdAtPosition?.(line, column) ?? this.model.getLanguageId();
-    const modelLike = {
-      getValue: () => this.model.getValue(),
-      getLineContent: (n: number) => this.model.getLineContent(n),
-      getLineCount: () => this.model.getLineCount(),
-      getOffsetAt: (l: number, c: number) => this.model.getOffsetAt(l, c),
-      getPositionAt: (o: number) => this.model.getPositionAt(o),
-      getLanguageId: () => lang,
-    };
+    const modelLike: ModelLike = this.cb.getModelLike
+      ? this.cb.getModelLike(lang)
+      : {
+          getValue: () => this.model.getValue(),
+          getLineContent: (n: number) => this.model.getLineContent(n),
+          getLineCount: () => this.model.getLineCount(),
+          getOffsetAt: (l: number, c: number) => this.model.getOffsetAt(l, c),
+          getPositionAt: (o: number) => this.model.getPositionAt(o),
+          getLanguageId: () => lang,
+          getVersionId: () => this.model.getVersionId(),
+          getWordAtPosition: (p) => this.model.getWordAtPosition(p),
+          getWordUntilPosition: (p) => this.model.getWordUntilPosition(p),
+        };
+    this.autoHideOnMouseLeave = scope?.autoHideOnMouseLeave ?? true;
 
     // 1. Collect overlapping diagnostics at (line, column) if enabled for this trigger
     const markers = includeDiagnostics ? (this.cb.getMarkers?.() ?? []) : [];
     const diagnostics = includeDiagnostics ? markersAtPosition(markers, line, column) : [];
 
-    // 2. Collect HoverProvider contents & hover.range if enabled for this trigger
+    // 2. Collect HoverProvider contents & hover.range if enabled for this trigger (skip language keywords)
     const parts: string[] = [];
     let resolvedRange: IRange | null = null;
-    if (includeHover) {
+    const tokAt = this.cb.getTokenTypeAt?.(line, column) ?? null;
+    const tokPrev = !tokAt && column > 1 ? (this.cb.getTokenTypeAt?.(line, column - 1) ?? null) : null;
+    const tokType = tokAt ?? tokPrev;
+    const isKeywordToken = tokType === 'keyword' || tokType === 'keywordControl';
+    if (includeHover && !isKeywordToken) {
       const providers = languageFeatures.getHoverProviders(lang);
       const token = { isCancellationRequested: false };
       for (const p of providers) {
@@ -239,37 +254,25 @@ export class HoverController {
       };
     }
 
-    // 3. Build footer actions: when only diagnostics are active, expose only Quick Fix
+    // 3. VS Code-aligned hover footer: only show diagnostic actions (View Problem, Quick Fix...) when diagnostics exist.
+    // Go to Definition remains on Ctrl+Click and F12 rather than cluttering hover footers.
     const actions: HoverActionItem[] = [];
-    if (this.cb.executeCommand) {
-      const runAtHoverPos = (cmdId: string) => {
+    if (this.cb.executeCommand && diagnostics.length > 0) {
+      const runAtHoverPos = (cmdId: string, ...args: unknown[]) => {
         this.hide();
         this.cb.setCaret?.(line, column);
-        void this.cb.executeCommand?.(cmdId);
+        void this.cb.executeCommand?.(cmdId, ...args);
       };
-      if (diagnostics.length > 0 || (includeHover && languageFeatures.getCodeActionProviders(lang).length > 0)) {
-        actions.push({
-          label: 'Quick Fix...',
-          title: 'Show Code Actions / Quick Fixes (Ctrl+.)',
-          run: () => runAtHoverPos(MonoCommands.QuickFix),
-        });
-      }
-      if (includeHover && parts.length > 0) {
-        if (languageFeatures.getDefinitionProviders(lang).length > 0) {
-          actions.push({
-            label: 'Go to Definition',
-            title: 'Go to Definition (F12)',
-            run: () => runAtHoverPos(MonoCommands.RevealDefinition),
-          });
-        }
-        if (languageFeatures.getReferenceProviders(lang).length > 0) {
-          actions.push({
-            label: 'Peek References',
-            title: 'Find All References (Shift+F12)',
-            run: () => runAtHoverPos(MonoCommands.ReferenceSearch),
-          });
-        }
-      }
+      actions.push({
+        label: 'View Problem',
+        title: 'View Problem in Problems Panel',
+        run: () => runAtHoverPos('workbench.actions.view.problems', diagnostics[0]),
+      });
+      actions.push({
+        label: 'Quick Fix...',
+        title: 'Show Code Actions / Quick Fixes (Ctrl+.)',
+        run: () => runAtHoverPos(MonoCommands.QuickFix),
+      });
     }
 
     this.activeRange = resolvedRange;

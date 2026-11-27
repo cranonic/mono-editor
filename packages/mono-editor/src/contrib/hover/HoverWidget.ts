@@ -72,10 +72,10 @@ export class HoverWidget {
     this.resolvedTheme = resolveWidgetTheme(DEFAULT_THEME);
     this.opts = {
       maxWidth: 460,
-      background: this.resolvedTheme.background,
+      background: this.resolvedTheme.editorBackground,
       border: `1px solid ${this.resolvedTheme.border}`,
       foreground: this.resolvedTheme.foreground,
-      codeBackground: this.resolvedTheme.codeBackground,
+      codeBackground: 'transparent',
       focusBorder: this.resolvedTheme.focusBorder,
       shadow: this.resolvedTheme.shadow,
       fontSize: 14,
@@ -95,10 +95,10 @@ export class HoverWidget {
   applyTheme(theme: ResolvedWidgetTheme): void {
     this.resolvedTheme = theme;
     this.setOptions({
-      background: theme.background,
+      background: theme.editorBackground,
       border: `1px solid ${theme.border}`,
       foreground: theme.foreground,
-      codeBackground: theme.codeBackground,
+      codeBackground: 'transparent',
       focusBorder: theme.focusBorder,
       shadow: theme.shadow,
     });
@@ -134,12 +134,12 @@ export class HoverWidget {
     this.lastAnchor = anchor;
 
     const isDark = this.resolvedTheme.isDark;
-    const vsBg = this.opts.background || (isDark ? '#252526' : '#f3f3f3');
+    const vsBg = this.opts.background || this.resolvedTheme.editorBackground || (isDark ? '#1e1e1e' : '#ffffff');
     const vsBorderColor = this.resolvedTheme.border || (isDark ? '#454545' : '#c8c8c8');
     const vsBorder = this.opts.border || `1px solid ${vsBorderColor}`;
     const vsShadow = isDark ? '0 2px 8px rgba(0, 0, 0, 0.36)' : '0 2px 8px rgba(0, 0, 0, 0.16)';
     const vsLinkColor = isDark ? '#3794ff' : '#006ab1';
-    const vsStatusBarBg = isDark ? '#2c2c2d' : '#e7e7e7';
+    const vsStatusBarBg = vsBg;
 
     const baseFontSize = Math.max(10, Math.round(this.opts.fontSize || 14));
     const uiFontSize = Math.max(10, Math.round(baseFontSize * 0.93));
@@ -168,7 +168,8 @@ export class HoverWidget {
       fontSize: `${uiFontSize}px`,
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       lineHeight: '1.45',
-      wordBreak: 'break-word',
+      wordBreak: 'normal',
+      overflowWrap: 'break-word',
       pointerEvents: 'auto',
       overflow: 'hidden',
       boxSizing: 'border-box',
@@ -254,7 +255,7 @@ export class HoverWidget {
       const isCodeOnly = trimmed.startsWith('```') && trimmed.endsWith('```') && trimmed.indexOf('```', 3) === trimmed.length - 3;
       const docSec = appendSection(isCodeOnly);
       renderMarkdownToDom(docSec, part, this.resolvedTheme, undefined, {
-        flatCodeBlocks: isCodeOnly,
+        flatCodeBlocks: true,
         codeFontFamily: this.opts.fontFamily,
       });
     }

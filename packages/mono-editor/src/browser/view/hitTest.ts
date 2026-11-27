@@ -14,7 +14,7 @@ import {
   type InlineVirtualElement,
   type ResolvedInlayHint,
 } from '../../common/virtualText';
-import { COLOR_SWATCH_ADVANCE, type CanvasRenderer } from '../render/CanvasRenderer';
+import { getColorSwatchMetrics, type CanvasRenderer } from '../render/CanvasRenderer';
 import {
   computeRowDocTop,
   createRowGeometry,
@@ -57,7 +57,7 @@ function elementsForLine(
     colors,
     inlayHints,
     ghostRuns,
-    swatchAdvancePx: COLOR_SWATCH_ADVANCE,
+    swatchAdvancePx: getColorSwatchMetrics(metrics.fontSize).advance,
     measureText: (t) => renderer.measureTextWidth(t, metrics),
   });
 }

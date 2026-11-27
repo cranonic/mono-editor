@@ -1,4 +1,4 @@
-import type { CompletionItem } from '../../../common/languages/providers/types';
+import { CompletionItemKind, type CompletionItem } from '../../../common/languages/providers/types';
 import { haptic } from '../../../platform/haptic/haptic';
 import { createIcon, kindToCodicon } from '../../../platform/icons';
 import {
@@ -11,6 +11,7 @@ import {
 
 export function hasItemDocumentation(item: CompletionItem | null | undefined): boolean {
   if (!item) return false;
+  if (item.kind === CompletionItemKind.Keyword || item.kind === CompletionItemKind.Text) return false;
   if (typeof item.documentation === 'string' && item.documentation.trim().length > 0) return true;
   if (
     item.documentation &&
@@ -209,7 +210,11 @@ function bindSuggestRowEvents(
     e.stopPropagation();
     ctx.onPointerAccept(i);
   });
-  row.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+  row.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!moved) ctx.onPointerAccept(i);
+  });
   row.addEventListener('pointerenter', (e) => {
     if (e.pointerType !== 'mouse') return;
     ctx.onHoverEnter(i);

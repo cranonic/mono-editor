@@ -1,0 +1,81 @@
+{
+  "TypeScript Console Log": {
+    "prefix": "log",
+    "body": ["console.log($1);"],
+    "description": "console.log"
+  },
+  "Export Interface": {
+    "prefix": "expint",
+    "body": [
+      "export interface ${1:Name} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Export interface"
+  },
+  "Export Type Alias": {
+    "prefix": "exptype",
+    "body": ["export type ${1:Name} = $0;"],
+    "description": "Export type alias"
+  },
+  "Export Function": {
+    "prefix": "expfn",
+    "body": [
+      "export function ${1:name}($2): ${3:void} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Export function"
+  },
+  "Async Function": {
+    "prefix": "afn",
+    "body": [
+      "async function ${1:name}($2): Promise<${3:void}> {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Async function"
+  },
+  "Arrow Function": {
+    "prefix": "af",
+    "body": ["const ${1:name} = ($2) => $0;"],
+    "description": "Arrow function"
+  },
+  "React FC (TSX)": {
+    "prefix": "rfc",
+    "body": [
+      "import React from 'react';",
+      "",
+      "export interface ${1:Name}Props {",
+      "\t$2",
+      "}",
+      "",
+      "export const ${1:Name}: React.FC<${1:Name}Props> = ({ $3 }) => {",
+      "\treturn (",
+      "\t\t<div>$0</div>",
+      "\t);",
+      "};"
+    ],
+    "description": "React function component with props"
+  },
+  "Try Catch": {
+    "prefix": "try",
+    "body": [
+      "try {",
+      "\t$1",
+      "} catch (${2:error}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "try/catch"
+  },
+  "Promise": {
+    "prefix": "prom",
+    "body": [
+      "new Promise<${1:void}>((resolve, reject) => {",
+      "\t$0",
+      "})"
+    ],
+    "description": "new Promise"
+  }
+}
