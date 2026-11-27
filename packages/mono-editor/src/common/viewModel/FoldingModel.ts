@@ -1,7 +1,13 @@
-import type { TextModel } from '../model/TextModel';
-import type { FoldingRange } from '../languages';
+import type { FoldingStrategy } from '../config/editorOptions';
+import type { FoldingRange, ModelLike } from '../languages';
 import { languageFeatures } from '../languages';
 import { getLanguageConfiguration } from '../languages/languageConfigurationRegistry';
+import type { TextModel } from '../model/TextModel';
+import {
+  buildStructureTree,
+  structureTreeToFoldingRanges,
+} from '../structure/StructureBuilder';
+import { DEFAULT_STRUCTURE_MAX_LINES } from '../structure/types';
 
 /**
  * Computes folding ranges using language folding markers (#region / #endregion)
@@ -59,6 +65,38 @@ export function computeIndentFoldingRanges(model: TextModel): FoldingRange[] {
   return ranges;
 }
 
+function normalizeFoldingKind(kind: unknown): string | undefined {
+  if (typeof kind === 'string') return kind;
+  if (kind && typeof kind === 'object' && 'value' in kind && typeof (kind as { value: unknown }).value === 'string') {
+    return (kind as { value: string }).value;
+  }
+  return undefined;
+}
+
+function normalizeProviderRanges(raw: readonly FoldingRange[], lineCount: number): FoldingRange[] {
+  const out: FoldingRange[] = [];
+  for (const r of raw) {
+    if (!r || typeof r.start !== 'number' || typeof r.end !== 'number') continue;
+    const start = Math.max(1, Math.min(lineCount, Math.floor(r.start)));
+    const end = Math.max(1, Math.min(lineCount, Math.floor(r.end)));
+    if (end <= start) continue;
+    const kind = normalizeFoldingKind(r.kind);
+    out.push(kind ? { start, end, kind } : { start, end });
+  }
+  out.sort((a, b) => a.start - b.start || b.end - a.end);
+  return out;
+}
+
+function rangesEqual(a: readonly FoldingRange[], b: readonly FoldingRange[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!;
+    const y = b[i]!;
+    if (x.start !== y.start || x.end !== y.end || x.kind !== y.kind) return false;
+  }
+  return true;
+}
+
 export class FoldingModel {
   private model: TextModel;
   private ranges: FoldingRange[] = [];
@@ -66,6 +104,11 @@ export class FoldingModel {
   /** collapsed: start line → end line */
   private collapsed = new Map<number, number>();
   private version = 1;
+  private strategy: FoldingStrategy = 'auto';
+  private maxLines = DEFAULT_STRUCTURE_MAX_LINES;
+  private structureRangesProvider: (() => FoldingRange[]) | null = null;
+  private updateSeq = 0;
+  private activeToken: { isCancellationRequested: boolean } | null = null;
 
   constructor(model: TextModel) {
     this.model = model;
@@ -76,40 +119,126 @@ export class FoldingModel {
     return this.version;
   }
 
-  /** Synchronous recompute (indentation + language region markers) for instant paint. */
-  updateSync(): void {
-    this.applyRanges(computeIndentFoldingRanges(this.model));
+  setStrategy(strategy: FoldingStrategy): void {
+    if (strategy !== this.strategy) {
+      this.strategy = strategy;
+      this.updateSync();
+    }
   }
 
-  /** Async recompute that also queries registered FoldingRangeProviders. */
-  async update(): Promise<void> {
+  getStrategy(): FoldingStrategy {
+    return this.strategy;
+  }
+
+  setMaxLines(maxLines: number): void {
+    if (maxLines > 0 && maxLines !== this.maxLines) {
+      this.maxLines = maxLines;
+      this.updateSync();
+    }
+  }
+
+  setStructureRangesProvider(provider: (() => FoldingRange[]) | null): void {
+    this.structureRangesProvider = provider;
+  }
+
+  private computeBuiltinRanges(): FoldingRange[] {
+    if (this.strategy === 'indentation') {
+      return computeIndentFoldingRanges(this.model);
+    }
+    if (this.model.getLineCount() > this.maxLines) {
+      return computeIndentFoldingRanges(this.model);
+    }
+    if (this.structureRangesProvider) {
+      const fromService = this.structureRangesProvider();
+      if (fromService.length > 0) return fromService;
+    }
+    const lang = this.model.getLanguageId().toLowerCase();
+    if (lang === 'plaintext' || lang === 'text' || lang === '') {
+      return computeIndentFoldingRanges(this.model);
+    }
+    const tree = buildStructureTree(this.model, { maxLines: this.maxLines });
+    const ranges = structureTreeToFoldingRanges(tree);
+    return ranges.length > 0 ? ranges : computeIndentFoldingRanges(this.model);
+  }
+
+  /** Synchronous recompute (structure engine or indentation) for instant paint. */
+  updateSync(): boolean {
+    return this.applyRanges(this.computeBuiltinRanges());
+  }
+
+  /**
+   * Async recompute that queries registered `FoldingRangeProvider`s when strategy === 'auto'.
+   * Non-empty provider result for the current model version replaces the built-in set;
+   * empty / error / stale / timeout keeps the built-in set.
+   */
+  async update(
+    modelLike?: ModelLike,
+    opts?: { timeoutMs?: number },
+  ): Promise<boolean> {
+    if (this.strategy !== 'auto') {
+      return this.updateSync();
+    }
     const lang = this.model.getLanguageId();
     const providers = languageFeatures.getFoldingProviders(lang);
+    if (!providers.length) {
+      return this.updateSync();
+    }
+
+    if (this.activeToken) this.activeToken.isCancellationRequested = true;
     const token = { isCancellationRequested: false };
-    const modelLike = {
-      getValue: () => this.model.getValue(),
-      getLineContent: (n: number) => this.model.getLineContent(n),
-      getLineCount: () => this.model.getLineCount(),
-      getOffsetAt: (l: number, c: number) => this.model.getOffsetAt(l, c),
-      getPositionAt: (o: number) => this.model.getPositionAt(o),
-      getLanguageId: () => this.model.getLanguageId(),
+    this.activeToken = token;
+    const seq = ++this.updateSeq;
+    const expectedModel = this.model;
+    const expectedVersion = this.model.getVersionId();
+    const timeoutMs = opts?.timeoutMs ?? 1500;
+
+    const effectiveModelLike: ModelLike = modelLike ?? {
+      getValue: () => expectedModel.getValue(),
+      getLineContent: (n: number) => expectedModel.getLineContent(n),
+      getLineCount: () => expectedModel.getLineCount(),
+      getOffsetAt: (l: number, c: number) => expectedModel.getOffsetAt(l, c),
+      getPositionAt: (o: number) => expectedModel.getPositionAt(o),
+      getLanguageId: () => expectedModel.getLanguageId(),
+      getVersionId: () => expectedModel.getVersionId(),
     };
-    let ranges: FoldingRange[] = [];
-    if (providers.length) {
-      for (const p of providers) {
-        try {
-          const r = await Promise.resolve(p.provideFoldingRanges(modelLike, {}, token));
-          if (r?.length) ranges.push(...r);
-        } catch {
-          /* */
-        }
+
+    const collected: FoldingRange[] = [];
+    for (const p of providers) {
+      if (token.isCancellationRequested || seq !== this.updateSeq) return false;
+      try {
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        const providerPromise = Promise.resolve(p.provideFoldingRanges(effectiveModelLike, {}, token));
+        const res = await Promise.race([
+          providerPromise,
+          new Promise<null>((resolve) => {
+            timer = setTimeout(() => {
+              token.isCancellationRequested = true;
+              resolve(null);
+            }, timeoutMs);
+          }),
+        ]);
+        if (timer) clearTimeout(timer);
+        if (token.isCancellationRequested || seq !== this.updateSeq) return false;
+        if (this.model !== expectedModel || this.model.getVersionId() !== expectedVersion) return false;
+        if (res?.length) collected.push(...res);
+      } catch {
+        /* provider error: keep built-in ranges */
       }
     }
-    if (!ranges.length) ranges = computeIndentFoldingRanges(this.model);
-    this.applyRanges(ranges);
+
+    if (token.isCancellationRequested || seq !== this.updateSeq) return false;
+    if (this.model !== expectedModel || this.model.getVersionId() !== expectedVersion) return false;
+
+    const normalized = normalizeProviderRanges(collected, expectedModel.getLineCount());
+    if (!normalized.length) {
+      // Keep built-in ranges when providers return empty / error / timeout
+      return false;
+    }
+    return this.applyRanges(normalized);
   }
 
-  private applyRanges(nextRanges: FoldingRange[]): void {
+  private applyRanges(nextRanges: FoldingRange[]): boolean {
+    const changedRanges = !rangesEqual(this.ranges, nextRanges);
     this.ranges = nextRanges;
     this.rangeByStart.clear();
     for (const r of nextRanges) {
@@ -117,18 +246,19 @@ export class FoldingModel {
         this.rangeByStart.set(r.start, r);
       }
     }
-    let changed = false;
+    let changedCollapsed = false;
     for (const [s, e] of [...this.collapsed]) {
       const match = this.rangeByStart.get(s);
       if (!match) {
         this.collapsed.delete(s);
-        changed = true;
+        changedCollapsed = true;
       } else if (match.end !== e) {
         this.collapsed.set(s, match.end);
-        changed = true;
+        changedCollapsed = true;
       }
     }
-    if (changed) this.version++;
+    if (changedCollapsed || changedRanges) this.version++;
+    return changedRanges || changedCollapsed;
   }
 
   getRanges(): FoldingRange[] {
@@ -249,6 +379,8 @@ export class FoldingModel {
   }
 
   setModel(model: TextModel, collapsedLines?: readonly number[]): void {
+    if (this.activeToken) this.activeToken.isCancellationRequested = true;
+    this.updateSeq++;
     this.model = model;
     this.collapsed.clear();
     this.updateSync();

@@ -2,9 +2,9 @@
 import { generateLspLanguageSettings } from '../lspFactory';
 
 export const cssLspProperties = generateLspLanguageSettings(
-  'CSS / SCSS / Less', 'css', 'Monaco Built-in',
+  'CSS / SCSS / Less', 'css', 'Mono Built-in',
   {
-    // Monaco already provides colour swatches for CSS/SCSS/Less.
+    // Mono already provides colour swatches for CSS/SCSS/Less.
     // Keep the setting so users can turn them off without losing other CSS features.
     'lsp.css.colorDecorators': {
       title:               'Color Decorators',
@@ -12,7 +12,7 @@ export const cssLspProperties = generateLspLanguageSettings(
       subCategory:         'CSS / SCSS / Less',
       defaultValue:        true,
       markdownDescription:
-        'Show inline colour swatches next to colour values. Monaco built-in — works offline without a language server.',
+        'Show inline colour swatches next to colour values. Mono built-in — works offline without a language server.',
     },
     'lsp.css.lint.unknownProperties': {
       title:               'Warn on Unknown Properties',
@@ -25,7 +25,7 @@ export const cssLspProperties = generateLspLanguageSettings(
 );
 
 export const jsonLspProperties = generateLspLanguageSettings(
-  'JSON', 'json', 'Monaco Built-in',
+  'JSON', 'json', 'Mono Built-in',
   {
     'lsp.json.schemaValidation': {
       title:               'Schema Validation',

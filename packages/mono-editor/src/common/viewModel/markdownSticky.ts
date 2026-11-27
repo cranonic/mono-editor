@@ -274,3 +274,60 @@ export class OutlineScopeFinder implements IScopeFinder {
     });
   }
 }
+
+/**
+ * S6: Scope finder backed directly by `StructureTree` (used when no LSP symbols exist).
+ */
+export class StructureScopeFinder implements IScopeFinder {
+  private model: TextModel;
+  private getScopes: () => readonly Scope[];
+
+  constructor(model: TextModel, getScopes: () => readonly Scope[]) {
+    this.model = model;
+    this.getScopes = getScopes;
+  }
+
+  sync(model: TextModel): void {
+    this.model = model;
+  }
+
+  chain(n: number): readonly Scope[] {
+    const scopes = this.getScopes();
+    const out: Scope[] = [];
+    for (let i = 0; i < scopes.length; i++) {
+      const s = scopes[i]!;
+      if (s.header < n && n <= s.end) {
+        if (!out.length || out[out.length - 1]!.header !== s.header) {
+          out.push(s);
+        }
+      } else if (s.header >= n) {
+        break;
+      }
+    }
+    return out;
+  }
+
+  headersForRows(
+    probeRow: number,
+    maxLines: number,
+    rowToModelLine: (visualRow: number) => number,
+    isLineHidden?: (lineNumber: number) => boolean,
+  ): StickyHeaders {
+    return computeStickyHeadersFromChain(
+      probeRow,
+      maxLines,
+      rowToModelLine,
+      (ln) => this.chain(ln),
+      isLineHidden,
+    );
+  }
+
+  headers(probeLine: number, maxLines: number): StickyHeaders {
+    const lineCount = this.model.getLineCount();
+    return this.headersForRows(probeLine - 1, maxLines, (row) => {
+      if (row < 0) return 0;
+      return Math.min(row + 1, lineCount);
+    });
+  }
+}
+

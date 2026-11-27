@@ -1,6 +1,6 @@
 // src/features/explorer/components/Symbols/SymbolsPanel.tsx
 import React, { useEffect, useState } from 'react';
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import { type DocumentSymbol } from '@/core/symbols'; 
 import { getSymbolTree, getActiveEditor } from '@/core/services/symbolService';
 import { useTabStore } from '@/store/tabStore';
@@ -40,14 +40,24 @@ export const SymbolsPanel: React.FC<SymbolsPanelProps> = ({ onSourceLoaded }) =>
 
     const editor = getActiveEditor();
     let listener: monaco.IDisposable | null = null;
-    if (editor && editor.getModel()) {
-      listener = editor.getModel()!.onDidChangeContent(() => {
-        setTimeout(fetchSymbols, 1000); 
-      });
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        if (alive) void fetchSymbols();
+      }, 1000);
+    };
+    const model = editor?.getModel();
+    if (model && typeof model.onDidChangeContent === 'function') {
+      listener = model.onDidChangeContent(scheduleRefresh);
+    } else if (editor && typeof editor.onDidChangeModelContent === 'function') {
+      listener = editor.onDidChangeModelContent(scheduleRefresh);
     }
 
     return () => {
       alive = false;
+      if (debounceTimer) clearTimeout(debounceTimer);
       if (listener) listener.dispose();
     };
   }, [activeTabId]); 

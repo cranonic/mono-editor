@@ -106,7 +106,7 @@ export const generateLspLanguageSettings = (
     subCategory:         displayName,
     defaultValue:        false,
     markdownDescription:
-      `Show inline parameter / type hints in ${displayName} (requires a capable server and monaco-editor ≥ 0.34).`,
+      `Show inline parameter / type hints in ${displayName} (requires a capable language server).`,
   },
 
   [`lsp.${langId}.semanticHighlighting`]: {

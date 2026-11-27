@@ -49,6 +49,7 @@ export class HoverController {
   private activeRange: IRange | null = null;
   private activeAnchorPos: { lineNumber: number; column: number } | null = null;
   private sticky = true;
+  private hidingDelay = 300;
   private cb: HoverControllerCallbacks;
 
   constructor(
@@ -70,7 +71,7 @@ export class HoverController {
       ...options,
       onMouseEnter: () => this.cancelHideTimer(),
       onMouseLeave: () => {
-        if (this.sticky) this.scheduleHide(180);
+        if (this.sticky) this.scheduleHide(this.hidingDelay);
       },
     });
   }
@@ -82,6 +83,10 @@ export class HoverController {
 
   setSticky(sticky: boolean): void {
     this.sticky = sticky;
+  }
+
+  setHidingDelay(delayMs: number): void {
+    this.hidingDelay = Math.max(0, delayMs);
   }
 
   setWidgetOptions(o: HoverWidgetOptions): void {
@@ -118,7 +123,7 @@ export class HoverController {
     }, delayMs);
   }
 
-  scheduleHide(delayMs = 180): void {
+  scheduleHide(delayMs = this.hidingDelay): void {
     this.cancelHideTimer();
     this.hideTimer = setTimeout(() => {
       this.hideTimer = null;

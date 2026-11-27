@@ -1,11 +1,11 @@
 // src/core/symbols/index.ts
 
-import * as monaco from 'monaco-editor';
+import * as mono from '@/core/mono';
 import { symbolManager } from './SymbolManager';
 
 // ─── CENTRAL ROUTING PROVIDER SCHEMES ─────────────────────────────────────────
 import { lspSymbolProvider } from './providers/LspSymbolProvider';
-import { monacoNativeProvider } from './providers/MonacoNativeProvider';
+import { monoNativeProvider } from './providers/MonoNativeProvider';
 import { regexFallbackProvider } from './providers/RegexFallbackProvider';
 
 // ─── LANGUAGE SPECIFIC OVERRIDE SUB-PROVIDERS ─────────────────────────────────
@@ -19,46 +19,26 @@ import { rustSymbolProvider } from './languages/rustSymbols';
 import { markdownSymbolProvider } from './languages/markdownSymbols';
 
 /**
- * Initializes, registers, and bridges structural document symbol extractors 
- * with the underlying Monaco editor framework.
+ * Initializes, registers, and bridges structural document symbol extractors
+ * with the underlying Mono Editor framework.
  */
 export const bootstrapSymbolProviders = () => {
-  
-  // ─── NATIVE ENGINE SEAMLESS INTERCEPT LAYER ───
-  // Bypasses the strict compiler type boundaries via cast overrides to toggle 
-  // Monaco's default flat HTML scanner off, preventing duplicated sidebar outline tokens.
-  const htmlLang = (monaco.languages as any).html; 
-  
-  if (htmlLang && htmlLang.htmlDefaults) {
-    htmlLang.htmlDefaults.setModeConfiguration({
-      documentFormattingEdits: true,
-      documentRangeFormattingEdits: true,
-      completionItems: true,
-      hovers: true,
-      documentHighlights: true,
-      links: true,
-      colors: true,
-      rename: true,
-      selectionRanges: true,
-      diagnostics: true,
-      documentSymbols: false // Explicitly intercepts and suppresses native flat listings
-    });
-  }
-
   // ─── CUSTOM PRIORITY ARCHITECTURE MAPPINGS ───
+  // LSP (100) > Mono structure engine (85) > language-specific regex fallbacks (50) > generic regex
   symbolManager.customPriorities = {
-    'html-composer': 90,
-    'css-regex': 90,
-    'rust-lexer': 90,
-    'markdown-composer': 90
+    'mono-builtin': 85,
+    'html-composer': 50,
+    'css-regex': 50,
+    'rust-lexer': 50,
+    'markdown-composer': 50,
   };
 
   // ─── GLOBAL FALLBACK SUBSYSTEM REGISTRATIONS ───
   symbolManager.registerProvider('*', lspSymbolProvider);
-  symbolManager.registerProvider('*', monacoNativeProvider);
+  symbolManager.registerProvider('*', monoNativeProvider);
   symbolManager.registerProvider('*', regexFallbackProvider);
 
-  // ─── EXPLICIT LANGUAGE RESOLUTION MODULES ───
+  // ─── EXPLICIT LANGUAGE RESOLUTION MODULES (kept as fallback — S8 out of scope) ───
   symbolManager.registerProvider('c', cSymbolProvider);
   symbolManager.registerProvider('cpp', cSymbolProvider);
   symbolManager.registerProvider('python', pythonSymbolProvider);
@@ -70,49 +50,60 @@ export const bootstrapSymbolProviders = () => {
   symbolManager.registerProvider('rust', rustSymbolProvider);
   symbolManager.registerProvider('markdown', markdownSymbolProvider);
 
-  console.log('Bridge established: Mapping customized SymbolManager loops to Monaco DocumentSymbolProvider hooks.');
-  
-  const customLanguages = ['html', 'css', 'javascript', 'typescript', 'python', 'java', 'c', 'cpp', 'rust', 'markdown'];
+  const customLanguages = [
+    'html',
+    'css',
+    'javascript',
+    'typescript',
+    'python',
+    'java',
+    'c',
+    'cpp',
+    'rust',
+    'markdown',
+  ];
 
-  /**
-   * Translates application layout symbols directly into canonical Monaco wire protocol formats.
-   */
-  const mapToMonacoSymbol = (sym: any): any => ({
+  const mapToMonoSymbol = (sym: any): any => ({
     name: sym.name,
     detail: sym.detail || '',
     kind: sym.kind,
     tags: [],
     range: sym.range,
-    selectionRange: sym.range,
-    children: sym.children ? sym.children.map(mapToMonacoSymbol) : []
+    selectionRange: sym.selectionRange || sym.range,
+    children: sym.children ? sym.children.map(mapToMonoSymbol) : [],
   });
 
-  // Tracking registry isolating thread invocations to secure loops against cyclic callback leaks
   const fetchingModels = new Set<string>();
 
-  // Mount unified proxy hooks routing document metadata requests through our prioritized registry pipelines
-  monaco.languages.registerDocumentSymbolProvider(customLanguages, {
-    provideDocumentSymbols: async (model, _token) => {
-      const uri = model.uri.toString();
-      
-      // Structural Guard: Trap recursive loops gracefully if the native provider queries itself
-      if (fetchingModels.has(uri)) return []; 
+  mono.languages.registerDocumentSymbolProvider(customLanguages, {
+    provideDocumentSymbols: async (model: any, _token: any) => {
+      const uri = model.uri?.toString?.() ?? String(model.uriString ?? '');
+      if (fetchingModels.has(uri)) return [];
       fetchingModels.add(uri);
-      
+
       try {
-        // Evaluate symbols while bypassing standard Monaco routines to prevent lookup recursion loops
-        const symbols = await symbolManager.getSymbols(model, [monacoNativeProvider.id]);
+        // First let Mono's own structure engine handle built-in outlines unless an external
+        // LSP/extension provider supplies symbols; fall back to legacy regex only if Mono is empty.
+        const monoSyms = await monoNativeProvider.provideSymbols(
+          model.getValue?.() ?? '',
+          model.getLanguageId?.() ?? 'plaintext',
+          model,
+        );
+        if (monoSyms && monoSyms.length > 0) {
+          return [];
+        }
+        const symbols = await symbolManager.getSymbols(model, [monoNativeProvider.id]);
         if (symbols && symbols.length > 0) {
-          return symbols.map(mapToMonacoSymbol); 
+          return symbols.map(mapToMonoSymbol);
         }
         return [];
       } catch (e) {
-        console.error("[Native Bridge] Structural interface crash caught:", e);
+        console.error('[SymbolBridge] Document symbol provider error:', e);
         return [];
       } finally {
         fetchingModels.delete(uri);
       }
-    }
+    },
   });
 };
 

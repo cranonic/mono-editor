@@ -1,5 +1,5 @@
 // On-Type Formatting – textDocument/onTypeFormatting
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import type { LspState } from '../types';
 import { sendRequest } from '../LspTransport';
 import { getDocUri } from '../utils/uriHelpers';

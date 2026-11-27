@@ -1,5 +1,5 @@
 // src/core/extensionAPI/registry/snippetRegistry.ts
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 
 function matchGlob(str: string, pattern: string): boolean {
   const cleanPath = str.startsWith('/') ? str.substring(1) : str;

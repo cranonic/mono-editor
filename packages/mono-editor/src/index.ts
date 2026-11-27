@@ -19,6 +19,7 @@ export {
   type MonoDiffEditorOptions,
 } from './api/editor.api';
 export { languages } from './api/languages.api';
+export { TextModel } from './common/model/TextModel';
 
 // Core geometry, URI & erasable enum constants
 export {
@@ -185,13 +186,72 @@ export type {
 } from './common/diff/myersDiff';
 
 export { DEFAULT_STICKY_SCROLL } from './common/viewModel/StickyScroll';
-export { MarkdownScopeFinder, OutlineScopeFinder } from './common/viewModel/markdownSticky';
+export { MarkdownScopeFinder, OutlineScopeFinder, StructureScopeFinder } from './common/viewModel/markdownSticky';
 export type {
   IScopeFinder,
   MonoStickyScrollOptions,
   StickyLine,
   StickyRenderLine,
 } from './common/viewModel/StickyScroll';
+
+// Document Structure Engine (S1-S6: Folding, Outlines, Scopes) & Breadcrumbs API
+export {
+  buildBracketNodes,
+  buildHeadingNodes,
+  buildKeywordNodes,
+  buildOffsideNodes,
+  buildStructureTree,
+  buildSymbolsFromTree,
+  buildTagNodes,
+  DEFAULT_HTML_VOID_TAGS,
+  DEFAULT_OPTIONAL_END_TAGS,
+  DEFAULT_STRUCTURE_MAX_LINE_LENGTH,
+  DEFAULT_STRUCTURE_MAX_LINES,
+  DocumentStructureService,
+  isColumnIgnoredByTokens,
+  queryScopeAt,
+  scanDocumentBrackets,
+  StructureKind,
+  structureTreeToFoldingRanges,
+} from './common/structure';
+export type {
+  BracketScanOptions,
+  BracketScanResult,
+  IDocumentStructure,
+  LineTokensProvider,
+  ScannedBracket,
+  StructureBuildOptions,
+  StructureEngineKind,
+  StructureKeywordPair,
+  StructureLanguageRules,
+  StructureNodeDraft,
+  StructureScopeItem,
+  StructureTree,
+} from './common/structure';
+export {
+  DEFAULT_BREADCRUMBS_OPTIONS,
+  isSymbolKindVisibleInBreadcrumbs,
+  resolveBreadcrumbsOptions,
+  sortBreadcrumbSymbols,
+} from './common/breadcrumbs/breadcrumbsTypes';
+export type {
+  BreadcrumbItemKind,
+  IBreadcrumbItem,
+  IBreadcrumbsModel,
+  IBreadcrumbsPathProvider,
+  IBreadcrumbsSnapshot,
+  ResolvedBreadcrumbsOptions,
+} from './common/breadcrumbs/breadcrumbsTypes';
+export type {
+  BreadcrumbPathMode,
+  BreadcrumbSymbolSortOrder,
+  FoldingStrategy,
+  MonoBreadcrumbsKindFilter,
+  MonoBreadcrumbsOptions,
+  MonoFoldingOptions,
+  MonoQuickNavOptions,
+} from './common/config/editorOptions';
+export type { IGoToLineRequestEvent } from './browser/editor/editorTypes';
 
 // Phase 6: Universal Multiline Ghost Text & Inlay Hints virtual layout
 export {
@@ -347,6 +407,22 @@ export { createRowGeometry } from './browser/view/viewLayout';
 export type { RowGeometry } from './browser/view/viewLayout';
 export type { IInlayHintClickEvent } from './common/languages';
 export { computeDocsPlacement } from './contrib/suggest/widget/suggestDetailsPane';
+export {
+  capPopupMaxWidth,
+  placePopupHorizontal,
+  POPUP_MAX_WIDTH_RATIO,
+} from './common/util/popupPlacement';
+export type {
+  PopupHorizontalInput,
+  PopupHorizontalResult,
+} from './common/util/popupPlacement';
+export { placeSuggestDocs } from './common/util/suggestDocsPlacement';
+export type {
+  PlaceSuggestDocsInput,
+  SuggestDocsBoxRect,
+  SuggestDocsCaretBand,
+  SuggestDocsPlacementResult,
+} from './common/util/suggestDocsPlacement';
 export { computeSignaturePlacement } from './contrib/signatureHelp/SignatureHelpWidget';
 export {
   computeCascadeTiming,

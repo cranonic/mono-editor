@@ -7,7 +7,6 @@ import { commands }     from '@/core/extensionAPI/registry/commandRegistry';
 
 // Guard flags to prevent double registration
 let coreMenusRegistered = false;
-let editorMenuRegistered = false;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Core menus – registered once during app bootstrap
@@ -116,8 +115,9 @@ export const registerCoreMenus = (): void => {
     {
       id: 's4', label: 'Themes', icon: 'symbol-color', order: 80,
       children: [
-        { id: 's4-1', label: 'Color Theme',     shortcut: 'Ctrl+K Ctrl+T', onClick: () => commands.executeCommand('workbench.action.selectTheme'), order: 1 },
-        { id: 's4-2', label: 'File Icon Theme',                            onClick: () => commands.executeCommand('workbench.action.selectIconTheme'), order: 2 },
+        { id: 's4-1', label: 'Color Theme',        shortcut: 'Ctrl+K Ctrl+T', onClick: () => commands.executeCommand('workbench.action.selectTheme'), order: 1 },
+        { id: 's4-2', label: 'File Icon Theme',                               onClick: () => commands.executeCommand('workbench.action.selectIconTheme'), order: 2 },
+        { id: 's4-3', label: 'Product Icon Theme',                            onClick: () => commands.executeCommand('workbench.action.selectProductIconTheme'), order: 3 },
       ],
     },
   ]);
@@ -127,53 +127,3 @@ export const registerCoreMenus = (): void => {
   
   
 }
-
-export const registerEditorMenu = (): void => {
-  if (editorMenuRegistered) return;
-  editorMenuRegistered = true;
-
-  const { registerMenuItems } = useMenuStore.getState();
-
-  // ── editor/code/context  (opened by useContextMenuSetup) ──────────────────
-  // These merge with the default Copy/Paste/Cut/SelectAll items from the hook.
-  registerMenuItems('editor/code/context', [
-    {
-      id:      'lsp-goto-definition',
-      label:   'Go to Definition',
-      icon:    'go-to-file',
-      order:   50,
-      onClick: () => commands.executeCommand('editor.action.revealDefinition'),
-    },
-    {
-      id:      'lsp-rename-symbol',
-      label:   'Rename Symbol',
-      icon:    'edit',
-      order:   60,
-      shortcut: 'F2',
-      onClick: () => commands.executeCommand('editor.action.rename'),
-    },
-    {
-      id:      'lsp-format-document',
-      label:   'Format Document',
-      icon:    'check',
-      order:   70,
-      shortcut: 'Shift+Alt+F',
-      onClick: () => commands.executeCommand('editor.action.formatDocument'),
-    },
-    {
-      id:      'lsp-format-selection',
-      label:   'Format Selection',
-      icon:    'check',
-      order:   71,
-      onClick: () => commands.executeCommand('editor.action.formatSelection'),
-    },
-    { id: 'sep-lsp', type: 'separator', order: 79 },
-    {
-      id:      'file-rename',
-      label:   'Rename File…',
-      icon:    'file',
-      order:   90,
-      onClick: () => commands.executeCommand('workbench.action.renameActiveFile'),
-    },
-  ]);
-};

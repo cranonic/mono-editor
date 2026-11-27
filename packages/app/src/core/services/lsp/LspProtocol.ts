@@ -1,6 +1,6 @@
 // src/core/services/lsp/LspProtocol.ts
 
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import type { LspState } from './types';
 import { sendRequest, sendNotify } from './LspTransport';
 import { fromLspUri, getDocUri } from './utils/uriHelpers';

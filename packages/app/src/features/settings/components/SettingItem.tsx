@@ -377,11 +377,19 @@ export const SettingItem: React.FC<SettingItemProps> = memo(({ setting }) => {
     }
   };
 
+  const status = setting.supportStatus;
+  const statusClass =
+    status === 'removed'
+      ? ' ms-settings-item--removed'
+      : status === 'not-available'
+        ? ' ms-settings-item--not-available'
+        : '';
+
   return (
     <div
       ref={rootRef}
       id={`setting-${setting.id}`}
-      className={`ms-settings-item${focused ? ' ms-settings-item--focused' : ''}`}
+      className={`ms-settings-item${focused ? ' ms-settings-item--focused' : ''}${statusClass}`}
       tabIndex={0}
       onFocus={() => setFocused(true)}
       onBlur={(e) => {
@@ -395,8 +403,9 @@ export const SettingItem: React.FC<SettingItemProps> = memo(({ setting }) => {
       onTouchMove={onTouchMove}
       onTouchCancel={onTouchEnd}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
         <span
+          className="ms-settings-item-title"
           style={{
             fontSize: '14px',
             color: 'var(--ms-settings-title-color)',
@@ -415,23 +424,34 @@ export const SettingItem: React.FC<SettingItemProps> = memo(({ setting }) => {
         >
           {setting.id}
         </span>
-        {(setting as any).experimental && (
+        {status === 'not-available' && (
           <span
-            style={{
-              fontSize: '10px',
-              backgroundColor: 'rgba(0, 122, 204, 0.2)',
-              color: '#3794ff',
-              padding: '2px 6px',
-              borderRadius: '0',
-              fontWeight: 'bold',
-              textTransform: 'uppercase',
-            }}
+            className="ms-settings-badge ms-settings-badge--not-available"
+            title={setting.supportNote || 'Not yet implemented in Mono Editor'}
           >
+            Not Available
+          </span>
+        )}
+        {status === 'removed' && (
+          <span
+            className="ms-settings-badge ms-settings-badge--removed"
+            title={setting.supportNote || 'Legacy Monaco setting — not needed in Mono Editor'}
+          >
+            Removed
+          </span>
+        )}
+        {(setting as any).experimental && (
+          <span className="ms-settings-badge ms-settings-badge--experimental">
             Experimental
           </span>
         )}
       </div>
-      {renderControl()}
+      {setting.supportNote && (
+        <div className="ms-settings-support-note">{setting.supportNote}</div>
+      )}
+      <div className={status ? 'ms-settings-control--muted' : undefined}>
+        {renderControl()}
+      </div>
       {setting.type !== 'boolean' && displayDescription && (
         <div style={{ color: 'var(--ms-settings-desc-color)', fontSize: '13px', marginTop: '4px' }}>
           <RichText text={displayDescription} onLinkClick={handleLinkClick} />

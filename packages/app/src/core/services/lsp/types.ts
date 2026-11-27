@@ -3,7 +3,7 @@
 // Shared LSP connection state + option types used by transport, protocol,
 // document manager, and Monaco providers.
 
-import type * as monaco from 'monaco-editor';
+import type * as monaco from '@/core/mono';
 
 export interface LspOptions {
   hover?: boolean;

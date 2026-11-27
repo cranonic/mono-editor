@@ -1,5 +1,5 @@
 // Auto-split from LspProviders.ts
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import type { LspState } from '../types';
 import { sendRequest } from '../LspTransport';
 import { getDocUri } from '../utils/uriHelpers';
@@ -13,13 +13,12 @@ export function registerFoldingRange(state: LspState): void {
             textDocument: { uri: getDocUri(model, state) },
           });
           if (!Array.isArray(result)) return [];
-          const K = monaco.languages.FoldingRangeKind;
           return result.map((f: any) => ({
             start: f.startLine + 1,
             end:   f.endLine + 1,
-            kind:  f.kind === 'comment' ? K.Comment
-              : f.kind === 'imports' ? K.Imports
-              : f.kind === 'region'  ? K.Region
+            kind:  f.kind === 'comment' ? 'comment'
+              : f.kind === 'imports' ? 'imports'
+              : f.kind === 'region'  ? 'region'
               : undefined,
           }));
         } catch {

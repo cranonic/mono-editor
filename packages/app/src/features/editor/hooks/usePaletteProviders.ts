@@ -1,7 +1,7 @@
 // src/features/editor/hooks/usePaletteProviders.ts
 
 import { useEffect } from 'react';
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import { usePaletteStore } from '@/store/paletteStore';
 import { commands } from '@/core/extensionAPI/registry/commandRegistry';
 import { getSymbolIconName, getSymbolCategoryName } from '@/core/symbols/utils/iconMap';

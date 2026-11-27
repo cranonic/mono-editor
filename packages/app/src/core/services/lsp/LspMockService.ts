@@ -1,6 +1,6 @@
 // src/core/services/lspMockService.ts
 
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import type { ILspService } from '../ILspService';
 
 /**

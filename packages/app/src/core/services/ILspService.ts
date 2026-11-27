@@ -1,6 +1,6 @@
 // src/core/services/ILspService.ts
 
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 
 /**
  * ILspService Core Architectural Interface

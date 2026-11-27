@@ -44,7 +44,7 @@ export const SettingsView: React.FC = memo(() => {
   const handleFilterClick = (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
     const applyFilter = (filterText: string) => {
-      const cleaned = searchQuery.replace(/@(ext|lang|id|exp|tag):?/gi, '').trim();
+      const cleaned = searchQuery.replace(/@(ext|lang|id|exp|tag|not-available|removed):?/gi, '').trim();
       setSearchQuery(`${filterText} ${cleaned}`.trim());
     };
     
@@ -52,10 +52,12 @@ export const SettingsView: React.FC = memo(() => {
       { id: 'ext', label: 'Extension ID...', onClick: () => applyFilter('@ext:') },
       { id: 'sid', label: 'Setting ID...', onClick: () => applyFilter('@id:') },
       { id: 'exp', label: 'Experimental', onClick: () => applyFilter('@exp') },
+      { id: 'na',  label: 'Not Available (Mono)', onClick: () => applyFilter('@not-available') },
+      { id: 'rem', label: 'Removed (Legacy Monaco)', onClick: () => applyFilter('@removed') },
     ]);
   };
 
-  // TOKENIZER: Parse @id, @ext, @exp, @tag correctly!
+  // TOKENIZER: Parse @id, @ext, @exp, @tag, @not-available, @removed
   const settingsTree = useMemo(() => {
     let query = searchQuery.toLowerCase().trim();
     const allSettings = configRegistry.getAllSettings();
@@ -75,23 +77,29 @@ export const SettingsView: React.FC = memo(() => {
           filtered = filtered.filter(s => 
             s.id.toLowerCase().startsWith(val) || 
             s.tags?.some(t => t.toLowerCase() === val) ||
-            (!val && s.tags?.includes('extension')) // Show all extensions if just @ext: is typed
+            (!val && s.tags?.includes('extension'))
           );
         } 
         else if (token === '@exp') {
           filtered = filtered.filter(s => s.experimental === true);
         } 
+        else if (token === '@not-available' || token === '@na') {
+          filtered = filtered.filter(s => s.supportStatus === 'not-available');
+        }
+        else if (token === '@removed') {
+          filtered = filtered.filter(s => s.supportStatus === 'removed');
+        }
         else if (token.startsWith('@tag:')) {
           const val = token.substring(5);
           filtered = filtered.filter(s => s.tags?.some(t => t.toLowerCase().includes(val)));
         } 
         else {
-          // Standard text search across multiple fields
           filtered = filtered.filter(s => 
             (s.title || '').toLowerCase().includes(token) || 
             (s.category || '').toLowerCase().includes(token) ||
             (s.id || '').toLowerCase().includes(token) ||
-            (s.description || '').toLowerCase().includes(token)
+            (s.description || '').toLowerCase().includes(token) ||
+            (s.supportStatus || '').toLowerCase().includes(token)
           );
         }
       });

@@ -7,7 +7,7 @@
 // • Format button, Ctrl+S shortcut
 
 import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
-import type * as Monaco from 'monaco-editor';
+import type * as Monaco from '@/core/mono';
 
 import { Modal }             from '@/ui/components/Modal/Modal';
 import { Button }            from '@/ui/components/Button/Button';

@@ -82,7 +82,11 @@ export interface SettingDefinition {
   /** Scope configuration layer tracking runtime execution context environments */
   scope?: 'application' | 'machine' | 'window' | 'resource' | 'language-overridable' | 'workspace';
 
-  // ─── Deprecation Management ──────────────────────────────────
+  // ─── Deprecation & Mono Migration Status ─────────────────────
+  /** Mono Editor availability badge: 'not-available' (planned) or 'removed' (obsolete legacy Monaco option) */
+  supportStatus?: 'not-available' | 'removed';
+  /** Optional short explanation shown alongside the status badge */
+  supportNote?: string;
   /** Standard warning banner string indicating alternative configuration paths */
   deprecationMessage?: string;
   /** Markdown message string detailing modification paths for deprecated keys */

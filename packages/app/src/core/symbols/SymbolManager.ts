@@ -1,6 +1,6 @@
 // src/core/symbols/SymbolManager.ts
 
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import { SymbolSource } from './types';
 import type { DocumentSymbol, SymbolProvider } from './types';
 

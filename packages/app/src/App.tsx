@@ -13,7 +13,6 @@ import { useExplorerStore } from '@/features/explorer/store/exploreStore';
 import { useTabStore } from '@/store/tabStore';
 import { useSidebarStore }  from "@/store/sidebarStore";
 import { useEditorViewStateStore } from '@/features/editor/store/editorViewStateStore'; 
-import { EditorContextMenu } from '@/features/editor/components/EditorMenu/EditorMenu';
 import { useSettingsStore } from '@/features/settings/store/settingsStore';
 import { useExtensionStore } from '@/features/extensions/store/extensionStore';
 import { CommandPalette } from '@/ui/components/CommandPalette/CommandPalette';
@@ -30,10 +29,11 @@ import { bootstrapActivity } from  './core/bootstrap/activityRegistration';
 import { bootstrapTab } from  './core/bootstrap/tabRegistration';
 import { registerPreviewer } from  './core/bootstrap/previewerRegistration';
 import { installMediaRegistryGlobal } from './core/media/playerRegistry';
-import { registerCoreMenus, registerEditorMenu } from './core/bootstrap/menuRegistration';
+import { registerCoreMenus } from './core/bootstrap/menuRegistration';
 
 import { themeService } from '@/core/theme/service/themeService';
 import { iconThemeService } from '@/core/theme/service/iconThemeService';
+import { productIconThemeService } from '@/core/theme/service/productIconThemeService';
 import { useThemeStore } from '@/core/theme/store/themeStore';
 import { userSnippetsService } from '@/core/services/userSnippetsService';
 import { setupAuthDeepLinkListener } from '@/core/server/gitLinker';
@@ -107,6 +107,7 @@ const App = () => {
       await themeService.init();
       useThemeStore.getState().sync();
       iconThemeService.init();
+      productIconThemeService.init();
 
       // Android system status bar ↔ theme (--ms-statusbar-bg / --ms-bg-side)
       initNativeStatusBar();
@@ -135,8 +136,7 @@ const App = () => {
       
       // 4. Registration 
       // Core Navigation Structures: Registers primary and inline action menus
-      registerCoreMenus(); 
-      registerEditorMenu();
+      registerCoreMenus();
       
       bootstrapActivity();
       bootstrapAction();
@@ -220,7 +220,6 @@ const App = () => {
     <>
       <MainLayout />
       <CommandPalette />
-      <EditorContextMenu /> 
       <GlobalModal />
       <RenameFileModal />
       <FilePickerModal />

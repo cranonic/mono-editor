@@ -18,6 +18,7 @@
 }
 
 .ms-qk-btn {
+  position: relative;
   background-color: var(--ms-bg-activity);
   color: var(--ms-text-main);
   border: 1px solid var(--ms-menu-border);
@@ -34,10 +35,45 @@
   cursor: pointer;
   flex-shrink: 0;
   outline: none;
-  transition: all 0.1s;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
 }
 
 .ms-qk-btn:active, .ms-qk-btn:hover {
   background-color: var(--ms-menu-hover-bg);
   color: var(--ms-text-bright);
+}
+
+/* One-shot armed state: accented border + tinted fill + indicator dot */
+.ms-qk-btn.mod-armed {
+  background-color: color-mix(in srgb, var(--ms-accent, #007acc) 26%, transparent);
+  border-color: var(--ms-accent, #007acc);
+  color: var(--ms-text-bright, #ffffff);
+}
+
+.ms-qk-mod-dot {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: var(--ms-accent, #007acc);
+}
+
+/* Double-tap locked state: solid accent fill + bottom lock bar */
+.ms-qk-btn.mod-locked {
+  background-color: var(--ms-accent, #007acc);
+  border-color: var(--ms-accent, #007acc);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.ms-qk-mod-lock {
+  position: absolute;
+  bottom: 2px;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  border-radius: 2px;
+  background-color: rgba(255, 255, 255, 0.92);
 }

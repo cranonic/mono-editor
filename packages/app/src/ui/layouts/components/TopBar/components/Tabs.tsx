@@ -9,6 +9,9 @@ import { FileIcon } from '@/ui/components/FileIcon/DefaultIconTheme';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Keyboard } from '@capacitor/keyboard';
 import { useBackButtonStore } from '@/store/backButtonStore';
+import { useMenuStore } from '@/store/menuStore';
+import { useExplorerStore } from '@/features/explorer/store/exploreStore';
+import { useActiveEditorStore } from '@/features/editor/store/activeEditorStore';
 
 const TabActionBtn: React.FC<{ isDirty: boolean; onClose: (e: React.MouseEvent) => void }> = ({ isDirty, onClose }) => (
   <span className="tab-action-btn" onClick={onClose}>
@@ -485,6 +488,75 @@ export const Tabs: React.FC = () => {
     setActiveTab(tabId);
   };
 
+  const handleTabContextMenu = useCallback(
+    (e: React.MouseEvent, tab: { id: string; title: string; filePath?: string }) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const copyText = (text: string) => {
+        if (!text) return;
+        navigator.clipboard?.writeText(text).catch(() => {});
+      };
+
+      const filePath = tab.filePath || tab.id;
+      const wsRoot = useExplorerStore.getState().workspacePath || '';
+      const relPath =
+        wsRoot && filePath.startsWith(wsRoot)
+          ? filePath.slice(wsRoot.length).replace(/^\/+/, '')
+          : filePath;
+
+      const menuItems: any[] = [
+        {
+          id: 'tab-close',
+          label: 'Close',
+          onClick: () => closeTab(tab.id),
+        },
+        {
+          id: 'tab-close-others',
+          label: 'Close Others',
+          onClick: () => {
+            useTabStore
+              .getState()
+              .tabs.filter((t) => t.id !== tab.id)
+              .forEach((t) => closeTab(t.id));
+          },
+        },
+        {
+          id: 'tab-close-all',
+          label: 'Close All',
+          onClick: () => useTabStore.getState().clearTabs(),
+        },
+        { id: 'tab-sep-1', type: 'separator', label: '' },
+        {
+          id: 'tab-copy-path',
+          label: 'Copy Path',
+          onClick: () => copyText(filePath),
+        },
+        {
+          id: 'tab-copy-rel-path',
+          label: 'Copy Relative Path',
+          onClick: () => copyText(relPath),
+        },
+        {
+          id: 'tab-copy-breadcrumbs-path',
+          label: 'Copy Breadcrumbs Path',
+          onClick: () => {
+            const ed = useActiveEditorStore.getState().getEditorForTab(tab.id);
+            const bcPath = ed?.getBreadcrumbs?.()?.getCopyPath?.();
+            if (bcPath) {
+              copyText(bcPath);
+            } else {
+              copyText(relPath.split('/').filter(Boolean).join(' › '));
+            }
+          },
+        },
+      ];
+
+      useMenuStore.getState().openMenu('tab/context', e.clientX, e.clientY, menuItems);
+    },
+    [closeTab],
+  );
+
   const displayIds = draggingId && liveOrder.length > 0 ? liveOrder : tabs.map(t => t.id);
   const tabById = React.useMemo(() => new Map(tabs.map(t => [t.id, t])), [tabs]);
 
@@ -570,6 +642,7 @@ export const Tabs: React.FC = () => {
               transition={{ type: 'spring', stiffness: 500, damping: 35, mass: 0.6 }}
               className={`tab ${activeTabId === tab.id ? 'active' : ''}${draggingId ? ' tab-shift' : ''}`}
               onClick={() => handleTabClick(tab.id)}
+              onContextMenu={(e) => handleTabContextMenu(e, tab)}
               onPointerDown={(e) => onPointerDownTab(e, tab.id)}
               data-dirty={isDirty(tab.id) ? 'true' : 'false'}
             >

@@ -1,12 +1,12 @@
 /**
- * Slice B — Mono editor lifecycle / view-state / settings bridge.
- * Replaces Monaco-only pieces of useEditorLifecycle + useViewStateSync.
+ * Mono editor lifecycle / view-state / settings bridge.
  */
 import { useEffect, useRef } from 'react';
 import type { IMonoEditor } from '@mono/editor';
 import { monoThemeService, registerBuiltinThemes } from '@mono/editor';
 import { useEditorViewStateStore } from '@/features/editor/store/editorViewStateStore';
 import { commands } from '@/core/extensionAPI/registry/commandRegistry';
+import { buildMonoEditorOptions } from '../mono/monoOptions';
 
 export interface UseMonoEditorBridgeParams {
   editor: IMonoEditor | null;
@@ -19,8 +19,8 @@ export interface UseMonoEditorBridgeParams {
 /**
  * - Restore cursor / scroll from view state
  * - Persist cursor / scroll on change
- * - Apply editor.* settings via updateOptions
- * - Sync workbench theme → monoThemeService
+ * - Apply ALL editor.* settings via buildMonoEditorOptions -> updateOptions
+ * - Sync workbench theme -> monoThemeService
  * - Register active editor for commands
  * - Dirty version tracking (alternativeVersionId)
  */
@@ -41,17 +41,20 @@ export function useMonoEditorBridge({
     try {
       commands.setActiveEditor?.(editor as any);
     } catch {
-      /* registry may still expect Monaco shape partially */
+      /* ignore */
     }
     const dFocus = editor.onDidFocusEditorText?.(() => {
       try {
         commands.setActiveEditor?.(editor as any);
+        import('@/features/editor/store/activeEditorStore').then(({ useActiveEditorStore }) => {
+          useActiveEditorStore.getState().setActiveEditor(editor, tabId);
+        });
       } catch {
-        /* */
+        /* ignore */
       }
     });
     return () => dFocus?.dispose();
-  }, [editor, isLoading]);
+  }, [editor, isLoading, tabId]);
 
   // Restore view state once per file mount
   useEffect(() => {
@@ -60,8 +63,9 @@ export function useMonoEditorBridge({
     if (restoredRef.current === key) return;
     restoredRef.current = key;
 
-    const vs = useEditorViewStateStore.getState().viewStates[tabId]
-      ?? useEditorViewStateStore.getState().viewStates[filePath];
+    const vs =
+      useEditorViewStateStore.getState().viewStates[tabId] ??
+      useEditorViewStateStore.getState().viewStates[filePath];
 
     if (vs?.cursorLine != null) {
       editor.setPosition({
@@ -95,7 +99,6 @@ export function useMonoEditorBridge({
         cursorColumn: pos.column,
         scrollPos: editor.getScrollTop(),
       });
-      // also key by path for older readers
       updateViewState(filePath, {
         cursorLine: pos.lineNumber,
         cursorColumn: pos.column,
@@ -114,40 +117,14 @@ export function useMonoEditorBridge({
     };
   }, [editor, tabId, filePath, isLoading, updateViewState]);
 
-  // Settings → updateOptions
+  // Settings -> full MonoEditorOptions via updateOptions
   useEffect(() => {
     if (!editor || isLoading) return;
-    const fontSize = Number(settings['editor.fontSize'] ?? 14);
-    const lineNumbers = settings['editor.lineNumbers'] === 'off' ? 'off' : 'on';
-    const tabSize = Number(settings['editor.tabSize'] ?? 2);
-    const readOnly = Boolean(settings['editor.readOnly'] ?? false);
-    const fontFamily =
-      (settings['editor.fontFamily'] as string) ||
-      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-    const lineHeight = settings['editor.lineHeight']
-      ? Number(settings['editor.lineHeight'])
-      : undefined;
+    const patch = buildMonoEditorOptions(settings);
+    editor.updateOptions(patch);
+  }, [editor, isLoading, settings]);
 
-    editor.updateOptions({
-      fontSize,
-      lineNumbers: lineNumbers as 'on' | 'off',
-      tabSize,
-      readOnly,
-      fontFamily,
-      ...(lineHeight && lineHeight > 0 ? { lineHeight } : {}),
-    });
-  }, [
-    editor,
-    isLoading,
-    settings['editor.fontSize'],
-    settings['editor.lineNumbers'],
-    settings['editor.tabSize'],
-    settings['editor.readOnly'],
-    settings['editor.fontFamily'],
-    settings['editor.lineHeight'],
-  ]);
-
-  // Workbench theme id → mono
+  // Workbench theme id -> mono
   useEffect(() => {
     if (!editor || isLoading) return;
     registerBuiltinThemes();
@@ -161,7 +138,7 @@ export function useMonoEditorBridge({
       }
       editor.setTheme(themeId);
     } catch {
-      /* */
+      /* ignore */
     }
   }, [editor, isLoading, settings['workbench.theme'], settings['workbench.colorTheme']]);
 
@@ -182,6 +159,5 @@ export function markMonoEditorSaved(editor: IMonoEditor | null, tabId: string): 
   if (!editor) return;
   const alt = editor.getAlternativeVersionId?.() ?? 0;
   useEditorViewStateStore.getState().updateViewState(tabId, { isDirty: false });
-  // consumers keep their own ref; this helper is for save hooks
   void alt;
 }

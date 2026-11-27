@@ -5,6 +5,7 @@ import {
 } from '../../browser/editor/editorTypes';
 import type { InputChangeEvent } from '../../browser/input/InputController';
 import type { PointerInteractKind } from '../../browser/input/pointer/PointerController';
+import type { LightbulbEnabledMode, MonoEditorOptions } from '../../common/config/editorOptions';
 import { languageFeatures } from '../../common/languages/languageFeaturesService';
 import type { CodeAction } from '../../common/languages/providers/types';
 import type { TextModel } from '../../common/model/TextModel';
@@ -17,9 +18,11 @@ export class CodeActionController implements IEditorContribution {
   private readonly host: IEditorContributionHost;
   private readonly widget: CodeActionLightbulbWidget;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private lightbulbMode: LightbulbEnabledMode;
 
   constructor(host: IEditorContributionHost) {
     this.host = host;
+    this.lightbulbMode = host.initialOptions.lightbulb?.enabled ?? 'on';
     this.widget = new CodeActionLightbulbWidget(host.root);
 
     host.keybindings.add({
@@ -65,6 +68,18 @@ export class CodeActionController implements IEditorContribution {
   }
 
   onThemeChange(wt: ResolvedWidgetTheme): void { this.widget.applyTheme(wt); }
+
+  onOptionsChange(patch: Partial<MonoEditorOptions>): void {
+    if (patch.lightbulb?.enabled !== undefined) {
+      this.lightbulbMode = patch.lightbulb.enabled;
+      if (this.lightbulbMode === 'off') {
+        if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+        this.widget.hideLightbulb();
+      } else {
+        this.scheduleLightbulb();
+      }
+    }
+  }
 
   async runQuickFix(): Promise<boolean> {
     const actions = await this.collectCodeActionsAtSelection();
@@ -123,11 +138,28 @@ export class CodeActionController implements IEditorContribution {
 
   private scheduleLightbulb(): void {
     if (this.timer) clearTimeout(this.timer);
+    if (this.lightbulbMode === 'off') {
+      this.widget.hideLightbulb();
+      return;
+    }
     this.timer = setTimeout(() => {
-      if (this.host.isDisposed()) return;
+      if (this.host.isDisposed() || this.lightbulbMode === 'off') return;
+      if (this.lightbulbMode === 'onCode') {
+        const sel = this.host.getSelection();
+        const isEmptySel =
+          sel.startLineNumber === sel.endLineNumber && sel.startColumn === sel.endColumn;
+        const lineContent = this.host.getModel().getLineContent(sel.startLineNumber);
+        const hasMarkersOnLine = this.host.getMarkers().some(
+          (m) => m.endLineNumber >= sel.startLineNumber && m.startLineNumber <= sel.endLineNumber,
+        );
+        if (isEmptySel && lineContent.trim().length === 0 && !hasMarkersOnLine) {
+          this.widget.hideLightbulb();
+          return;
+        }
+      }
       void (async () => {
         const actions = await this.collectCodeActionsAtSelection();
-        if (this.host.isDisposed()) return;
+        if (this.host.isDisposed() || this.lightbulbMode === 'off') return;
         if (!actions.length) {
           this.widget.hideLightbulb();
           return;

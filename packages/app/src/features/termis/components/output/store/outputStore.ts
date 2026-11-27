@@ -1,30 +1,25 @@
 // src/features/termis/components/output/store/outputStore.ts
-//
-// Models must share the same Monaco instance as CodeEditor (patched local
-// node_modules). Import monacoSetup before monaco-editor.
-
-import '@/features/editor/monaco/monacoSetup';
+// Output channels backed by Mono Editor text models (@mono/editor).
 
 import { create } from 'zustand';
-import * as monaco from 'monaco-editor';
+import {
+  editor as monoEditor,
+  Range,
+  Uri,
+  type IStandaloneTextModel,
+} from '@mono/editor';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
 import { msEvents } from '@/core/extensionAPI/events/EventManager';
 
-function getMonaco(): typeof monaco {
-  const w = window as any;
-  if (w.MONACO) return w.MONACO as typeof monaco;
-  return monaco;
-}
+// ─── Mono Model Registry ──────────────────────────────────────────────────────
 
-// ─── Monaco Model Registry ────────────────────────────────────────────────────
+const channelModels = new Map<string, IStandaloneTextModel>();
 
-const channelModels = new Map<string, monaco.editor.ITextModel>();
-
-export const getOrCreateModel = (channel: string): monaco.editor.ITextModel => {
-  const m = getMonaco();
+export const getOrCreateModel = (channel: string): IStandaloneTextModel => {
   if (!channelModels.has(channel)) {
-    channelModels.set(channel, m.editor.createModel('', 'log'));
+    const uri = Uri.parse(`output://channel/${encodeURIComponent(channel)}`);
+    channelModels.set(channel, monoEditor.createModel('', 'log', uri));
   }
   return channelModels.get(channel)!;
 };
@@ -50,9 +45,7 @@ interface OutputState {
   unregisterKillHandler: (channel: string) => void;
   triggerKill: (channel: string) => void;
 
-  /** Save the active channel's log to the Downloads folder (native) or trigger browser download (web). */
   saveLog: (channel?: string) => Promise<void>;
-  /** Open the active channel's log as a read-only tab in the main editor. */
   openInEditor: (channel?: string) => void;
 }
 
@@ -65,7 +58,7 @@ export const useOutputStore = create<OutputState>((set, get) => ({
 
   createChannel: (name) => {
     if (!get().channels.includes(name)) {
-      set(s => ({ channels: [...s.channels, name] }));
+      set((s) => ({ channels: [...s.channels, name] }));
       msEvents.emit('onDidOpenOutputChannel', name);
     }
   },
@@ -74,10 +67,10 @@ export const useOutputStore = create<OutputState>((set, get) => ({
     destroyModel(name);
     let newActive = get().activeChannel;
 
-    set(s => {
+    set((s) => {
       const handlers = { ...s.killHandlers };
       delete handlers[name];
-      const newChs = s.channels.filter(c => c !== name);
+      const newChs = s.channels.filter((c) => c !== name);
       newActive = s.activeChannel === name ? (newChs[0] ?? '') : s.activeChannel;
       return { channels: newChs, activeChannel: newActive, killHandlers: handlers };
     });
@@ -99,14 +92,13 @@ export const useOutputStore = create<OutputState>((set, get) => ({
   appendLog: (channel, text) => {
     if (!get().channels.includes(channel)) get().createChannel(channel);
 
-    const m = getMonaco();
     const model = getOrCreateModel(channel);
     const lineCount = model.getLineCount();
     const lastCol = model.getLineMaxColumn(lineCount);
 
     model.applyEdits([
       {
-        range: new m.Range(lineCount, lastCol, lineCount, lastCol),
+        range: new Range(lineCount, lastCol, lineCount, lastCol),
         text: (lineCount === 1 && model.getValue() === '' ? '' : '\n') + text,
       },
     ]);
@@ -117,10 +109,10 @@ export const useOutputStore = create<OutputState>((set, get) => ({
   },
 
   registerKillHandler: (channel, handler) =>
-    set(s => ({ killHandlers: { ...s.killHandlers, [channel]: handler } })),
+    set((s) => ({ killHandlers: { ...s.killHandlers, [channel]: handler } })),
 
   unregisterKillHandler: (channel) =>
-    set(s => {
+    set((s) => {
       const c = { ...s.killHandlers };
       delete c[channel];
       return { killHandlers: c };
@@ -130,7 +122,7 @@ export const useOutputStore = create<OutputState>((set, get) => ({
     const handler = get().killHandlers[channel];
     if (handler) {
       handler();
-      get().appendLog(channel, '\n[WARN] 🛑 Process killed by user.');
+      get().appendLog(channel, '\n[WARN] Process killed by user.');
     }
   },
 
@@ -194,26 +186,26 @@ export const useOutputStore = create<OutputState>((set, get) => ({
     const ch = channel ?? get().activeChannel;
     const content = getOrCreateModel(ch).getValue();
     const virtualPath = `output://${ch.replace(/\s+/g, '_')}`;
-    const m = getMonaco();
 
     try {
-      const uri = m.Uri.parse(virtualPath);
-      let existingModel = m.editor.getModel(uri);
+      const uri = Uri.parse(virtualPath);
+      let existingModel = monoEditor.getModel(uri);
       if (!existingModel) {
-        existingModel = m.editor.createModel(content, 'log', uri);
+        existingModel = monoEditor.createModel(content, 'log', uri);
       } else {
         existingModel.setValue(content);
       }
 
-      const { useTabStore } = require('@/store/tabStore');
-      useTabStore.getState().addTab({
-        id: virtualPath,
-        type: 'code',
-        title: `Output: ${ch}`,
-        filePath: virtualPath,
-        icon: 'output',
-        showStatusBar: false,
-        showBreadcrumb: false,
+      void import('@/store/tabStore').then(({ useTabStore }) => {
+        useTabStore.getState().addTab({
+          id: virtualPath,
+          type: 'code',
+          title: `Output: ${ch}`,
+          filePath: virtualPath,
+          icon: 'output',
+          showStatusBar: false,
+          showBreadcrumb: false,
+        });
       });
     } catch (e) {
       console.error('[OutputStore] openInEditor failed:', e);

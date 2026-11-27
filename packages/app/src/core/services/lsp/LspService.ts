@@ -13,7 +13,7 @@
 //   ├── LspDocumentManager– textDocument/didOpen, model-URI registry
 //   └── LspProviders      – Monaco provider registration, model change tracking
 
-import * as monaco          from 'monaco-editor';
+import * as monaco          from '@/core/mono';
 import type { ILspService } from '../ILspService';
 import type { LspOptions }  from './types';
 import { createInitialState }                                       from './types';

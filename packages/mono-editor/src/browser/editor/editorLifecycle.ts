@@ -2,6 +2,7 @@ import type { BracketColorizer } from '../../common/brackets';
 import type {
   CursorBlinkingMode,
   CursorStyleMode,
+  FoldingStrategy,
   MonoEditorOptions,
   MonoErrorLensOptions,
   MonoLineNumbers,
@@ -44,6 +45,7 @@ export interface EditorOptionState {
   formatOnPaste: boolean;
   readOnly: boolean;
   foldingEnabled: boolean;
+  foldingStrategy: FoldingStrategy;
   glyphMargin: boolean;
   renderWhitespace: RenderWhitespaceMode;
   rulers: number[];
@@ -107,6 +109,7 @@ export function applyEditorOptionsPatch(
     minimap: MinimapController;
     tokenization?: TokenizationSupport;
     bracketColorizer?: BracketColorizer;
+    folding?: FoldingModel;
     isPeekEditor: boolean;
     applyAllWidgetThemes: () => void;
     setLanguageId: (id: string) => void;
@@ -214,8 +217,22 @@ export function applyEditorOptionsPatch(
     deps.view.setWordWrap(options.wordWrap ?? deps.view.getWordWrap(), options.wrappingIndent);
   }
   if (options.folding !== undefined) {
-    state.foldingEnabled = options.folding;
-    deps.view.setFoldingEnabled(options.folding);
+    const enabled = typeof options.folding === 'boolean' ? options.folding : options.folding.enabled !== false;
+    state.foldingEnabled = enabled;
+    deps.view.setFoldingEnabled(enabled);
+    if (typeof options.folding === 'object' && options.folding !== null) {
+      if (options.folding.strategy) {
+        state.foldingStrategy = options.folding.strategy;
+        deps.folding?.setStrategy(options.folding.strategy);
+      }
+      if (options.folding.maxLines != null) {
+        deps.folding?.setMaxLines(options.folding.maxLines);
+      }
+    }
+  }
+  if (options.foldingStrategy !== undefined) {
+    state.foldingStrategy = options.foldingStrategy;
+    deps.folding?.setStrategy(options.foldingStrategy);
   }
   if (options.guides) deps.view.setIndentGuides(options.guides);
   if (options.matchBrackets !== undefined) deps.view.setMatchBrackets(options.matchBrackets);
@@ -246,7 +263,7 @@ export function attachRootDomListeners(params: {
   textarea: HTMLTextAreaElement;
   isDisposed: () => boolean;
   getContributions: () => Iterable<IEditorContribution>;
-  dispatchKeybinding: (e: KeyboardEvent) => boolean;
+  dispatchKeybinding: (e: KeyboardEvent) => boolean | { matched: boolean; preventDefault: boolean };
   onOutsidePointerDown: () => void;
   onWheelScroll: (dx: number, dy: number) => void;
   onWheelEnd: () => void;
@@ -275,8 +292,11 @@ export function attachRootDomListeners(params: {
         return;
       }
     }
-    if (params.dispatchKeybinding(e)) {
-      e.preventDefault();
+    const res = params.dispatchKeybinding(e);
+    const matched = typeof res === 'boolean' ? res : res.matched;
+    if (matched) {
+      const shouldPrevent = typeof res === 'boolean' ? true : res.preventDefault;
+      if (shouldPrevent) e.preventDefault();
       e.stopPropagation();
     }
   };

@@ -1,4 +1,4 @@
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 
 /**
  * Maps Monaco's Integer SymbolKind to VS Code Standard Codicon Names.

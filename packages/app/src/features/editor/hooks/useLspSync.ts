@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 
 const NativeTerminal = registerPlugin<any>('NativeTerminal');
 import { useSettingsStore }      from '@/features/settings/store/settingsStore';
@@ -88,8 +88,8 @@ function resolveFileUri(
   // 2. Tab id might already be a file:// URI
   if (tab?.id && tab.id.startsWith('file://')) return tab.id;
   // 3. Model uri (works for real file models, not inmemory)
-  const mu = model.uri.toString();
-  if (!mu.startsWith('inmemory')) return mu;
+  const mu = model?.uri?.toString?.() ?? '';
+  if (mu && !mu.startsWith('inmemory')) return mu;
   // 4. Give up — use a synthetic path based on title
   return `file:///sdcard/${tab?.title ?? 'untitled'}`;
 }
@@ -192,49 +192,54 @@ export function useLspSync(editorInstance: any, tabId: string) {
 
       if (langId === 'javascript' || langId === 'typescript'
           || langId === 'javascriptreact' || langId === 'typescriptreact') {
-        const defaults = (langId === 'javascript' || langId === 'javascriptreact')
-          ? monacoLangs.typescript.javascriptDefaults
-          : monacoLangs.typescript.typescriptDefaults;
+        const tsLang = monacoLangs?.typescript;
+        const defaults = tsLang
+          ? ((langId === 'javascript' || langId === 'javascriptreact')
+            ? tsLang.javascriptDefaults
+            : tsLang.typescriptDefaults)
+          : undefined;
 
-        const baseLang = (langId === 'javascriptreact') ? 'javascript'
-          : (langId === 'typescriptreact') ? 'typescript' : langId;
-        const isLinting = settings[`lsp.${baseLang}.linting`] ?? true;
-        defaults.setDiagnosticsOptions({
-          noSemanticValidation: !isEnabled || !isLinting,
-          noSyntaxValidation:   !isEnabled || !isLinting,
-          diagnosticCodesToIgnore: settings['lsp.javascript.ignoreCodes'] || [],
-        });
+        if (defaults) {
+          const baseLang = (langId === 'javascriptreact') ? 'javascript'
+            : (langId === 'typescriptreact') ? 'typescript' : langId;
+          const isLinting = settings[`lsp.${baseLang}.linting`] ?? true;
+          defaults.setDiagnosticsOptions?.({
+            noSemanticValidation: !isEnabled || !isLinting,
+            noSyntaxValidation:   !isEnabled || !isLinting,
+            diagnosticCodesToIgnore: settings['lsp.javascript.ignoreCodes'] || [],
+          });
 
-        const currentOpts = defaults.getCompilerOptions() || {};
-        if (baseLang === 'javascript') {
-          defaults.setCompilerOptions({
-            ...currentOpts,
-            allowNonTsExtensions: true,
-            noImplicitAny:    !!settings['lsp.javascript.implicitAny'],
-            strictNullChecks: !!settings['lsp.javascript.strictNullChecks'],
-            target: monacoLangs.typescript.ScriptTarget.ESNext,
-            jsx: monacoLangs.typescript.JsxEmit?.ReactJSX
-              ?? monacoLangs.typescript.JsxEmit?.React
-              ?? currentOpts.jsx,
-          });
-        } else {
-          defaults.setCompilerOptions({
-            ...currentOpts,
-            allowNonTsExtensions: true,
-            strict:             !!settings['lsp.typescript.strictMode'],
-            noUnusedLocals:     !!settings['lsp.typescript.unusedLocals'],
-            noUnusedParameters: !!settings['lsp.typescript.unusedParameters'],
-            target: monacoLangs.typescript.ScriptTarget.ESNext,
-            jsx: monacoLangs.typescript.JsxEmit?.ReactJSX
-              ?? monacoLangs.typescript.JsxEmit?.React
-              ?? currentOpts.jsx,
-          });
+          const currentOpts = defaults.getCompilerOptions?.() || {};
+          if (baseLang === 'javascript') {
+            defaults.setCompilerOptions?.({
+              ...currentOpts,
+              allowNonTsExtensions: true,
+              noImplicitAny:    !!settings['lsp.javascript.implicitAny'],
+              strictNullChecks: !!settings['lsp.javascript.strictNullChecks'],
+              target: tsLang?.ScriptTarget?.ESNext,
+              jsx: tsLang?.JsxEmit?.ReactJSX
+                ?? tsLang?.JsxEmit?.React
+                ?? currentOpts.jsx,
+            });
+          } else {
+            defaults.setCompilerOptions?.({
+              ...currentOpts,
+              allowNonTsExtensions: true,
+              strict:             !!settings['lsp.typescript.strictMode'],
+              noUnusedLocals:     !!settings['lsp.typescript.unusedLocals'],
+              noUnusedParameters: !!settings['lsp.typescript.unusedParameters'],
+              target: tsLang?.ScriptTarget?.ESNext,
+              jsx: tsLang?.JsxEmit?.ReactJSX
+                ?? tsLang?.JsxEmit?.React
+                ?? currentOpts.jsx,
+            });
+          }
+          defaults.setEagerModelSync?.(true);
         }
-        defaults.setEagerModelSync(true);
       }
 
       else if (langId === 'json') {
-        monacoLangs.json.jsonDefaults.setDiagnosticsOptions({
+        monacoLangs?.json?.jsonDefaults?.setDiagnosticsOptions?.({
           validate:         isEnabled && settings['lsp.json.schemaValidation'] !== false,
           allowComments:    true,
           schemaValidation: isEnabled ? 'error' : 'ignore',
@@ -242,7 +247,7 @@ export function useLspSync(editorInstance: any, tabId: string) {
       }
 
       else if (langId === 'html') {
-        monacoLangs.html.htmlDefaults.setOptions({
+        monacoLangs?.html?.htmlDefaults?.setOptions?.({
           format: {
             enable:       true,
             insertSpaces: settings['editor.insertSpaces'] ?? true,
@@ -250,7 +255,7 @@ export function useLspSync(editorInstance: any, tabId: string) {
           },
           suggest: { html5: true },
         });
-        editorInstance.updateOptions({
+        editorInstance.updateOptions?.({
           matchBrackets:       settings['lsp.html.tagMatching'] !== false ? 'always' : 'never',
           autoClosingBrackets: settings['lsp.html.autoCloseTag']   !== false ? 'always' : 'never',
         });
@@ -264,10 +269,10 @@ export function useLspSync(editorInstance: any, tabId: string) {
             emptyRules: 'warning',
           },
         };
-        if (langId === 'css')  monacoLangs.css.cssDefaults.setOptions(cssOpts);
-        if (langId === 'scss') monacoLangs.css.scssDefaults.setOptions(cssOpts);
-        if (langId === 'less') monacoLangs.css.lessDefaults.setOptions(cssOpts);
-        editorInstance.updateOptions({
+        if (langId === 'css')  monacoLangs?.css?.cssDefaults?.setOptions?.(cssOpts);
+        if (langId === 'scss') monacoLangs?.css?.scssDefaults?.setOptions?.(cssOpts);
+        if (langId === 'less') monacoLangs?.css?.lessDefaults?.setOptions?.(cssOpts);
+        editorInstance.updateOptions?.({
           colorDecorators: settings['lsp.css.colorDecorators'] !== false,
         });
       }

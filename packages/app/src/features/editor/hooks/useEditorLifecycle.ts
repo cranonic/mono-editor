@@ -1,6 +1,6 @@
 import { loadFileBackup } from '@/core/services/storageService';
 import { commands } from '@/core/extensionAPI/registry/commandRegistry';
-import { monacoKeybindingBridge } from '@/core/keybindings/monacoKeybindingBridge';
+import { monoKeybindingBridge } from '@/core/keybindings/monoKeybindingBridge';
 import { userSnippetsService } from '@/core/services/userSnippetsService';
 import { useTabStore } from '@/store/tabStore';
 import { useEditorViewStateStore } from '@/features/editor/store/editorViewStateStore';
@@ -49,7 +49,7 @@ export function useEditorLifecycle({
       }
     });
     
-    monacoKeybindingBridge.attach(editor);
+    monoKeybindingBridge.attach(editor);
     commands.setActiveEditor(editor);
 
     editor.onDidFocusEditorWidget(() => {
@@ -133,8 +133,8 @@ export function useEditorLifecycle({
             e.preventDefault();
             e.stopPropagation();
 
-            // Use modifiers one time and then off
-            useQuickKeyboardStore.getState().resetModifiers();
+            // Consume one-shot modifiers while preserving double-tap locked modifiers
+            useQuickKeyboardStore.getState().consumeArmedModifiers();
 
             // Native KeyboardEvent
             const keyCode = char.toUpperCase().charCodeAt(0);

@@ -190,6 +190,9 @@ export interface ExtensionContributions {
   
   /** File icon visualization mapping templates targeting file matching layouts inside the Explorer trees */
   iconThemes?: Array<{ id: string; label: string; path: string }>;
+
+  /** Product (app UI) icon theme packs targeting workbench UI icons via TTF/WOFF fonts or SVG/PNG assets */
+  productIconThemes?: Array<{ id: string; label: string; path: string }>;
   
   /**
    * Sidebar navigation panel visual launchers injected onto the primary horizontal activity toolbar.

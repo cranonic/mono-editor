@@ -27,6 +27,7 @@ export class SignatureHelpContribution implements IEditorContribution {
       {
         enabled: sigOpts?.enabled ?? true,
         trigger: sigOpts?.trigger ?? 'auto',
+        cycle: sigOpts?.cycle ?? false,
         fontSize: host.getFontSize(),
         fontFamily: host.getFontFamily(),
         getLanguageIdAtPosition: (ln, col) => host.getLanguageIdAtPosition(ln, col),
@@ -110,6 +111,7 @@ export class SignatureHelpContribution implements IEditorContribution {
     this.controller.setOptions({
       enabled: patch.signatureHelp.enabled,
       trigger: patch.signatureHelp.trigger,
+      cycle: patch.signatureHelp.cycle,
     });
   }
 

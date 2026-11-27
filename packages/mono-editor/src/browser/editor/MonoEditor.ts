@@ -17,6 +17,7 @@ import { registerDefaultLanguages } from '../../common/languages/defaults/regist
 import { languageFeatures } from '../../common/languages/languageFeaturesService';
 import type { DocumentSymbol, GhostTextItem, IInlayHintClickEvent } from '../../common/languages/providers/types';
 import { TokenizationSupport } from '../../common/languages/tokenization/TokenizationSupport';
+import { DocumentStructureService } from '../../common/structure/StructureBuilder';
 import { FoldingModel } from '../../common/viewModel/FoldingModel';
 import type { MonoStickyScrollOptions } from '../../common/viewModel/StickyScroll';
 import { CommandService } from '../../platform/commands/CommandService';
@@ -38,7 +39,7 @@ import { buildContributionHost, createEditorPointer, createEditorSubsystems, cre
 import { getEditorContributions } from './editorContributions';
 import { EditorEventBus } from './editorEvents';
 import { applyEditorOptionsPatch, attachRootDomListeners, resolveEditorWidgetTheme, resolveNamedOrPartialTheme, restoreModelViewState, type EditorOptionState } from './editorLifecycle';
-import { ContributionIds, type IContextMenuContribution, type ICursorPositionChangedEvent, type ICursorSelectionChangedEvent, type IDocumentSymbolsContribution, type IEditorContribution, type IFindContribution, type IFoldingContribution, type IInlineSuggestContribution, type IMonoEditor, type IMonoEditorAction, type IPasteEditContribution, type IScrollEvent, type MonoContentChangeEvent } from './editorTypes';
+import { ContributionIds, type IBreadcrumbsContribution, type IContextMenuContribution, type ICursorPositionChangedEvent, type ICursorSelectionChangedEvent, type IDocumentSymbolsContribution, type IEditorContribution, type IFindContribution, type IFoldingContribution, type IGoToLineRequestEvent, type IInlineSuggestContribution, type IMonoEditor, type IMonoEditorAction, type IPasteEditContribution, type IScrollEvent, type MonoContentChangeEvent } from './editorTypes';
 import { computeEditorLayoutInfo, computeEditorMetrics, createEditorContextKey, createEditorDecorationsCollection, getEditorActionById, getEditorOptionByName, getResolvedEditorOptions, listSupportedEditorActions, notifyMonoEditorCreated, restoreEditorViewState, saveEditorViewState, subscribeActiveTextModel } from './editorViewFacade';
 import { ModelController } from './modelController';
 
@@ -56,7 +57,7 @@ export class MonoEditor implements IMonoEditor {
   private readonly pointer: PointerController; private readonly tokenization = new TokenizationSupport();
   private readonly keybindings = new KeybindingService(); private readonly commands: CommandService;
   private readonly palette: PaletteService; private readonly decorations = new DecorationsCollection();
-  private readonly markers = new MarkerService(); private readonly folding: FoldingModel;
+  private readonly markers = new MarkerService(); private readonly folding: FoldingModel; private readonly structure: DocumentStructureService;
   private readonly scrollbar: OverlayScrollbar; private readonly minimap: MinimapController;
   private readonly bracketColorizer: BracketColorizer; private readonly handleVis: HandleVisibility;
   private readonly events = new EditorEventBus(); private readonly contributions = new Map<string, IEditorContribution>();
@@ -79,7 +80,9 @@ export class MonoEditor implements IMonoEditor {
     const mOpts = this.modelCtrl.model.getOptions();
     this.opts.tabSize = mOpts.tabSize; this.opts.insertSpaces = mOpts.insertSpaces;
     languageFeatures.fireLanguageActivated(this.modelCtrl.model.getLanguageId());
+    this.structure = new DocumentStructureService(this.modelCtrl.model, (ln) => this.tokenization.getLineTokens(this.modelCtrl.model, ln));
     this.folding = new FoldingModel(this.modelCtrl.model);
+    this.folding.setStructureRangesProvider(() => this.structure.getFoldingRanges()); this.folding.setStrategy(this.opts.foldingStrategy); this.folding.updateSync();
     this.modelCtrl.attachSelectionCapture(this.selection);
     const { root, canvas } = createRootDom(host, this.opts.theme.background);
     this.root = root; this.commands = new CommandService(this.keybindings); this.palette = new PaletteService(this.commands);
@@ -97,6 +100,8 @@ export class MonoEditor implements IMonoEditor {
       onSyncScrollbar: (active) => this.syncScrollbar(active),
       onCompositionStart: () => this.events.emitCompositionStart(), onCompositionEnd: () => this.events.emitCompositionEnd(),
       onDidPaste: onPasteDone, onKeyDownEvent: (e) => this.events.emitKeyDown(e), onKeyUpEvent: (e) => this.events.emitKeyUp(e),
+      onTextFocus: () => { this.commands.setContext('editorFocus', true); this.commands.setContext('editorTextFocus', true); this.commands.setContext('textInputFocus', true); this.events.emitFocus(); },
+      onTextBlur: () => { this.commands.setContext('editorFocus', false); this.commands.setContext('editorTextFocus', false); this.commands.setContext('textInputFocus', false); this.events.emitBlur(); },
       onInputComplete: (ev) => {
         this.view.ensureCaretVisible(); this.syncTextarea(); this.view.paint();
         if (ev.kind === 'composition') { for (const c of this.contributions.values()) c.onInputChange?.(ev); return; }
@@ -114,7 +119,7 @@ export class MonoEditor implements IMonoEditor {
       getModel: () => this.modelCtrl.model, selection: this.selection, view: this.view,
       keybindings: this.keybindings, commands: this.commands, isReadOnly: () => this.opts.readOnly,
       getTabSize: () => this.opts.tabSize, getInsertSpaces: () => this.opts.insertSpaces,
-      getEmptySelectionClipboard: () => this.opts.emptySelectionClipboard, onBeforePaste: tryPaste, onAfterPaste: onPasteDone,
+      getEmptySelectionClipboard: () => this.opts.emptySelectionClipboard, getNativePasteSeq: () => this.input.getNativePasteSeq(), onBeforePaste: tryPaste, onAfterPaste: onPasteDone,
       onSyncIndentOptions: (sp, ts) => { this.opts.insertSpaces = sp; this.opts.tabSize = ts; this.input.setInsertSpaces(sp); this.input.setTabSize(ts); this.view.setTabSize(ts); },
       getLanguageIdAtPosition: (ln, col) => this.tokenization.getLanguageIdAtPosition(this.modelCtrl.model, ln, col),
       syncTextarea: () => this.syncTextarea(), emitContent: () => this.emitContent(), emitCursorEvents: (src) => this.emitCursorEvents(src),
@@ -122,7 +127,7 @@ export class MonoEditor implements IMonoEditor {
     });
     const contribHost = buildContributionHost({
       editor: this, root: this.root, view: this.view, widgets: this.widgets, input: this.input, selection: this.selection,
-      commands: this.commands, keybindings: this.keybindings, folding: this.folding, tokenization: this.tokenization,
+      commands: this.commands, keybindings: this.keybindings, folding: this.folding, structure: this.structure, tokenization: this.tokenization,
       markers: this.markers, minimap: this.minimap, modelCtrl: this.modelCtrl, opts: this.opts,
       isPeekEditor: this.isPeekEditor, initialOptions: options, contributions: this.contributions, events: this.events,
       isDisposed: () => this.disposed, getMetrics: () => this.metrics(), syncTextarea: () => this.syncTextarea(),
@@ -145,7 +150,7 @@ export class MonoEditor implements IMonoEditor {
     });
     this.detachDomListeners = attachRootDomListeners({
       root: this.root, textarea: this.input.textarea, isDisposed: () => this.disposed,
-      getContributions: () => this.contributions.values(), dispatchKeybinding: (e) => this.keybindings.dispatch(e),
+      getContributions: () => this.contributions.values(), dispatchKeybinding: (e) => this.keybindings.dispatchDetailed(e),
       onOutsidePointerDown: () => { this.input.blur(); for (const c of this.contributions.values()) c.onOutsidePointerDown?.(); },
       onWheelScroll: (dx, dy) => { for (const c of this.contributions.values()) c.onPointerInteract?.('scroll'); this.handleVis.onScrollStart(); this.view.scrollBy(dx, dy); this.flushScrollDelta(); },
       onWheelEnd: () => { this.handleVis.onScrollEnd(); for (const c of this.contributions.values()) c.onScrollEnd?.(); },
@@ -164,14 +169,14 @@ export class MonoEditor implements IMonoEditor {
   getContribution<T extends IEditorContribution>(id: string): T | undefined { return this.contributions.get(id) as T | undefined; }
   getValue() { return this.modelCtrl.model.getValue(); }
   setValue(value: string) {
-    this.modelCtrl.model.setValue(value); this.folding.updateSync(); this.folding.unfoldAll();
+    this.modelCtrl.model.setValue(value); this.structure.invalidate(); this.folding.updateSync(); this.folding.unfoldAll();
     this.view.invalidateScopes(); this.selection.setCaret(1, 1); this.view.scrollTop = 0; this.view.scrollLeft = 0;
     this.view.paint(); this.syncTextarea(); this.emitContent();
   }
   getLanguageId() { return this.modelCtrl.model.getLanguageId(); }
   setLanguageId(id: string) {
     this.modelCtrl.model.setLanguageId(id); languageFeatures.fireLanguageActivated(id);
-    this.tokenization.invalidate(); this.bracketColorizer.setLanguageId(id); this.folding.updateSync(); this.view.invalidateScopes(); this.view.paint();
+    this.tokenization.invalidate(); this.bracketColorizer.setLanguageId(id); this.structure.invalidate(); this.folding.updateSync(); this.view.invalidateScopes(); this.view.paint();
   }
   getModelVersionId() { return this.modelCtrl.model.getVersionId(); }
   getAlternativeVersionId() { return this.events.altVersionId; }
@@ -184,7 +189,7 @@ export class MonoEditor implements IMonoEditor {
     const { oldUri, newUri, saved } = this.modelCtrl.swapModel(nextModel);
     const m = this.modelCtrl.model;
     languageFeatures.fireLanguageActivated(m.getLanguageId()); this.modelCtrl.attachSelectionCapture(this.selection);
-    this.folding.setModel(m); this.view.setModel(m); this.minimap.setModel(m); this.input.setModel(m); this.pointer.setModel(m);
+    this.structure.setModel(m); this.folding.setModel(m); this.view.setModel(m); this.minimap.setModel(m); this.input.setModel(m); this.pointer.setModel(m);
     this.tokenization.invalidate(); this.bracketColorizer.setLanguageId(m.getLanguageId()); this.bracketColorizer.invalidateAll();
     for (const c of this.contributions.values()) c.onModelChange?.(m);
     restoreModelViewState({ saved, model: m, folding: this.folding, view: this.view, selection: this.selection, clampPos: (l, c) => clampPosition(m, l, c) });
@@ -265,7 +270,7 @@ export class MonoEditor implements IMonoEditor {
   updateOptions(options: Partial<MonoEditorOptions>) {
     applyEditorOptionsPatch(this.opts, options, {
       root: this.root, modelCtrl: this.modelCtrl, view: this.view, input: this.input, commands: this.commands,
-      scrollbar: this.scrollbar, minimap: this.minimap, tokenization: this.tokenization, bracketColorizer: this.bracketColorizer, isPeekEditor: this.isPeekEditor,
+      scrollbar: this.scrollbar, minimap: this.minimap, tokenization: this.tokenization, bracketColorizer: this.bracketColorizer, folding: this.folding, isPeekEditor: this.isPeekEditor,
       applyAllWidgetThemes: () => this.applyAllWidgetThemes(), setLanguageId: (id) => this.setLanguageId(id),
       setValue: (v) => this.setValue(v), notifyContributions: (p) => { for (const c of this.contributions.values()) c.onOptionsChange?.(p); },
     });
@@ -304,6 +309,9 @@ export class MonoEditor implements IMonoEditor {
   onDidDispose(l: () => void) { return this.events.onDidDispose(l); }
   onDidChangeMarkers(l: (markers: IMarker[]) => void) { return this.events.onDidChangeMarkers(l); }
   onDidClickInlayHint(l: (e: IInlayHintClickEvent) => void) { return this.events.onDidClickInlayHint(l); }
+  onDidRequestGoToLine(l: (e: IGoToLineRequestEvent) => void) { return this.events.onDidRequestGoToLine(l); }
+  onDidRequestGoToSymbol(l: () => void) { return this.events.onDidRequestGoToSymbol(l); }
+  onDidChangeBreadcrumbs(l: (s: import('../../common/breadcrumbs/breadcrumbsTypes').IBreadcrumbsSnapshot) => void) { return this.getContribution<IBreadcrumbsContribution>(ContributionIds.Breadcrumbs)?.onDidChangeBreadcrumbs(l) ?? { dispose: () => {} }; }
 
   addAction(action: MonoAction) { return this.commands.addAction(action); }
   registerCommand(id: string, h: MonoCommandHandler, m?: Omit<MonoRegisteredCommand, 'id' | 'handler'>) { return this.commands.registerCommand(id, h, m); }
@@ -349,6 +357,8 @@ export class MonoEditor implements IMonoEditor {
   prevGhostText() { this.ghostContrib()?.prev(); }
   dismissGhostText() { this.ghostContrib()?.dismiss(); }
   getDocumentSymbols(): Promise<DocumentSymbol[]> { return this.getContribution<IDocumentSymbolsContribution>(ContributionIds.DocumentSymbols)?.getDocumentSymbols() ?? Promise.resolve([]); }
+  getStructure() { return this.structure; }
+  getBreadcrumbs() { return this.getContribution<IBreadcrumbsContribution>(ContributionIds.Breadcrumbs)?.getBreadcrumbs(); }
 
   dispose() {
     if (this.disposed) return;
@@ -361,7 +371,7 @@ export class MonoEditor implements IMonoEditor {
   }
   private metrics(r: CanvasRenderer = this.renderer): RenderMetrics { return computeEditorMetrics(r, this.opts, this.modelCtrl.model.getLineCount()); }
   private revealCtx() { return { model: this.modelCtrl.model, selection: this.selection, folding: this.folding, view: this.view, metrics: () => this.metrics(), showLineNumbers: () => this.opts.lineNumbers, onScrollChanged: (t: boolean, l: boolean) => { this.lastScrollTop = this.view.scrollTop; this.lastScrollLeft = this.view.scrollLeft; this.emitScrollEvent(t, l); } }; }
-  private subscribeActiveModel() { return subscribeActiveTextModel({ model: this.modelCtrl.model, events: this.events, tokenization: this.tokenization, bracketColorizer: this.bracketColorizer, folding: this.folding, selection: this.selection, view: this.view, contributions: this.contributions, onContentSizeCheck: () => this.checkContentSizeChanged() }); }
+  private subscribeActiveModel() { return subscribeActiveTextModel({ model: this.modelCtrl.model, events: this.events, tokenization: this.tokenization, bracketColorizer: this.bracketColorizer, folding: this.folding, structure: this.structure, selection: this.selection, view: this.view, contributions: this.contributions, onContentSizeCheck: () => this.checkContentSizeChanged() }); }
   private checkContentSizeChanged() {
     const w = this.view.getContentWidth(), h = this.view.getContentHeight();
     if (w !== this.lastContentW || h !== this.lastContentH) { const wc = w !== this.lastContentW, hc = h !== this.lastContentH; this.lastContentW = w; this.lastContentH = h; this.events.emitContentSize({ contentWidth: w, contentHeight: h, contentWidthChanged: wc, contentHeightChanged: hc }); }

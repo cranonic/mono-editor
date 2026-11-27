@@ -1,36 +1,33 @@
 // src/core/extensionAPI/modules/themesModule.ts
 
 import { themeService } from '@/core/theme/service/themeService';
-import { useThemeStore }  from '@/core/theme/store/themeStore';
+import { useThemeStore } from '@/core/theme/store/themeStore';
 import type { ThemeDefinition } from '@/core/theme/types';
 
 import { iconThemeService, type IconThemeDefinition } from '@/core/theme/service/iconThemeService';
 import { fileIconRegistry } from '@/core/extensionAPI/registry/FileIconRegistry';
 
+import {
+  productIconThemeService,
+  type ProductIconThemeDefinition,
+} from '@/core/theme/service/productIconThemeService';
+import { productIconRegistry } from '@/core/extensionAPI/registry/ProductIconRegistry';
+
 import { msEvents } from '@/core/extensionAPI/events/EventManager';
 
 /**
- * ##  Mono Studio Theme Extension API
- * 
+ * ## Mono Studio Theme Extension API
+ * Exposes Color Themes, File Icon Themes, and Product (App) Icon Themes to extensions.
  */
 export const createThemesModule = (extId: string) => ({
-  
   // COLOR THEMES API
   color: {
-    /**
-     * Registers a pre-defined TypeScript/JavaScript color theme object.
-     * @example
-     * const disposable = mscode.themes.color.register(oceanBlueTheme);
-     */
     register: (def: ThemeDefinition) => {
       const disposable = themeService.registerTheme(def, extId);
       useThemeStore.getState().sync();
       return disposable;
     },
 
-    /**
-     * Registers a color theme from a raw JSON string or object.
-     */
     registerFromJson: (json: string | object) => {
       const parsed = typeof json === 'string' ? JSON.parse(json) : json;
       const disposable = themeService.registerFromJson(parsed, extId);
@@ -38,36 +35,24 @@ export const createThemesModule = (extId: string) => ({
       return disposable;
     },
 
-    /** Returns the unique ID of the currently active color theme. */
     getActiveThemeId: () => themeService.getActiveThemeId(),
 
-    /** Switches the editor to a registered color theme. */
     setTheme: (id: string) => useThemeStore.getState().setTheme(id),
 
-    /** Retrieves a list of all registered color themes. */
     getAll: () => themeService.getAllThemes(),
-    
-    /** Fires when the active color theme changes. */
+
     onDidChangeColorTheme: (callback: (themeId: string) => void) => {
       return msEvents.on('onDidChangeColorTheme', callback);
-    }
+    },
   },
 
-  // ICON THEMES API
+  // FILE ICON THEMES API
   icon: {
-    /**
-     * Registers a pre-defined TypeScript/JavaScript icon theme object.
-     * @example
-     * const disposable = mscode.themes.icon.register(materialIconsTheme);
-     */
     register: (def: IconThemeDefinition) => {
       iconThemeService.registerIconTheme(def);
       return { dispose: () => iconThemeService.unregisterIconTheme(def.id) };
     },
 
-    /**
-     * Registers an icon theme from a raw JSON string or object.
-     */
     registerFromJson: (json: string | object) => {
       const parsed = typeof json === 'string' ? JSON.parse(json) : json;
       const def = parsed as IconThemeDefinition;
@@ -75,31 +60,62 @@ export const createThemesModule = (extId: string) => ({
       return { dispose: () => iconThemeService.unregisterIconTheme(def.id) };
     },
 
-    /** Returns the unique ID of the currently active icon theme. */
     getActiveThemeId: () => iconThemeService.getActiveThemeId(),
 
-    /** Switches the file explorer to a registered icon theme. */
     setTheme: (id: string) => iconThemeService.applyTheme(id),
 
-    /** Retrieves a list of all registered icon themes. */
     getAll: () => iconThemeService.getAllThemes(),
 
-    /** Resolves the correct icon name for a specific file or folder. */
     getFileIcon: (fileName: string, isDirectory: boolean, isOpen: boolean = false) => {
       return fileIconRegistry.getFileIcon(fileName, isDirectory, isOpen);
     },
-    
-    /** Resolves the correct icon name for a specific language ID. */
+
     getLanguageIcon: (langId: string) => {
       return fileIconRegistry.getLanguageIcon(langId);
     },
 
-    /** Fires when the active icon theme changes. */
     onDidChangeIconTheme: (callback: (themeId: string) => void) => {
       return { dispose: msEvents.on('onDidChangeIconTheme', callback) };
-    }
-  }
-  
+    },
+  },
+
+  // PRODUCT (APP) ICON THEMES API
+  productIcon: {
+    /**
+     * Registers a custom Product (App) Icon Theme backed by TTF/WOFF fonts or SVG/PNG assets.
+     */
+    register: (def: ProductIconThemeDefinition) => {
+      productIconThemeService.registerProductIconTheme(def);
+      return { dispose: () => productIconThemeService.unregisterProductIconTheme(def.id) };
+    },
+
+    /**
+     * Registers a Product Icon Theme from a raw JSON string or object.
+     */
+    registerFromJson: (json: string | object) => {
+      const parsed = typeof json === 'string' ? JSON.parse(json) : json;
+      const def = parsed as ProductIconThemeDefinition;
+      productIconThemeService.registerProductIconTheme(def);
+      return { dispose: () => productIconThemeService.unregisterProductIconTheme(def.id) };
+    },
+
+    /** Returns the active Product Icon Theme ID. */
+    getActiveThemeId: () => productIconThemeService.getActiveThemeId(),
+
+    /** Switches the application UI to a registered Product Icon Theme. */
+    setTheme: (id: string) => productIconThemeService.applyTheme(id),
+
+    /** Lists all built-in and extension-contributed Product Icon Themes. */
+    getAll: () => productIconThemeService.getAllThemes(),
+
+    /** Resolves a semantic app icon token against the active Product Icon Theme. */
+    getIcon: (name: string) => productIconRegistry.getIcon(name),
+
+    /** Fires whenever the active Product Icon Theme changes. */
+    onDidChangeProductIconTheme: (callback: (themeId: string) => void) => {
+      return { dispose: msEvents.on('onDidChangeProductIconTheme', callback) };
+    },
+  },
 });
 
 export type ThemesModule = ReturnType<typeof createThemesModule>;

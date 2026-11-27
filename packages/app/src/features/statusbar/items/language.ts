@@ -1,21 +1,32 @@
 // src/features/statusbar/items/language.ts
 
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import { usePaletteStore, type QuickPickItem } from '@/store/paletteStore';
 import { fileIconRegistry } from '@/core/extensionAPI/registry/FileIconRegistry';
 import { useLanguageStore } from '@/store/languageStore';
 
+import { useTabStore } from '@/store/tabStore';
+import { useStatusBarStore } from '../store/statusBarStore';
+
 /**
  * Handles the status bar language selection action, presenting an interactive list of
- * available language configurations to map over the active text model pipeline.
- * 
- * @param editor Operational Monaco code editor instance container context.
+ * available language configurations to map over the active Mono editor model.
  */
 export const handleLanguageClick = (editor: monaco.editor.IStandaloneCodeEditor): void => {
-  const model = editor.getModel();
+  const model = editor.getModel?.();
   if (!model) return;
   
-  const currentLangId = model.getLanguageId() || 'plaintext';
+  const currentLangId = editor.getLanguageId?.() || model.getLanguageId?.() || 'plaintext';
+  const applyLang = (langId: string) => {
+    editor.setLanguageId?.(langId);
+    monaco.editor.setModelLanguage(model, langId);
+    useStatusBarStore.getState().updateItem('lang-mode', { label: langId });
+    editor.focus?.();
+  };
+
+  const activeTabId = useTabStore.getState().activeTabId;
+  const activeTab = useTabStore.getState().tabs.find((t) => t.id === activeTabId);
+  const pathForExt = activeTab?.filePath || model.uri?.path || activeTabId || '';
 
   const items: QuickPickItem[] = [
     { 
@@ -23,12 +34,12 @@ export const handleLanguageClick = (editor: monaco.editor.IStandaloneCodeEditor)
       label: 'Auto Detect', 
       leftIcon: 'wand', 
       onSelect: () => {
-        const ext = '.' + model.uri.path.split('.').pop()?.toLowerCase();
+        const ext = '.' + pathForExt.split('.').pop()?.toLowerCase();
         const langs = useLanguageStore.getState().languages; 
         
         const detectedLang = langs.find(l => l.extensions?.includes(ext));
         const targetLang = detectedLang ? detectedLang.id : 'plaintext';
-        monaco.editor.setModelLanguage(model, targetLang);
+        applyLang(targetLang);
       } 
     },
     { id: 'sep-lang', type: 'separator', label: '' }
@@ -49,9 +60,9 @@ export const handleLanguageClick = (editor: monaco.editor.IStandaloneCodeEditor)
       inlineDetail: `(${lang.id})`,
       suffix: lang.id === currentLangId ? ' - configured language' : undefined,
       iconClass: icon.type === 'class' ? `ms-file-icon ${icon.value}` : undefined,
-      leftIcon: icon.type === 'image' ? 'code' : undefined,
+      leftIcon: icon.type === 'image' || icon.type === 'font' ? 'code' : undefined,
       indent: true,
-      onSelect: () => monaco.editor.setModelLanguage(model, lang.id)
+      onSelect: () => applyLang(lang.id)
     });
   });
 

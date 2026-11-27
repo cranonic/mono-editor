@@ -1,5 +1,5 @@
 // Auto-split from LspProviders.ts
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import type { LspState } from '../types';
 import { sendRequest } from '../LspTransport';
 import { getDocUri, fromLspUri } from '../utils/uriHelpers';

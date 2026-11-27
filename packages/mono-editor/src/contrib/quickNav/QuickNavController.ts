@@ -53,9 +53,14 @@ export class QuickNavController implements IEditorContribution {
   private filtered: FlatSymbol[] = [];
   private selectedIdx = 0;
   private theme: ResolvedWidgetTheme | null = null;
+  private gotoLineMode: 'builtin' | 'external';
+  private gotoSymbolMode: 'builtin' | 'external';
 
   constructor(host: IEditorContributionHost) {
     this.host = host;
+    const navOpts = host.initialOptions?.quickNav ?? (host as { getQuickNavOptions?: () => { gotoLine?: 'builtin' | 'external'; gotoSymbol?: 'builtin' | 'external' } }).getQuickNavOptions?.();
+    this.gotoLineMode = navOpts?.gotoLine ?? 'builtin';
+    this.gotoSymbolMode = navOpts?.gotoSymbol ?? 'builtin';
 
     this.overlay = document.createElement('div');
     this.overlay.dataset.monoFocus = 'quicknav';
@@ -120,13 +125,22 @@ export class QuickNavController implements IEditorContribution {
   }
 
   openGoToLine(): void {
+    const maxLine = this.host.getModel().getLineCount();
+    const pos = this.host.getPosition();
+    if (this.gotoLineMode === 'external') {
+      this.close(false);
+      this.host.emitRequestGoToLine({
+        lineNumber: pos.lineNumber,
+        column: pos.column,
+        lineCount: maxLine,
+      });
+      return;
+    }
     this.mode = 'line';
     this.symbols = [];
     this.filtered = [];
     this.listEl.replaceChildren();
     this.listEl.style.display = 'none';
-    const maxLine = this.host.getModel().getLineCount();
-    const pos = this.host.getPosition();
     this.input.placeholder = `Line[:Column] (1–${maxLine})`;
     this.input.value = `${pos.lineNumber}:${pos.column}`;
     this.hint.textContent = `Current: Ln ${pos.lineNumber}, Col ${pos.column} · Total ${maxLine} lines`;
@@ -136,6 +150,11 @@ export class QuickNavController implements IEditorContribution {
   }
 
   async openGoToSymbol(): Promise<void> {
+    if (this.gotoSymbolMode === 'external') {
+      this.close(false);
+      this.host.emitRequestGoToSymbol();
+      return;
+    }
     this.mode = 'symbol';
     this.listEl.style.display = 'block';
     this.input.placeholder = 'Filter symbols...';
@@ -169,7 +188,10 @@ export class QuickNavController implements IEditorContribution {
   }
 
   onOutsidePointerDown(): void { this.close(false); }
-  onOptionsChange(_patch: Partial<MonoEditorOptions>): void { /* no-op */ }
+  onOptionsChange(patch: Partial<MonoEditorOptions>): void {
+    if (patch.quickNav?.gotoLine !== undefined) this.gotoLineMode = patch.quickNav.gotoLine;
+    if (patch.quickNav?.gotoSymbol !== undefined) this.gotoSymbolMode = patch.quickNav.gotoSymbol;
+  }
 
   onThemeChange(wt: ResolvedWidgetTheme): void {
     this.theme = wt;

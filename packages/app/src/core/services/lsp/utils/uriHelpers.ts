@@ -7,7 +7,7 @@
 // JDT LS / Java URI.create() rejects unencoded spaces:
 //   Illegal character in path: file:///sdcard/Ay/Typescript Test
 
-import type * as monaco from 'monaco-editor';
+import type * as monaco from '@/core/mono';
 import type { LspState } from '../types';
 
 /**

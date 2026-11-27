@@ -54,6 +54,7 @@ export class HoverContribution implements IEditorContribution {
   private explicitHoverTrigger: HoverTriggerMode | undefined;
   private explicitDiagnosticsPopup: HoverTriggerMode | undefined;
   private delayMs: number;
+  private hidingDelayMs: number;
   private lastMousePosKey = '';
   private lastTapPointerType = 'mouse';
   private tapScheduleGuardUntil = 0;
@@ -67,6 +68,7 @@ export class HoverContribution implements IEditorContribution {
     this.explicitHoverTrigger = host.initialOptions.hover?.trigger;
     this.explicitDiagnosticsPopup = host.initialOptions.diagnostics?.popup;
     this.delayMs = host.initialOptions.hover?.delay ?? 300;
+    this.hidingDelayMs = Math.max(0, host.initialOptions.hover?.hidingDelay ?? 300);
 
     this.hover = new HoverController(
       host.root,
@@ -86,6 +88,7 @@ export class HoverContribution implements IEditorContribution {
       },
     );
     this.hover.setSticky(host.initialOptions.hover?.sticky !== false);
+    this.hover.setHidingDelay(this.hidingDelayMs);
 
     host.view.setHoverRangeProvider(() => this.hover.getActiveRange());
 
@@ -236,6 +239,10 @@ export class HoverContribution implements IEditorContribution {
         this.hoverTrigger = detectCoarsePointer() ? 'click' : 'hover';
       }
       if (patch.hover.delay !== undefined) this.delayMs = Math.max(0, patch.hover.delay);
+      if (patch.hover.hidingDelay !== undefined) {
+        this.hidingDelayMs = Math.max(0, patch.hover.hidingDelay);
+        this.hover.setHidingDelay(this.hidingDelayMs);
+      }
       if (patch.hover.sticky !== undefined) this.hover.setSticky(patch.hover.sticky);
     }
     if (patch.diagnostics && 'popup' in patch.diagnostics) {
@@ -307,7 +314,7 @@ export class HoverContribution implements IEditorContribution {
     const localY = e.clientY - rect.top;
     if (localX < this.host.view.contentLeft) {
       this.hover.cancelTimer();
-      if (this.hover.isOpen()) this.hover.scheduleHide(150);
+      if (this.hover.isOpen()) this.hover.scheduleHide(this.hidingDelayMs);
       return;
     }
 
@@ -323,7 +330,7 @@ export class HoverContribution implements IEditorContribution {
         pos.lineNumber <= active.endLineNumber &&
         (pos.lineNumber !== active.startLineNumber || pos.column >= active.startColumn) &&
         (pos.lineNumber !== active.endLineNumber || pos.column <= active.endColumn);
-      if (!insideRange) this.hover.scheduleHide(220);
+      if (!insideRange) this.hover.scheduleHide(this.hidingDelayMs);
       else return;
     }
 
@@ -345,6 +352,6 @@ export class HoverContribution implements IEditorContribution {
     this.lastMousePosKey = '';
     if (this.hoverTrigger !== 'hover' && this.diagnosticsPopup !== 'hover') return;
     this.hover.cancelTimer();
-    if (this.hover.isOpen()) this.hover.scheduleHide(180);
+    if (this.hover.isOpen()) this.hover.scheduleHide(this.hidingDelayMs);
   };
 }

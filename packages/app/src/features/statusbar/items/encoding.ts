@@ -1,11 +1,12 @@
 // src/features/statusbar/items/encoding.ts
 
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import { usePaletteStore, type QuickPickItem } from '@/store/paletteStore';
 import { useStatusBarStore } from '../store/statusBarStore';
 import { useEditorViewStateStore } from '@/features/editor/store/editorViewStateStore';
 import { configRegistry } from '@/core/extensionAPI/registry/configurationRegistry';
 import { useSettingsStore } from '@/features/settings/store/settingsStore';
+import { useTabStore } from '@/store/tabStore';
 
 /**
  * Resolves the operational character encoding identifier mapped to an open tab context, 
@@ -41,21 +42,23 @@ export const getFileEncodingLabel = (tabId: string): string => {
  * @param editor The operational Monaco code editor workspace container instance.
  */
 export const handleEncodingClick = (editor: monaco.editor.IStandaloneCodeEditor): void => {
-  const model = editor.getModel();
-  if (!model) return;
-  
-  const currentPath = model.uri.path;
-  const settingDef = configRegistry.getSetting('files.encoding');
+  const model = editor.getModel?.();
+  const currentPath = useTabStore.getState().activeTabId || model?.uri?.path || '';
+  if (!currentPath) return;
 
-  const encodings: QuickPickItem[] = (settingDef?.enum || []).map((val, idx) => ({
+  const settingDef = configRegistry.getSetting('files.encoding');
+  const rawEnum = settingDef?.enum?.length ? settingDef.enum : ['utf-8', 'utf-16le', 'utf-16be', 'latin1'];
+  const rawLabels = settingDef?.enumItemLabels?.length ? settingDef.enumItemLabels : ['UTF-8', 'UTF-16 LE', 'UTF-16 BE', 'ISO 8859-1'];
+
+  const encodings: QuickPickItem[] = rawEnum.map((val, idx) => ({
     id: String(val),
-    label: settingDef?.enumItemLabels?.[idx] || String(val),
+    label: rawLabels[idx] || String(val),
     description: settingDef?.enumDescriptions?.[idx] || '',
     onSelect: () => {
-      const displayLabel = settingDef?.enumItemLabels?.[idx] || String(val).toUpperCase();
-      
+      const displayLabel = rawLabels[idx] || String(val).toUpperCase();
       useEditorViewStateStore.getState().updateViewState(currentPath, { encoding: String(val) });
       useStatusBarStore.getState().updateItem('encoding', { label: displayLabel });
+      editor.focus?.();
     }
   }));
 

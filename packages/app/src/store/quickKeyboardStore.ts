@@ -1,6 +1,17 @@
 // src/store/quickKeyboardStore.ts
 
 import { create } from 'zustand';
+import {
+  consumeArmedModifiers,
+  createInitialModifierSnapshot,
+  getActiveModifiers,
+  tapModifier,
+  type ModifierKey,
+  type ModifierSnapshot,
+  type ModifierStates,
+} from './quickKeyboardModifiers';
+
+export type { ModifierKey, ModifierState, ModifierStates } from './quickKeyboardModifiers';
 
 /**
  * Represents a single auxiliary key action displayed in the mobile quick-access bar.
@@ -13,44 +24,67 @@ export interface QuickKey {
   /** Optional icon name for the key. */
   icon?: string;
   /** The command ID or action trigger string executed when pressed. */
-  action: string; 
+  action: string;
 }
 
-/**
- * State management for the mobile-specific quick-access keyboard overlay.
- * Controls visibility and the dynamic configuration of active keys.
- */
 interface QuickKeyboardState {
-  /** Visibility state of the quick keyboard bar. */
   isVisible: boolean;
-  /** The list of keys currently rendered in the toolbar. */
   keys: QuickKey[];
-  
-  /** Modifier State */
+  /** Boolean active flags (`armed` or `locked`) for backwards compatibility. */
   modifiers: { ctrl: boolean; alt: boolean; shift: boolean };
-  
-  /** Toggles the display state of the keyboard bar. */
+  /** 3-state sticky modifier state (`off` | `armed` | `locked`). In-memory only (never persisted). */
+  modifierStates: ModifierStates;
+  _modSnapshot: ModifierSnapshot;
+
   toggleVisibility: () => void;
-  /** Updates the keys displayed based on context (e.g., loaded from user settings). */
   setKeys: (keys: QuickKey[]) => void;
-  toggleModifier: (mod: 'ctrl' | 'alt' | 'shift') => void;
+  toggleModifier: (mod: ModifierKey, nowMs?: number) => void;
+  /** Consumes one-shot (`armed`) modifiers while preserving `locked` modifiers. */
+  consumeArmedModifiers: () => void;
+  /** Hard-resets all modifiers (including locked) to `off`. */
   resetModifiers: () => void;
 }
 
-/**
- * Store implementation for managing mobile quick keyboard access buttons.
- * Useful for providing standard modifier keys like Ctrl, Alt, and arrows 
- * to touch-based mobile environments.
- */
+const initialSnap = createInitialModifierSnapshot();
+
 export const useQuickKeyboardStore = create<QuickKeyboardState>((set) => ({
-  isVisible: false, 
-  keys: [], 
-  modifiers: { ctrl: false, alt: false, shift: false },
+  isVisible: false,
+  keys: [],
+  modifiers: getActiveModifiers(initialSnap.states),
+  modifierStates: initialSnap.states,
+  _modSnapshot: initialSnap,
+
   toggleVisibility: () => set((s) => ({ isVisible: !s.isVisible })),
-  
+
   setKeys: (keys: QuickKey[]) => set({ keys }),
-  
-  toggleModifier: (mod) => set((s) => ({ modifiers: { ...s.modifiers, [mod]: !s.modifiers[mod] } })),
-  resetModifiers: () => set({ modifiers: { ctrl: false, alt: false, shift: false } })
-  
+
+  toggleModifier: (mod, nowMs = Date.now()) =>
+    set((s) => {
+      const next = tapModifier(s._modSnapshot, mod, nowMs);
+      return {
+        _modSnapshot: next,
+        modifierStates: next.states,
+        modifiers: getActiveModifiers(next.states),
+      };
+    }),
+
+  consumeArmedModifiers: () =>
+    set((s) => {
+      const next = consumeArmedModifiers(s._modSnapshot);
+      if (next === s._modSnapshot) return s;
+      return {
+        _modSnapshot: next,
+        modifierStates: next.states,
+        modifiers: getActiveModifiers(next.states),
+      };
+    }),
+
+  resetModifiers: () => {
+    const fresh = createInitialModifierSnapshot();
+    set({
+      _modSnapshot: fresh,
+      modifierStates: fresh.states,
+      modifiers: getActiveModifiers(fresh.states),
+    });
+  },
 }));

@@ -211,9 +211,11 @@ export const SidebarEngine: React.FC<{ panelDef: SidebarPanelDef }> = ({ panelDe
               {showResizer && <Resizer onResize={(delta) => handleResize(section.id, delta)} />}
               <div style={{
                 display: 'flex', flexDirection: 'column',
-                flex: shouldFill ? 1 : 'none', minHeight: 0,
-                overflow: isBlock ? 'visible' : 'hidden',
+                flexGrow: shouldFill ? 1 : 0,
                 flexShrink: isBlock && !shouldFill ? 0 : 1,
+                flexBasis: shouldFill ? '0%' : 'auto',
+                minHeight: 0,
+                overflow: isBlock ? 'visible' : 'hidden',
               }}>
                 {isBlock ? (
                   contentArea

@@ -130,6 +130,108 @@ export interface MonoContextMenuOptions {
   maxHeight?: number;
 }
 
+export type AcceptSuggestionOnEnterMode = 'on' | 'smart' | 'off';
+export type SuggestSelectionMode = 'first' | 'recentlyUsed' | 'recentlyUsedByPrefix';
+export type SuggestInsertMode = 'insert' | 'replace';
+export type SuggestPreviewMode = 'prefix' | 'subword' | 'subwordSmart';
+export type WordBasedSuggestionsMode = 'off' | 'currentDocument' | 'matchingDocuments' | 'allDocuments';
+export type SnippetSuggestionsMode = 'top' | 'bottom' | 'inline' | 'none';
+export type TabCompletionMode = 'on' | 'off' | 'onlySnippets';
+export type LightbulbEnabledMode = 'off' | 'on' | 'onCode';
+export type FoldingStrategy = 'auto' | 'syntax' | 'indentation';
+
+export interface MonoFoldingOptions {
+  enabled?: boolean;
+  strategy?: FoldingStrategy;
+  maxLines?: number;
+}
+
+export interface MonoQuickNavOptions {
+  gotoLine?: 'builtin' | 'external';
+  gotoSymbol?: 'builtin' | 'external';
+}
+
+export type BreadcrumbPathMode = 'on' | 'off' | 'last';
+export type BreadcrumbSymbolSortOrder = 'position' | 'name' | 'type';
+
+export interface MonoBreadcrumbsKindFilter {
+  showFiles?: boolean;
+  showModules?: boolean;
+  showNamespaces?: boolean;
+  showPackages?: boolean;
+  showClasses?: boolean;
+  showMethods?: boolean;
+  showProperties?: boolean;
+  showFields?: boolean;
+  showConstructors?: boolean;
+  showEnums?: boolean;
+  showInterfaces?: boolean;
+  showFunctions?: boolean;
+  showVariables?: boolean;
+  showConstants?: boolean;
+  showStrings?: boolean;
+  showNumbers?: boolean;
+  showBooleans?: boolean;
+  showArrays?: boolean;
+  showObjects?: boolean;
+  showKeys?: boolean;
+  showNull?: boolean;
+  showEnumMembers?: boolean;
+  showStructs?: boolean;
+  showEvents?: boolean;
+  showOperators?: boolean;
+  showTypeParameters?: boolean;
+}
+
+export interface MonoBreadcrumbsOptions extends MonoBreadcrumbsKindFilter {
+  enabled?: boolean;
+  filePath?: BreadcrumbPathMode;
+  symbolPath?: BreadcrumbPathMode;
+  icons?: boolean;
+  symbolSortOrder?: BreadcrumbSymbolSortOrder;
+  symbolPathSeparator?: string;
+}
+
+export interface MonoSuggestOptions {
+  docs?: 'off' | 'auto' | 'side' | 'below';
+  mode?: 'palette' | 'ghost';
+  insertMode?: SuggestInsertMode;
+  filterGraceful?: boolean;
+  localityBonus?: boolean;
+  preview?: boolean;
+  previewMode?: SuggestPreviewMode;
+  showIcons?: boolean;
+  showStatusBar?: boolean;
+  matchOnWordStartOnly?: boolean;
+  showMethods?: boolean;
+  showFunctions?: boolean;
+  showConstructors?: boolean;
+  showFields?: boolean;
+  showVariables?: boolean;
+  showClasses?: boolean;
+  showStructs?: boolean;
+  showInterfaces?: boolean;
+  showModules?: boolean;
+  showProperties?: boolean;
+  showEvents?: boolean;
+  showOperators?: boolean;
+  showUnits?: boolean;
+  showValues?: boolean;
+  showConstants?: boolean;
+  showEnums?: boolean;
+  showEnumMembers?: boolean;
+  showKeywords?: boolean;
+  showWords?: boolean;
+  showColors?: boolean;
+  showFiles?: boolean;
+  showReferences?: boolean;
+  showFolders?: boolean;
+  showTypeParameters?: boolean;
+  showSnippets?: boolean;
+  showUsers?: boolean;
+  showIssues?: boolean;
+}
+
 export interface MonoEditorOptions {
   value?: string;
   language?: string;
@@ -177,13 +279,20 @@ export interface MonoEditorOptions {
       };
   quickSuggestionsDelay?: number;
   suggestOnTriggerCharacters?: boolean;
-  suggest?: {
-    docs?: 'off' | 'auto' | 'side' | 'below';
-    mode?: 'palette' | 'ghost';
-  };
+  acceptSuggestionOnCommitCharacter?: boolean;
+  acceptSuggestionOnEnter?: AcceptSuggestionOnEnterMode;
+  suggestSelection?: SuggestSelectionMode;
+  suggestFontSize?: number;
+  suggestLineHeight?: number;
+  suggestMatchOnWordStartOnly?: boolean;
+  wordBasedSuggestions?: WordBasedSuggestionsMode;
+  snippetSuggestions?: SnippetSuggestionsMode;
+  tabCompletion?: TabCompletionMode;
+  suggest?: MonoSuggestOptions;
   signatureHelp?: {
     enabled?: boolean;
     trigger?: 'auto' | 'manual';
+    cycle?: boolean;
   };
   autoClosingBrackets?: AutoClosingBehavior;
   autoClosingQuotes?: AutoClosingBehavior;
@@ -191,7 +300,10 @@ export interface MonoEditorOptions {
   autoIndent?: AutoIndentBehavior;
   wordWrap?: WordWrapMode;
   wrappingIndent?: WrappingIndentMode;
-  folding?: boolean;
+  folding?: boolean | MonoFoldingOptions;
+  foldingStrategy?: FoldingStrategy;
+  quickNav?: MonoQuickNavOptions;
+  breadcrumbs?: MonoBreadcrumbsOptions;
   guides?: {
     indentation?: boolean;
     highlightActiveIndentation?: boolean;
@@ -207,12 +319,16 @@ export interface MonoEditorOptions {
     enabled?: boolean;
     trigger?: 'click' | 'hover' | 'off';
     delay?: number;
+    hidingDelay?: number;
     sticky?: boolean;
     above?: boolean;
     openOnMouseHover?: boolean;
   };
   diagnostics?: {
     popup?: 'hover' | 'click' | 'off';
+  };
+  lightbulb?: {
+    enabled?: LightbulbEnabledMode;
   };
   contextMenu?: MonoContextMenuOptions;
   inlayHints?: {

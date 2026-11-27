@@ -1,7 +1,7 @@
 // src/features/termis/components/parts/problems/ProblemsPanel.tsx
 
 import React, { useMemo } from 'react';
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 
 import { useProblemsStore } from './store/problemsStore';
 import { useMenuStore, type MenuItem } from '@/store/menuStore';

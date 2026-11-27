@@ -1,5 +1,5 @@
 // src/core/services/lsp/providers/helpers.ts
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import { fromLspUri } from '../utils/uriHelpers';
 
 export function toMonacoRange(r: any): monaco.IRange {

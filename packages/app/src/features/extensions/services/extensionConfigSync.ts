@@ -8,6 +8,7 @@ import { loadExtensionJsonSafely , loadManifestSafely} from './extensionLoader';
 
 import { themeService } from '@/core/theme/service/themeService';
 import { iconThemeService } from '@/core/theme/service/iconThemeService';
+import { productIconThemeService } from '@/core/theme/service/productIconThemeService';
 import { useThemeStore } from '@/core/theme/store/themeStore';
 import { snippets as snippetRegistry } from '@/core/extensionAPI/registry/snippetRegistry';
 
@@ -239,6 +240,62 @@ export const syncExtensionConfigurations = async (
         }
       } else {
         logSync(`   No icon themes in this extension.`);
+      }
+
+      // ============================================================================
+      // ─── 3b. PRODUCT (APP) ICON THEMES REPOSITORY ───────────────────────────────
+      // ============================================================================
+      logSync(`   [3b/8] Processing product icon themes...`);
+
+      const resolvedProductIconThemes = await resolveContributionData(
+        actualStoreDir,
+        rawContributions.productIconThemes,
+      );
+      const productIconThemeItems = Array.isArray(resolvedProductIconThemes)
+        ? resolvedProductIconThemes
+        : (resolvedProductIconThemes?.productIconThemes || []);
+
+      if (Array.isArray(productIconThemeItems) && productIconThemeItems.length > 0) {
+        logSync(`   Found ${productIconThemeItems.length} product icon theme(s).`);
+        for (const prodMeta of productIconThemeItems) {
+          logSync(`   Loading product icon theme: '${prodMeta.label}'`);
+          try {
+            const cleanPath = prodMeta.path.replace(/^\.\//, '');
+            const themeData = await loadExtensionJsonSafely(actualStoreDir, cleanPath);
+
+            const lastSlashIndex = cleanPath.lastIndexOf('/');
+            const relativeDir = lastSlashIndex !== -1 ? cleanPath.substring(0, lastSlashIndex) : '';
+            const prefix =
+              actualStoreDir.startsWith('/') || actualStoreDir.startsWith('file://')
+                ? ''
+                : 'ms-storage://';
+
+            const basePath = relativeDir
+              ? `${prefix}${actualStoreDir}/${relativeDir}`
+              : `${prefix}${actualStoreDir}`;
+
+            themeData.basePath = basePath;
+
+            productIconThemeService.registerProductIconTheme({
+              id: prodMeta.id || `${ext.id}-${prodMeta.label}`,
+              name: prodMeta.label || 'Unknown Product Icon Theme',
+              themeMap: {
+                fonts: Array.isArray(themeData.fonts) ? themeData.fonts : undefined,
+                iconDefinitions:
+                  themeData.iconDefinitions && typeof themeData.iconDefinitions === 'object'
+                    ? themeData.iconDefinitions
+                    : {},
+                basePath,
+              },
+              source: 'extension',
+            });
+            logSync(`      ✅ Product icon theme registered: '${prodMeta.label}'`);
+          } catch (e: any) {
+            logSync(`      ❌ Product icon theme load failed for '${prodMeta.label}': ${e.message}`, true);
+          }
+        }
+      } else {
+        logSync(`   No product icon themes in this extension.`);
       }
 
       // ============================================================================

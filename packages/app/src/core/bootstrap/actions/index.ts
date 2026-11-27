@@ -27,4 +27,4 @@ export function bootstrapAction(): void {
   registerDevToolsActions();
 }
 
-export { getActiveMonacoEditor, triggerOnActiveEditor } from './getActiveMonacoEditor';
+export { getActiveMonoEditor, triggerOnActiveEditor } from './getActiveMonoEditor';

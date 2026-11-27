@@ -137,7 +137,9 @@ export class LanguageFeaturesRegistry {
     return registerInMap(this.inlayHints, languageId, provider);
   }
   registerFoldingRangeProvider(languageId: string, provider: FoldingRangeProvider) {
-    return registerInMap(this.folding, languageId, provider);
+    const sub = registerInMap(this.folding, languageId, provider);
+    this.fireChange();
+    return { dispose: () => { sub.dispose(); this.fireChange(); } };
   }
   registerSignatureHelpProvider(languageId: string, provider: SignatureHelpProvider) {
     return registerInMap(this.signatureHelp, languageId, provider);
@@ -170,7 +172,9 @@ export class LanguageFeaturesRegistry {
     return registerInMap(this.documentHighlight, languageId, provider);
   }
   registerDocumentSymbolProvider(languageId: string, provider: DocumentSymbolProvider) {
-    return registerInMap(this.documentSymbol, languageId, provider);
+    const sub = registerInMap(this.documentSymbol, languageId, provider);
+    this.fireChange();
+    return { dispose: () => { sub.dispose(); this.fireChange(); } };
   }
   registerLinkProvider(languageId: string, provider: LinkProvider) {
     return registerInMap(this.link, languageId, provider);

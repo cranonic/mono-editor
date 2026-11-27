@@ -1,5 +1,5 @@
 // src/core/extensionAPI/registry/snippetRegistry.ts
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 
 /**
  * Utility helper evaluating file paths against glob patterns.

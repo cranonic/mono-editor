@@ -11,6 +11,7 @@ import type { LspOptions } from '../types';
 import { registerCompletion }        from './completion';
 import { registerHover }             from './hover';
 import { registerDefinition }        from './definition';
+import { registerReferences }        from './references';
 import { registerDocumentSymbol }    from './documentSymbol';
 import { registerDocumentHighlight } from './documentHighlight';
 import { registerDocumentLink }      from './documentLink';
@@ -18,6 +19,10 @@ import { registerCodeAction }        from './codeAction';
 import { registerCodeLens }          from './codeLens';
 import { registerFoldingRange }      from './foldingRange';
 import { registerDocumentFormatting } from './formatting';
+import { registerOnTypeFormatting }  from './onTypeFormatting';
+import { registerSelectionRange }    from './selectionRange';
+import { registerSignatureHelp }     from './signatureHelp';
+import { registerSemanticTokens }    from './semanticTokens';
 import { registerColorProvider }     from './color';
 import { registerInlayHints }        from './inlayHints';
 import { registerRename }            from './rename';
@@ -40,7 +45,7 @@ function serverHas(caps: Record<string, unknown>, key: string): boolean {
 }
 
 /**
- * Register all Monaco providers.
+ * Register all Mono language providers backed by the active LSP connection.
  * When the connected language is any member of the TS/JS family, providers are
  * registered for every family member so switching tabs (js ↔ ts ↔ tsx) keeps
  * completions, symbols, hover, etc. working without a reconnect.
@@ -60,10 +65,16 @@ export function registerProviders(state: LspState, options: LspOptions = {}): vo
     state.languageId = lang;
 
     if (options.completion !== false)        registerCompletion(state);
+    if (options.signatureHelp !== false && serverHas(caps, 'signatureHelpProvider')) {
+      registerSignatureHelp(state);
+    }
     // Hover — MDN / docs (HTML LS, TS, etc.). Default on unless explicitly disabled.
     if (options.hover !== false)             registerHover(state);
     if (options.references !== false || options.definition !== false) {
       registerDefinition(state);
+    }
+    if (options.references !== false && serverHas(caps, 'referencesProvider')) {
+      registerReferences(state);
     }
     // Rename — always register when server may support it (JDT LS does)
     if (options.rename !== false) {
@@ -81,7 +92,16 @@ export function registerProviders(state: LspState, options: LspOptions = {}): vo
       registerCodeLens(state);
     }
     if (options.foldingRange !== false)      registerFoldingRange(state);
+    if (options.selectionRange !== false && serverHas(caps, 'selectionRangeProvider')) {
+      registerSelectionRange(state);
+    }
     registerDocumentFormatting(state);
+    if (options.onTypeFormatting !== false && serverHas(caps, 'documentOnTypeFormattingProvider')) {
+      registerOnTypeFormatting(state);
+    }
+    if (options.semanticTokens !== false && serverHas(caps, 'semanticTokensProvider')) {
+      registerSemanticTokens(state);
+    }
 
     if (
       options.colorProvider !== false &&
@@ -91,8 +111,6 @@ export function registerProviders(state: LspState, options: LspOptions = {}): vo
     }
 
     // Inlay: prefer server capability; never skip just because a setting is missing.
-    // Log showed inlayHintProvider=true but Monaco never called provideInlayHints —
-    // force-register whenever the server advertises support (or client wants it).
     const serverOffersInlay = serverHas(caps, 'inlayHintProvider');
     if (options.inlayHints !== false || serverOffersInlay) {
       registerInlayHints(state);

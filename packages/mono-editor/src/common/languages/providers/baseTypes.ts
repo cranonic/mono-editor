@@ -49,12 +49,17 @@ export interface CancellationToken {
 }
 
 export type ModelLike = {
+  id?: string;
   uri?: { toString(): string };
   uriString?: string;
   getValue(): string;
+  getValueInRange?(range: IRange): string;
   getLineContent(line: number): string;
   getLineCount?(): number;
   getOffsetAt?(line: number, column: number): number;
   getPositionAt?(offset: number): { lineNumber: number; column: number };
   getLanguageId?(): string;
+  getVersionId?(): number;
+  getWordAtPosition?(position: { lineNumber: number; column: number }): { word: string; startColumn: number; endColumn: number } | null;
+  getWordUntilPosition?(position: { lineNumber: number; column: number }): { word: string; startColumn: number; endColumn: number };
 };

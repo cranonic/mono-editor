@@ -1,5 +1,6 @@
 import { registerEditorContribution } from '../browser/editor/editorContributions';
 import { ContributionIds } from '../browser/editor/editorTypes';
+import { BreadcrumbsContribution } from './breadcrumbs/BreadcrumbsContribution';
 import { CodeActionController } from './codeAction/CodeActionController';
 import { CodeLensController } from './codeLens/CodeLensController';
 import { ColorDecoratorController } from './colorPicker/ColorDecoratorController';
@@ -61,4 +62,5 @@ export function registerBuiltInContributions(): void {
   registerEditorContribution(ContributionIds.LinkedEditing, (h) => new LinkedEditingController(h));
   registerEditorContribution(ContributionIds.CodeLens, (h) => new CodeLensController(h));
   registerEditorContribution(ContributionIds.MobileAccessory, (h) => new MobileController(h));
+  registerEditorContribution(ContributionIds.Breadcrumbs, (h) => new BreadcrumbsContribution(h));
 }

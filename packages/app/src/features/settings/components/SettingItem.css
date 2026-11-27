@@ -45,3 +45,60 @@
   border: 1px solid var(--ms-border-light, #333);
   background: var(--ms-code-bg, rgba(127, 127, 127, 0.1));
 }
+
+/* Status badges for Mono Editor settings migration */
+.ms-settings-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 0;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.ms-settings-badge--experimental {
+  background-color: rgba(0, 122, 204, 0.2);
+  color: #3794ff;
+  border: 1px solid rgba(55, 148, 255, 0.35);
+}
+
+.ms-settings-badge--not-available {
+  background-color: rgba(204, 167, 0, 0.16);
+  color: #e5b822;
+  border: 1px solid rgba(229, 184, 34, 0.38);
+}
+
+.ms-settings-badge--removed {
+  background-color: rgba(241, 76, 76, 0.16);
+  color: #f46e6e;
+  border: 1px solid rgba(244, 110, 110, 0.4);
+}
+
+.ms-settings-support-note {
+  font-size: 11.5px;
+  color: var(--ms-text-faded);
+  font-style: italic;
+  margin-top: 1px;
+}
+
+.ms-settings-item--not-available .ms-settings-control--muted {
+  opacity: 0.65;
+}
+
+.ms-settings-item--removed {
+  opacity: 0.72;
+}
+
+.ms-settings-item--removed .ms-settings-item-title {
+  text-decoration: line-through;
+  opacity: 0.85;
+}
+
+.ms-settings-item--removed .ms-settings-control--muted {
+  opacity: 0.55;
+  pointer-events: none;
+}

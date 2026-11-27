@@ -12,6 +12,7 @@ import type {
   AutoSurroundBehavior,
 } from '../../common/languages/languageConfigurationTypes';
 import type { TextModel } from '../../common/model/TextModel';
+import { setLastCopiedText } from '../../platform/clipboard/clipboard';
 import type { KeybindingService } from '../../platform/keybindings/KeybindingService';
 import { CompositionHandler, type CompositionRange } from './compositionHandler';
 import { handleEditorKeyDown, type KeyboardChangeEvent } from './keyboardHandler';
@@ -40,6 +41,8 @@ export interface InputControllerOptions {
   onDidPaste?: (range: IRange) => void;
   onKeyDownEvent?: (e: KeyboardEvent) => void;
   onKeyUpEvent?: (e: KeyboardEvent) => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }
 
 export class InputController {
@@ -68,7 +71,10 @@ export class InputController {
   private onPasteCb?: (range: IRange) => void;
   private onKeyDownCb?: (e: KeyboardEvent) => void;
   private onKeyUpCb?: (e: KeyboardEvent) => void;
+  private onFocusCb?: () => void;
+  private onBlurCb?: () => void;
   private goalColumn: number | null = null;
+  private nativePasteSeq = 0;
   private preKeyHandler: ((e: KeyboardEvent) => boolean) | null = null;
   private pasteInterceptor: ((text: string) => Promise<boolean> | boolean) | null = null;
 
@@ -99,6 +105,8 @@ export class InputController {
     this.onPasteCb = options?.onDidPaste;
     this.onKeyDownCb = options?.onKeyDownEvent;
     this.onKeyUpCb = options?.onKeyUpEvent;
+    this.onFocusCb = options?.onFocus;
+    this.onBlurCb = options?.onBlur;
 
     this.bridge = new TextAreaBridge(host, this.readOnly, options?.ariaLabel);
     this.textarea = this.bridge.textarea;
@@ -109,6 +117,8 @@ export class InputController {
     ta.addEventListener('keyup', this.onKeyUp);
     ta.addEventListener('input', this.onInput);
     ta.addEventListener('paste', this.onPaste);
+    ta.addEventListener('focus', this.onTextFocus);
+    ta.addEventListener('blur', this.onTextBlur);
     ta.addEventListener('compositionstart', this.onCompositionStart);
     ta.addEventListener('compositionupdate', this.onCompositionUpdate);
     ta.addEventListener('compositionend', this.onCompositionEnd);
@@ -128,6 +138,7 @@ export class InputController {
   setAutoSurround(v: AutoSurroundBehavior): void { this.autoSurround = v; }
   setAutoIndent(v: AutoIndentBehavior): void { this.autoIndent = v; }
   isComposing(): boolean { return this.composition.isComposing(); }
+  getNativePasteSeq(): number { return this.nativePasteSeq; }
   moveTo(x: number, y: number, h: number): void { this.bridge.moveTo(x, y, h); }
   focus(): void { this.bridge.focus(); }
   blur(): void { this.bridge.blur(); }
@@ -150,11 +161,21 @@ export class InputController {
     ta.removeEventListener('keyup', this.onKeyUp);
     ta.removeEventListener('input', this.onInput);
     ta.removeEventListener('paste', this.onPaste);
+    ta.removeEventListener('focus', this.onTextFocus);
+    ta.removeEventListener('blur', this.onTextBlur);
     ta.removeEventListener('compositionstart', this.onCompositionStart);
     ta.removeEventListener('compositionupdate', this.onCompositionUpdate);
     ta.removeEventListener('compositionend', this.onCompositionEnd);
     this.bridge.dispose();
   }
+
+  private onTextFocus = (): void => {
+    if (!this.disposed) this.onFocusCb?.();
+  };
+
+  private onTextBlur = (): void => {
+    if (!this.disposed) this.onBlurCb?.();
+  };
 
   private getTypingPolicy(): TypingPolicy {
     return {
@@ -197,11 +218,50 @@ export class InputController {
     if (this.readOnly || this.disposed) return;
     const text = e.clipboardData?.getData('text/plain') ?? '';
     if (!text) return;
+    this.nativePasteSeq++;
+    setLastCopiedText(text);
     e.preventDefault();
     this.textarea.value = '';
-    const startPos = { ...this.selection.active };
     const runDefaultPaste = () => {
       if (this.disposed || this.readOnly) return;
+      if (this.selection.hasMultipleCursors) {
+        const items = this.selection.selections.map((s, idx) => {
+          const aOff = this.model.getOffsetAt(s.anchor.lineNumber, s.anchor.column);
+          const bOff = this.model.getOffsetAt(s.active.lineNumber, s.active.column);
+          return { idx, start: Math.min(aOff, bOff), end: Math.max(aOff, bOff) };
+        });
+        const sortedAsc = [...items].sort((x, y) => x.start - y.start);
+        const lines = text.split('\n');
+        const perCursor = lines.length === sortedAsc.length && lines.length > 1;
+        const textFor = (i: number) => (perCursor ? lines[i]! : text);
+        const finalOffsets = new Array<number>(sortedAsc.length);
+        let delta = 0;
+        for (let i = 0; i < sortedAsc.length; i++) {
+          const norm = this.model.normalizeEol(textFor(i));
+          finalOffsets[i] = sortedAsc[i]!.start + delta + norm.length;
+          delta += norm.length - (sortedAsc[i]!.end - sortedAsc[i]!.start);
+        }
+        this.model.transact(() => {
+          for (let i = sortedAsc.length - 1; i >= 0; i--) {
+            this.model.replaceRange(sortedAsc[i]!.start, sortedAsc[i]!.end, textFor(i), undefined, 'other');
+          }
+        });
+        const nextSels = sortedAsc.map((it, i) => {
+          const p = this.model.getPositionAt(finalOffsets[i]!);
+          return { origIdx: it.idx, range: { anchor: p, active: { ...p } } };
+        }).sort((a, b) => a.origIdx - b.origIdx);
+        this.selection.setSelections(nextSels.map((x) => x.range));
+        this.goalColumn = null;
+        this.onChange({ kind: 'type', text });
+        return;
+      }
+      const startOff = this.selection.isEmpty
+        ? this.model.getOffsetAt(this.selection.active.lineNumber, this.selection.active.column)
+        : Math.min(
+            this.model.getOffsetAt(this.selection.anchor.lineNumber, this.selection.anchor.column),
+            this.model.getOffsetAt(this.selection.active.lineNumber, this.selection.active.column),
+          );
+      const startPos = this.model.getPositionAt(startOff);
       replaceSelectionText(this.model, this.selection, text);
       const endPos = { ...this.selection.active };
       this.goalColumn = null;
@@ -273,8 +333,9 @@ export class InputController {
       e.stopPropagation();
       return;
     }
-    if (this.keybindings?.dispatch(e)) {
-      e.preventDefault();
+    const kbRes = this.keybindings?.dispatchDetailed(e);
+    if (kbRes?.matched) {
+      if (kbRes.preventDefault) e.preventDefault();
       e.stopPropagation();
       return;
     }

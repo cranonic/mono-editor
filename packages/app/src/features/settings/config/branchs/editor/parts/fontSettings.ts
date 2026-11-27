@@ -2,7 +2,6 @@
 import type { IConfigurationSection } from '@/core/extensionAPI/registry/configurationRegistry';
 
 export const fontProperties: IConfigurationSection['properties'] = {
-
   'editor.fontSize': {
     title: 'Font Size',
     type: 'number',
@@ -11,21 +10,21 @@ export const fontProperties: IConfigurationSection['properties'] = {
     minimum: 6,
     maximum: 100,
     order: 1,
-    tags: ['font'],
+    tags: ['font', 'mono'],
     markdownDescription: 'Controls the font size in pixels. For example: `14`, `16`, `18`.',
   },
 
-'editor.fontFamily': {
+  'editor.fontFamily': {
     title: 'Font Family',
     type: 'string',
     subCategory: 'Font',
-    defaultValue: "Fira Code",
+    defaultValue: 'Fira Code',
     order: 2,
-    tags: ['font'],
+    tags: ['font', 'mono'],
     markdownDescription: `Controls the font family. Use a comma-separated list of font names.
 
 **Top Programming Fonts:**
-- [Fira Code](https://github.com/tonsky/FiraCode) *(Recommended for Ligatures)*
+- [Fira Code](https://github.com/tonsky/FiraCode)
 - [Cascadia Code](https://github.com/microsoft/cascadia-code)
 - [JetBrains Mono](https://www.jetbrains.com/lp/mono/)
 
@@ -34,7 +33,7 @@ export const fontProperties: IConfigurationSection['properties'] = {
 - \`Google Sans Code\`
 - \`Fira Mono\`
 - \`Courier New\`
-- \`monospace\` *(Universal Fallback)`
+- \`monospace\` *(Universal Fallback)*`,
   },
 
   'editor.fontWeight': {
@@ -44,6 +43,8 @@ export const fontProperties: IConfigurationSection['properties'] = {
     defaultValue: 'normal',
     order: 3,
     tags: ['font'],
+    supportStatus: 'not-available',
+    supportNote: 'Planned for Mono Editor canvas renderer.',
     markdownDescription: 'Controls the font weight. This setting will only take effect if the chosen `#editor.fontFamily#` supports it.',
     enum: ['normal', 'bold', '100', '200', '300', '400', '500', '600', '700', '800', '900'],
     enumItemLabels: [
@@ -60,7 +61,9 @@ export const fontProperties: IConfigurationSection['properties'] = {
     defaultValue: true,
     order: 4,
     tags: ['font'],
-    markdownDescription: 
+    supportStatus: 'not-available',
+    supportNote: 'Planned for Mono Editor canvas text shaping.',
+    markdownDescription:
       'Enables/disables font ligatures. \n\n' +
       '| Characters | Becomes |\n' +
       '| :--- | :--- |\n' +
@@ -77,11 +80,11 @@ export const fontProperties: IConfigurationSection['properties'] = {
     minimum: 0,
     maximum: 150,
     order: 6,
-    tags: ['font'],
-    markdownDescription: 
+    tags: ['font', 'mono'],
+    markdownDescription:
       'Controls the line height. \n' +
       '- Use `0` to automatically compute the line height from the font size.\n' +
       '- Values between `0` and `8` will be used as a multiplier with the font size.\n' +
       '- Values `>= 8` will be used as absolute pixel values.',
-  }
+  },
 };

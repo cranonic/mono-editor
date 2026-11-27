@@ -15,6 +15,7 @@ import { SignatureHelpWidget } from './SignatureHelpWidget';
 export interface SignatureHelpControllerOptions {
   enabled?: boolean;
   trigger?: 'auto' | 'manual';
+  cycle?: boolean;
   fontSize?: number;
   fontFamily?: string;
   getLanguageIdAtPosition?: (lineNumber: number, column: number) => string;
@@ -40,6 +41,7 @@ export class SignatureHelpController {
   private disposed = false;
   private enabled = true;
   private triggerMode: 'auto' | 'manual' = 'auto';
+  private cycle = false;
   private getLanguageIdAtPosition?: (lineNumber: number, column: number) => string;
   private getAvoidRect?: () => WidgetBoxRect | null;
   private isSuggestVisible?: () => boolean;
@@ -77,6 +79,7 @@ export class SignatureHelpController {
       if (!this.enabled) this.hide();
     }
     if (opts.trigger !== undefined) this.triggerMode = opts.trigger;
+    if (opts.cycle !== undefined) this.cycle = opts.cycle;
     if (opts.fontSize !== undefined || opts.fontFamily !== undefined) {
       this.widget.setOptions({ fontSize: opts.fontSize, fontFamily: opts.fontFamily });
     }
@@ -238,22 +241,32 @@ export class SignatureHelpController {
     }
   }
 
-  prevSignature(): void {
+  prevSignature(closeOnBoundary = false): void {
     if (!this.activeHelp || this.activeHelp.signatures.length <= 1) return;
     const len = this.activeHelp.signatures.length;
+    const cur = this.activeHelp.activeSignature ?? 0;
+    if (!this.cycle && cur <= 0) {
+      if (closeOnBoundary) this.hide();
+      return;
+    }
     this.activeHelp = {
       ...this.activeHelp,
-      activeSignature: ((this.activeHelp.activeSignature ?? 0) - 1 + len) % len,
+      activeSignature: (cur - 1 + len) % len,
     };
     this.renderAtCaret();
   }
 
-  nextSignature(): void {
+  nextSignature(closeOnBoundary = false): void {
     if (!this.activeHelp || this.activeHelp.signatures.length <= 1) return;
     const len = this.activeHelp.signatures.length;
+    const cur = this.activeHelp.activeSignature ?? 0;
+    if (!this.cycle && cur >= len - 1) {
+      if (closeOnBoundary) this.hide();
+      return;
+    }
     this.activeHelp = {
       ...this.activeHelp,
-      activeSignature: ((this.activeHelp.activeSignature ?? 0) + 1) % len,
+      activeSignature: (cur + 1) % len,
     };
     this.renderAtCaret();
   }
@@ -270,12 +283,12 @@ export class SignatureHelpController {
     if ((this.activeHelp?.signatures.length ?? 0) > 1) {
       if (e.key === 'ArrowUp' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        this.prevSignature();
+        this.prevSignature(true);
         return true;
       }
       if (e.key === 'ArrowDown' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        this.nextSignature();
+        this.nextSignature(true);
         return true;
       }
     }

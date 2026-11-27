@@ -1,6 +1,6 @@
 // Color Provider – textDocument/documentColor
 // Monaco API name varies by version; resolve at runtime to avoid TS2551.
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import type { LspState } from '../types';
 import { sendRequest } from '../LspTransport';
 import { getDocUri } from '../utils/uriHelpers';

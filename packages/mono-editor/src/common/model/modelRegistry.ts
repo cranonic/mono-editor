@@ -25,3 +25,7 @@ export function getBackingTextModel(wrapper: IMonoTextModel | null | undefined):
 export function getRegisteredStandaloneModel(uriKey: string): IMonoTextModel | null {
   return uriToStandalone.get(uriKey) ?? null;
 }
+
+export function getAllRegisteredStandaloneModels(): IMonoTextModel[] {
+  return Array.from(uriToStandalone.values());
+}

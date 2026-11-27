@@ -170,6 +170,9 @@ export interface IMonoTextModel {
   applyEdits?(operations: readonly IIdentifiedSingleEditOperation[]): void;
   isDisposed?(): boolean;
   isAttachedToEditor?(): boolean;
+  onDidChangeContent?(listener: (e: IModelContentChangedEvent) => void): MonoDisposable;
+  onDidChangeLanguage?(listener: (e: IModelLanguageChangedEvent) => void): MonoDisposable;
+  onDidChangeOptions?(listener: (e: IModelOptionsChangedEvent) => void): MonoDisposable;
 }
 
 export interface IModelChangedEvent {

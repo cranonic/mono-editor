@@ -4,7 +4,7 @@
 // Menu: Copy + Select All only.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import type * as Monaco from 'monaco-editor';
+import type * as Monaco from '@/core/mono';
 import { MemoryCodeEditor } from '@/features/editor/MemoryCodeEditor';
 import { useOutputStore, getOrCreateModel } from '../store/outputStore';
 import { Icon } from '@/ui/components/Icon/IconRegistry';
@@ -144,8 +144,7 @@ export const OutputPanel: React.FC = () => {
             fontSize: 12,
             fontFamily: "'Fira Code', 'Cascadia Code', Consolas, monospace",
             scrollBeyondLastLine: false,
-            contextmenu: true,
-            automaticLayout: true,
+            contextMenu: { enabled: true },
           }}
           onEditorMount={onEditorMount}
         />

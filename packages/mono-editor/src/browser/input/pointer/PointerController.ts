@@ -4,17 +4,17 @@ import type { TextModel } from '../../../common/model/TextModel';
 import { graphemeRangeAt } from '../../../common/util/grapheme';
 import type { ColorHit, InlayHintHit, LinkHit, TeardropHit } from '../../render/CanvasRenderer';
 import type { ViewController } from '../../view/ViewController';
+import {
+  handleDeferredTapOverlay,
+  handleInlayHintTap,
+  handlePointerDownOverlay,
+  type InlayHintClickMeta,
+} from './overlayHits';
 import { TeardropDragController } from './teardropHandles';
 import { AXIS_LOCK_RATIO, TouchScrollPhysics, type ScrollAxis } from './touchScroll';
 
 export type PointerInteractKind = 'tap' | 'scroll' | 'scrollEnd' | 'select' | 'handle' | 'handleTap';
-
-export interface InlayHintClickMeta {
-  clickCount: 1 | 2;
-  source: 'touch' | 'mouse';
-  localX: number;
-  localY: number;
-}
+export type { InlayHintClickMeta };
 
 export interface PointerExtraCallbacks {
   onMouseEvent?: (kind: 'down' | 'up' | 'move' | 'leave' | 'contextmenu', e: MouseEvent) => void;
@@ -197,73 +197,16 @@ export class PointerController {
     const rect = this.root.getBoundingClientRect();
     const localX = e.clientX - rect.left;
     const localY = e.clientY - rect.top;
-
-    // Track F: check color swatches inside sticky headers BEFORE sticky reveal click
-    if (this.onColorSwatchClick) {
-      for (const ch of this.view.getStickyColorHits()) {
-        if (localX >= ch.x - 3 && localX <= ch.x + ch.w + 3 && localY >= ch.y - 3 && localY <= ch.y + ch.h + 3) {
-          e.preventDefault();
-          e.stopPropagation();
-          this.onColorSwatchClick(ch);
-          return true;
-        }
-      }
-    }
-
-    const stickyHit = this.view.hitTestSticky(localX, localY);
-    if (stickyHit) {
-      e.preventDefault();
-      this.view.revealStickyLine(stickyHit.lineNumber, stickyHit.index, localX);
-      this.onInteract('tap');
-      return true;
-    }
-
-    const bottomHit = this.teardrops.hitTest(this.root, this.getTeardrops(), e.clientX, e.clientY)
-      ? null
-      : this.view.hitTestBottomSticky(localX, localY);
-    if (bottomHit) {
-      e.preventDefault();
-      this.scrollPhysics.stop();
-      this.view.revealBottomStickyLine(bottomHit.lineNumber, localX);
-      this.onInteract('tap');
-      return true;
-    }
-
-    if (this.onFoldToggle) {
-      for (const fh of this.view.getFoldHits()) {
-        if (localX >= fh.x - 4 && localX <= fh.x + fh.w + 4 && localY >= fh.y && localY <= fh.y + fh.h) {
-          e.preventDefault();
-          this.onFoldToggle(fh.lineNumber);
-          return true;
-        }
-      }
-    }
-
-    if (this.onColorSwatchClick) {
-      for (const ch of this.view.getColorHits()) {
-        if (localX >= ch.x - 3 && localX <= ch.x + ch.w + 3 && localY >= ch.y - 3 && localY <= ch.y + ch.h + 3) {
-          e.preventDefault();
-          e.stopPropagation();
-          this.onColorSwatchClick(ch);
-          return true;
-        }
-      }
-    }
-
-    // NOTE (Track C): Inlay hints intentionally do NOT intercept pointerdown so touch scrolling
-    // over a chip works smoothly; inlay clicks fire on pointerup tap within TAP_SLOP.
-
-    if (this.onLinkClick && (e.ctrlKey || e.metaKey)) {
-      for (const lh of this.view.getLinkHits()) {
-        if (localX >= lh.x && localX <= lh.x + lh.w && localY >= lh.y && localY <= lh.y + lh.h) {
-          e.preventDefault();
-          e.stopPropagation();
-          this.onLinkClick(lh, e);
-          return true;
-        }
-      }
-    }
-    return false;
+    const hasTeardropHit = Boolean(
+      this.teardrops.hitTest(this.root, this.getTeardrops(), e.clientX, e.clientY),
+    );
+    return handlePointerDownOverlay(this.view, localX, localY, e, hasTeardropHit, {
+      onFoldToggle: this.onFoldToggle,
+      onColorSwatchClick: this.onColorSwatchClick,
+      onLinkClick: this.onLinkClick,
+      onStickyTap: () => this.onInteract('tap'),
+      onBottomStickyTap: () => this.scrollPhysics.stop(),
+    });
   }
 
   private getPinchDistance(): number {
@@ -502,29 +445,36 @@ export class PointerController {
       const nearLast = this.isWithinDoubleWindow(e.clientX, e.clientY, now);
       const isDouble = pendingDouble || nearLast;
 
-      // Track C: Inlay hint tap / double-tap detection on pointerup (includes inline chips & lifted bubbles)
+      if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+        const rect = this.root.getBoundingClientRect();
+        const localX = e.clientX - rect.left;
+        const localY = e.clientY - rect.top;
+        if (
+          handleDeferredTapOverlay(this.view, localX, localY, e, {
+            onFoldToggle: this.onFoldToggle,
+            onColorSwatchClick: this.onColorSwatchClick,
+          })
+        ) {
+          this.clearSingleTap();
+          this.lastTapT = 0;
+          return;
+        }
+      }
+
       if (this.onInlayHintClick) {
         const rect = this.root.getBoundingClientRect();
         const localX = e.clientX - rect.left;
         const localY = e.clientY - rect.top;
-        const hits = this.view.getInlayHits();
-        // Reverse order so lifted bubbles (painted after inline chips) take priority if overlapping
-        for (let i = hits.length - 1; i >= 0; i--) {
-          const ih = hits[i]!;
-          if (localX >= ih.x && localX <= ih.x + ih.w && localY >= ih.y && localY <= ih.y + ih.h) {
-            this.clearSingleTap();
-            const clickCount: 1 | 2 = isDouble ? 2 : 1;
-            const source: 'touch' | 'mouse' = e.pointerType === 'touch' ? 'touch' : 'mouse';
-            this.onInlayHintClick(ih, { clickCount, source, localX, localY });
-            if (isDouble) {
-              this.lastTapT = 0;
-            } else {
-              this.lastTapT = now;
-              this.lastTapX = e.clientX;
-              this.lastTapY = e.clientY;
-            }
-            return;
+        if (handleInlayHintTap(this.view, localX, localY, e, isDouble, this.onInlayHintClick)) {
+          this.clearSingleTap();
+          if (isDouble) {
+            this.lastTapT = 0;
+          } else {
+            this.lastTapT = now;
+            this.lastTapX = e.clientX;
+            this.lastTapY = e.clientY;
           }
+          return;
         }
       }
 

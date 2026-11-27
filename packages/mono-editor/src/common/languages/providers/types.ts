@@ -82,6 +82,8 @@ export const CompletionItemKind = {
   Event: 22,
   Operator: 23,
   TypeParameter: 24,
+  User: 25,
+  Issue: 26,
 } as const;
 
 export type CompletionItemKind = (typeof CompletionItemKind)[keyof typeof CompletionItemKind];

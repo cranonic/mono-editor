@@ -4,4 +4,4 @@
 // Existing imports of bootstrapAction from this file keep working.
 
 export { bootstrapAction } from './actions';
-export { getActiveMonacoEditor, triggerOnActiveEditor } from './actions';
+export { getActiveMonoEditor, triggerOnActiveEditor } from './actions';

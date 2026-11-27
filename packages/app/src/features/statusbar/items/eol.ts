@@ -1,45 +1,42 @@
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import { usePaletteStore, type QuickPickItem } from '@/store/paletteStore';
 import { useStatusBarStore } from '../store/statusBarStore';
 import { configRegistry } from '@/core/extensionAPI/registry/configurationRegistry';
 
 export const handleEOLClick = (editor: monaco.editor.IStandaloneCodeEditor) => {
-  const model = editor.getModel();
+  const model = editor.getModel?.();
   if (!model) return;
 
-  const currentEOL = model.getEOL(); 
-  
-  // Dynamic Data load from Settings Registry
+  const currentEOL = model.getEOL?.() ?? '\n';
   const settingDef = configRegistry.getSetting('files.eol');
+  const rawEnum = settingDef?.enum?.length ? settingDef.enum : ['\n', '\r\n'];
+  const rawLabels = settingDef?.enumItemLabels?.length ? settingDef.enumItemLabels : ['LF (\\n)', 'CRLF (\\r\\n)'];
 
-  const items: QuickPickItem[] = (settingDef?.enum || []).map((val, idx) => {
-    const label = settingDef?.enumItemLabels?.[idx] || String(val);
-    
-    // Check if it's the currently active EOL
-    let isCurrent = false;
-    if (val === '\n' && currentEOL === '\n') isCurrent = true;
-    if (val === '\r\n' && currentEOL === '\r\n') isCurrent = true;
+  const items: QuickPickItem[] = rawEnum.map((val, idx) => {
+    const label = rawLabels[idx] || (val === '\r\n' ? 'CRLF' : 'LF');
+    const isCurrent = (val === '\n' && currentEOL === '\n') || (val === '\r\n' && currentEOL === '\r\n');
 
-    return { 
-      id: String(val), 
-      label: label, 
+    return {
+      id: String(val),
+      label,
       suffix: isCurrent ? ' - current' : '',
       onSelect: () => {
         if (val === '\n') {
-            model.setEOL(monaco.editor.EndOfLineSequence.LF);
-            useStatusBarStore.getState().updateItem('eol', { label: 'LF' });
+          model.setEOL?.(monaco.EndOfLineSequence.LF);
+          useStatusBarStore.getState().updateItem('eol', { label: 'LF' });
         } else if (val === '\r\n') {
-            model.setEOL(monaco.editor.EndOfLineSequence.CRLF);
-            useStatusBarStore.getState().updateItem('eol', { label: 'CRLF' });
+          model.setEOL?.(monaco.EndOfLineSequence.CRLF);
+          useStatusBarStore.getState().updateItem('eol', { label: 'CRLF' });
         }
-      }
+        editor.focus?.();
+      },
     };
   });
 
   setTimeout(() => {
     usePaletteStore.getState().openQuickPick(
-      'Select End of Line Sequence', 
-      items, 
+      'Select End of Line Sequence',
+      items,
       (selected) => { if (selected.onSelect) selected.onSelect(); }
     );
   }, 50);

@@ -6,7 +6,7 @@
 // Status bar + Problems panel always keep markers (not gated here).
 
 import { useEffect, useRef } from 'react';
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import { useSettingsStore } from '@/features/settings/store/settingsStore';
 
 const HOVER_DELAY_MS = 1000;

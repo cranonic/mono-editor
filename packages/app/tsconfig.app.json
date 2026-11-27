@@ -21,8 +21,6 @@
     "paths": {
       "@/*": ["./src/*"],
       "@mono/editor": ["../mono-editor/src/index.ts"],
-      "monaco-editor": ["./src/shims/monaco-editor.ts"],
-      "@monaco-editor/react": ["./src/shims/monaco-react.tsx"],
       "vscode": ["./src/shims/vscode.ts"]
     }
   },

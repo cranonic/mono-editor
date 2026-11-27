@@ -46,6 +46,28 @@ export interface FoldingRules {
   markers?: FoldingMarkers;
 }
 
+export type StructureEngineKind = 'brackets' | 'offside' | 'tags' | 'headings' | 'keywords';
+
+export interface StructureKeywordPair {
+  readonly open: RegExp;
+  readonly close: RegExp;
+}
+
+export interface StructureLanguageRules {
+  readonly engine?: StructureEngineKind;
+  readonly brackets?: readonly CharacterPair[];
+  readonly offSide?: boolean;
+  readonly blockOpener?: RegExp;
+  readonly keywordPairs?: readonly StructureKeywordPair[];
+  readonly voidTags?: readonly string[];
+  readonly optionalEndTags?: readonly string[];
+  readonly rawTextTags?: readonly string[];
+  readonly commentLinePrefix?: string;
+  readonly blockComment?: readonly [string, string];
+  readonly importPattern?: RegExp;
+  readonly regionMarkers?: FoldingMarkers;
+}
+
 export interface LanguageConfiguration {
   comments?: CommentRule;
   brackets?: CharacterPair[];
@@ -56,6 +78,7 @@ export interface LanguageConfiguration {
   surroundingPairs?: IAutoClosingPair[];
   autoCloseBefore?: string;
   folding?: FoldingRules;
+  structure?: StructureLanguageRules;
 }
 
 export interface ILanguageExtensionPoint {

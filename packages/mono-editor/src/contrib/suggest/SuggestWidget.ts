@@ -1,14 +1,12 @@
 import type { WidgetBoxRect } from '../../browser/editor/editorTypes';
 import type { CompletionItem } from '../../common/languages/providers/types';
 import { haptic } from '../../platform/haptic/haptic';
-import { createIcon, ensureCodicons, kindToCodicon } from '../../platform/icons';
+import { ensureCodicons } from '../../platform/icons';
 import { SuggestDetailsPane, type CaretLineBand } from './widget/suggestDetailsPane';
+import { buildSuggestRow, hasItemDocumentation, paintSuggestRow } from './widget/suggestRowDom';
 import {
   BORDER,
   ensureSuggestStyle,
-  kindLabel,
-  labelOfItem,
-  matchIndexes,
   resolveSuggestPalette,
   type SuggestAnchor,
   type SuggestDocsMode,
@@ -18,20 +16,6 @@ import {
 
 export type { SuggestAnchor, SuggestDocsMode, SuggestWidgetOptions };
 
-function hasItemDocumentation(item: CompletionItem | null | undefined): boolean {
-  if (!item) return false;
-  if (typeof item.documentation === 'string' && item.documentation.trim().length > 0) return true;
-  if (
-    item.documentation &&
-    typeof item.documentation === 'object' &&
-    typeof item.documentation.value === 'string' &&
-    item.documentation.value.trim().length > 0
-  ) {
-    return true;
-  }
-  return Boolean(item.detail && item.detail.trim().length > 0);
-}
-
 /**
  * VS Code-style suggest widget: content-sized floating list next to the caret.
  */
@@ -39,6 +23,7 @@ export class SuggestWidget {
   private host: HTMLElement;
   private el: HTMLDivElement | null = null;
   private listEl: HTMLDivElement | null = null;
+  private statusBarEl: HTMLDivElement | null = null;
   private details: SuggestDetailsPane;
   private rows: HTMLDivElement[] = [];
   private items: CompletionItem[] = [];
@@ -79,6 +64,8 @@ export class SuggestWidget {
       fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       fontSize: 13,
       docsMode: 'off',
+      showIcons: true,
+      showStatusBar: false,
       className: '',
       themeType: 'dark',
       ...options,
@@ -96,6 +83,7 @@ export class SuggestWidget {
     if (this.el) {
       this.applyChrome();
       this.renderList();
+      this.updateStatusBar();
       this.position();
       this.showDocumentation(this.getSelectedItem());
     }
@@ -114,11 +102,15 @@ export class SuggestWidget {
     return this.docsExpanded;
   }
 
-  show(items: CompletionItem[], anchor: SuggestAnchor, filter?: string): void {
+  show(items: CompletionItem[], anchor: SuggestAnchor, filter?: string, initialIndex?: number): void {
     const wasVisible = !!this.el;
     this.items = items;
     this.filter = filter || '';
-    this.index = Math.max(0, items.findIndex((i) => i.preselect));
+    if (initialIndex !== undefined && initialIndex >= 0 && initialIndex < items.length) {
+      this.index = initialIndex;
+    } else {
+      this.index = Math.max(0, items.findIndex((i) => i.preselect));
+    }
     this.hoverIndex = -1;
     this.suspended = false;
     this.anchor = anchor;
@@ -130,6 +122,7 @@ export class SuggestWidget {
     if (!this.el) this.build();
     this.el!.style.display = 'flex';
     this.renderList();
+    this.updateStatusBar();
     this.position();
     this.scrollToSelected();
     this.notifySelectionChange();
@@ -141,6 +134,7 @@ export class SuggestWidget {
       this.el.remove();
       this.el = null;
       this.listEl = null;
+      this.statusBarEl = null;
     }
     this.details.hide();
     this.rows = [];
@@ -217,6 +211,7 @@ export class SuggestWidget {
   }
 
   private labelOffset(): number {
+    if (this.opts.showIcons === false) return 4;
     return 4 + 2 + this.iconSize() + 4;
   }
 
@@ -253,6 +248,24 @@ export class SuggestWidget {
     });
     this.listEl = list;
     el.appendChild(list);
+
+    const statusBar = document.createElement('div');
+    statusBar.className = 'mono-suggest-status-bar';
+    Object.assign(statusBar.style, {
+      display: 'none',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '10px',
+      padding: '2px 6px',
+      fontSize: '11px',
+      lineHeight: '18px',
+      userSelect: 'none',
+      whiteSpace: 'nowrap',
+      flexShrink: '0',
+    } as CSSStyleDeclaration);
+    this.statusBarEl = statusBar;
+    el.appendChild(statusBar);
+
     list.addEventListener('pointerdown', (e) => e.stopPropagation());
     list.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
     el.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -275,6 +288,33 @@ export class SuggestWidget {
     el.style.fontSize = `${this.opts.fontSize}px`;
     el.style.minWidth = `${this.opts.minWidth}px`;
     el.style.boxShadow = `0 2px 8px ${p.shadow}`;
+    if (this.statusBarEl) {
+      this.statusBarEl.style.borderTop = p.border;
+      this.statusBarEl.style.color = p.detailForeground;
+      this.statusBarEl.style.background = p.background;
+    }
+  }
+
+  private updateStatusBar(): void {
+    const bar = this.statusBarEl;
+    if (!bar) return;
+    if (!this.opts.showStatusBar || this.items.length === 0) {
+      bar.style.display = 'none';
+      return;
+    }
+    bar.style.display = 'flex';
+    const item = this.items[this.index];
+    const hint = hasItemDocumentation(item)
+      ? 'Enter/Tab accept · Ctrl+Space docs'
+      : 'Enter/Tab accept';
+    bar.textContent = '';
+    const leftSpan = document.createElement('span');
+    leftSpan.textContent = hint;
+    const rightSpan = document.createElement('span');
+    rightSpan.textContent = `${this.index + 1} / ${this.items.length}`;
+    rightSpan.style.opacity = '0.85';
+    bar.appendChild(leftSpan);
+    bar.appendChild(rightSpan);
   }
 
   private position(): void {
@@ -285,15 +325,16 @@ export class SuggestWidget {
     const lineTop = this.anchor.top ?? y - this.rowHeight();
     const rowH = this.rowHeight();
     const gap = 2;
+    const statusH = this.opts.showStatusBar && this.items.length > 0 ? 22 : 0;
 
     this.el.style.maxWidth = `${Math.max(120, Math.min(this.opts.maxWidth!, hostW - 8))}px`;
 
-    const wanted = Math.min(this.opts.maxHeight!, this.items.length * rowH);
+    const wanted = Math.min(this.opts.maxHeight!, this.items.length * rowH) + statusH;
     const below = hostH - y - gap - 4;
     const above = lineTop - gap - 4;
     const placeBelow = below >= wanted + 2 * BORDER || below >= above;
-    const avail = Math.max(rowH * 3, placeBelow ? below : above);
-    this.listEl.style.maxHeight = `${Math.max(rowH, Math.min(this.opts.maxHeight!, avail - 2 * BORDER))}px`;
+    const avail = Math.max(rowH * 3 + statusH, placeBelow ? below : above);
+    this.listEl.style.maxHeight = `${Math.max(rowH, Math.min(this.opts.maxHeight!, avail - 2 * BORDER - statusH))}px`;
 
     const h = this.el.offsetHeight;
     const w = this.el.offsetWidth;
@@ -321,6 +362,7 @@ export class SuggestWidget {
     this.index = i;
     this.paintRow(prev);
     this.paintRow(i);
+    this.updateStatusBar();
     this.scrollToSelected();
     this.notifySelectionChange();
   }
@@ -336,25 +378,7 @@ export class SuggestWidget {
   }
 
   private paintRow(i: number): void {
-    const row = this.rows[i];
-    if (!row) return;
-    const p = this.pal;
-    const selected = i === this.index;
-    row.setAttribute('aria-selected', selected ? 'true' : 'false');
-    row.style.background = selected ? p.selectedBackground : i === this.hoverIndex ? p.hoverBackground : 'transparent';
-    row.style.color = selected ? p.selectedForeground : p.foreground;
-    const hl = selected ? p.focusHighlight : p.highlight;
-    row.querySelectorAll?.<HTMLElement>('.mono-sg-hl').forEach((h) => (h.style.color = hl));
-    const detailEl = row.querySelector?.<HTMLElement>('.mono-sg-detail') ?? null;
-    if (detailEl) {
-      detailEl.style.color = selected ? p.selectedDetailForeground : p.detailForeground;
-    }
-    const infoBtn = row.querySelector?.<HTMLButtonElement>('.mono-sg-info-btn') ?? null;
-    if (infoBtn) {
-      infoBtn.style.display = selected ? 'inline-flex' : 'none';
-      infoBtn.style.opacity = this.docsExpanded ? '1' : '0.8';
-      infoBtn.setAttribute('aria-pressed', this.docsExpanded ? 'true' : 'false');
-    }
+    paintSuggestRow(this.rows[i], i === this.index, i === this.hoverIndex, this.docsExpanded, this.pal);
   }
 
   private renderList(): void {
@@ -363,193 +387,46 @@ export class SuggestWidget {
     ensureCodicons();
     list.textContent = '';
     this.rows = [];
-    const p = this.pal;
     const rowH = this.rowHeight();
+    const iconPx = this.iconSize();
 
     this.items.forEach((item, i) => {
-      const row = document.createElement('div');
-      row.setAttribute('role', 'option');
-      Object.assign(row.style, {
-        display: 'flex',
-        alignItems: 'center',
-        boxSizing: 'border-box',
-        height: `${rowH}px`,
-        lineHeight: `${rowH}px`,
-        padding: '0 6px 0 4px',
-        cursor: 'pointer',
-        whiteSpace: 'pre',
-        userSelect: 'none',
-      } as CSSStyleDeclaration);
-      (row.style as unknown as { webkitUserSelect: string }).webkitUserSelect = 'none';
-
-      const iconPx = this.iconSize();
-      const icon = createIcon(kindToCodicon(item.kind), iconPx);
-      Object.assign(icon.style, {
-        width: `${iconPx}px`,
-        height: `${iconPx}px`,
-        lineHeight: `${iconPx}px`,
-        fontSize: `${iconPx}px`,
-        flexShrink: '0',
-        margin: '0 4px 0 2px',
-        color: p.icon(item.kind),
+      const row = buildSuggestRow({
+        item,
+        index: i,
+        rowHeight: rowH,
+        iconPx,
+        filter: this.filter,
+        opts: this.opts,
+        pal: this.pal,
+        onToggleDocs: () => this.toggleDocs(),
+        onTouchAccept: (idx) => {
+          this.lastTouchAcceptAt = Date.now();
+          this.index = idx;
+          this.acceptSelected();
+        },
+        onPointerAccept: (idx) => {
+          if (Date.now() - this.lastTouchAcceptAt < 350) return;
+          this.index = idx;
+          haptic('light');
+          this.acceptSelected();
+        },
+        onHoverEnter: (idx) => {
+          const prev = this.hoverIndex;
+          this.hoverIndex = idx;
+          this.paintRow(prev);
+          this.paintRow(idx);
+        },
+        onHoverLeave: (idx) => {
+          if (this.hoverIndex === idx) {
+            this.hoverIndex = -1;
+            this.paintRow(idx);
+          }
+        },
       });
-
-      const lab = document.createElement('span');
-      Object.assign(lab.style, { flex: '1 1 auto', minWidth: '0', overflow: 'hidden', textOverflow: 'ellipsis' });
-      const text = labelOfItem(item);
-      const hits = matchIndexes(text, this.filter);
-      if (!hits) {
-        lab.textContent = text;
-      } else {
-        let run = '';
-        let runHit = false;
-        const flush = () => {
-          if (!run) return;
-          if (runHit) {
-            const s = document.createElement('span');
-            s.textContent = run;
-            s.className = 'mono-sg-hl';
-            s.style.fontWeight = 'bold';
-            lab.appendChild(s);
-          } else {
-            lab.appendChild(document.createTextNode(run));
-          }
-          run = '';
-        };
-        for (let k = 0; k < text.length; k++) {
-          const h = hits.has(k);
-          if (h !== runHit) {
-            flush();
-            runHit = h;
-          }
-          run += text[k];
-        }
-        flush();
-      }
-
-      row.appendChild(icon);
-      row.appendChild(lab);
-
-      const right = item.detail || kindLabel(item.kind);
-      if (right) {
-        const d = document.createElement('span');
-        d.className = 'mono-sg-detail';
-        d.textContent = right;
-        Object.assign(d.style, {
-          flex: '0 1 auto',
-          maxWidth: '55%',
-          marginLeft: '14px',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          textAlign: 'right',
-          fontSize: '85%',
-          color: p.detailForeground,
-        });
-        row.appendChild(d);
-      }
-
-      if (hasItemDocumentation(item)) {
-        const infoBtn = document.createElement('button');
-        infoBtn.type = 'button';
-        infoBtn.className = 'mono-sg-info-btn';
-        infoBtn.title = 'Read More (Ctrl+Space)';
-        infoBtn.setAttribute('aria-label', 'Toggle Documentation');
-        const infoIconPx = Math.max(12, Math.round((this.opts.fontSize ?? 14) * 0.96));
-        const infoBtnPx = Math.max(18, infoIconPx + 4);
-        const infoIcon = createIcon('info', infoIconPx);
-        infoIcon.style.lineHeight = `${infoIconPx}px`;
-        infoIcon.style.fontSize = `${infoIconPx}px`;
-        infoBtn.appendChild(infoIcon);
-        Object.assign(infoBtn.style, {
-          display: 'none',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: '0',
-          marginLeft: '4px',
-          width: `${infoBtnPx}px`,
-          height: `${infoBtnPx}px`,
-          borderRadius: '3px',
-          border: 'none',
-          background: 'transparent',
-          color: 'inherit',
-          lineHeight: '1',
-          padding: '0',
-          cursor: 'pointer',
-        });
-        const onToggle = (e: Event) => {
-          e.preventDefault();
-          e.stopPropagation();
-          this.toggleDocs();
-        };
-        infoBtn.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
-        infoBtn.addEventListener('touchend', onToggle, { passive: false });
-        infoBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); });
-        infoBtn.addEventListener('pointerup', onToggle);
-        infoBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
-        row.appendChild(infoBtn);
-      }
-
-      this.bindRowEvents(row, i);
       list.appendChild(row);
       this.rows.push(row);
       this.paintRow(i);
-    });
-  }
-
-  private bindRowEvents(row: HTMLDivElement, i: number): void {
-    let startX = 0;
-    let startY = 0;
-    let moved = false;
-    let touchStartX = 0;
-    let touchStartY = 0;
-    let touchMoved = false;
-
-    row.addEventListener('touchstart', (e: TouchEvent) => {
-      const t = e.touches[0];
-      if (t) { touchStartX = t.clientX; touchStartY = t.clientY; }
-      touchMoved = false;
-      e.stopPropagation();
-    }, { passive: true });
-    row.addEventListener('touchmove', (e: TouchEvent) => {
-      const t = e.touches[0];
-      if (t && Math.hypot(t.clientX - touchStartX, t.clientY - touchStartY) > 6) touchMoved = true;
-    }, { passive: true });
-    row.addEventListener('touchend', (e: TouchEvent) => {
-      if (touchMoved) return;
-      e.preventDefault();
-      e.stopPropagation();
-      this.lastTouchAcceptAt = Date.now();
-      this.index = i;
-      haptic('light');
-      this.acceptSelected();
-    }, { passive: false });
-    row.addEventListener('pointerdown', (e) => {
-      startX = e.clientX; startY = e.clientY; moved = false;
-      if (e.pointerType === 'mouse') e.preventDefault();
-      e.stopPropagation();
-    });
-    row.addEventListener('pointermove', (e) => {
-      if (Math.hypot(e.clientX - startX, e.clientY - startY) > 6) moved = true;
-    });
-    row.addEventListener('pointerup', (e) => {
-      if (Date.now() - this.lastTouchAcceptAt < 350 || moved) return;
-      e.preventDefault();
-      e.stopPropagation();
-      this.index = i;
-      haptic('light');
-      this.acceptSelected();
-    });
-    row.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
-    row.addEventListener('pointerenter', (e) => {
-      if (e.pointerType !== 'mouse') return;
-      const prev = this.hoverIndex;
-      this.hoverIndex = i;
-      this.paintRow(prev);
-      this.paintRow(i);
-    });
-    row.addEventListener('pointerleave', (e) => {
-      if (e.pointerType !== 'mouse') return;
-      if (this.hoverIndex === i) { this.hoverIndex = -1; this.paintRow(i); }
     });
   }
 }

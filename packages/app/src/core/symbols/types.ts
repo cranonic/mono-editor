@@ -42,9 +42,9 @@ export type SymbolKind = typeof SymbolKind[keyof typeof SymbolKind];
  */
 export const SymbolSource = {
   LSP: 'LSP',
-  MONACO: 'Monaco',
+  MONO: 'Mono',
   EXTENSION: 'Extension',
-  REGEX: 'Mono'
+  REGEX: 'Regex'
 } as const;
 
 export type SymbolSource = typeof SymbolSource[keyof typeof SymbolSource];

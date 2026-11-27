@@ -203,40 +203,99 @@ export function useMonoPaletteProviders(editor: MonoEditorPaletteHost | null | u
       prefix: ':',
       name: 'Go to Line/Column',
       provideItems: (search) => {
-        const total = editor?.getLineCount?.() ?? 1;
-        if (!search) {
-          return [{ id: 'hint', label: `Type a line number (1–${total})`, readonly: true }];
+        const activeEd = (editor ?? (window as any).__monoEditor) as any;
+        const total = activeEd?.getLineCount?.() ?? 1;
+        const trimmed = (search || '').trim();
+        if (!trimmed) {
+          const cur = activeEd?.getPosition?.();
+          const curHint = cur ? `Current: Ln ${cur.lineNumber}, Col ${cur.column} · ` : '';
+          return [{ id: 'hint', label: `${curHint}Type a line number (1–${total})`, readonly: true }];
         }
-        const parts = search.split(',');
-        let line = parseInt(parts[0]!, 10);
-        const col = parseInt(parts[1] || '1', 10) || 1;
+        const parts = trimmed.split(/[:,]/);
+        let line = parseInt(parts[0] || '', 10);
+        let col = parts.length > 1 && parts[1] !== '' ? parseInt(parts[1]!, 10) : 1;
         if (Number.isNaN(line)) {
           return [{ id: 'err', label: 'Invalid line number', readonly: true }];
         }
         line = Math.max(1, Math.min(total, line));
+        const maxCol = (activeEd?.getModel?.()?.getLineLength?.(line) ?? 0) + 1;
+        col = Number.isNaN(col) ? 1 : Math.max(1, Math.min(maxCol, col));
         return [
           {
             id: 'goto',
             label: `Go to line ${line}${parts.length > 1 ? `, column ${col}` : ''}`,
             leftIcon: 'arrow-right',
             onSelect: () => {
-              editor?.revealLine?.(line, col);
-              editor?.setPosition?.(line, col);
-              editor?.focus?.();
+              if (!activeEd) return;
+              activeEd.setPosition?.({ lineNumber: line, column: col });
+              if (typeof activeEd.revealLineInCenter === 'function') {
+                activeEd.revealLineInCenter(line);
+              } else {
+                activeEd.revealLine?.(line, col);
+              }
+              activeEd.focus?.();
             },
           },
         ];
       },
     });
 
+    registerProvider({
+      prefix: '@',
+      name: 'Go to Symbol in Editor',
+      provideItems: (search) => {
+        const activeEd = (editor ?? (window as any).__monoEditor) as any;
+        const outline = activeEd?.getStructure?.()?.getOutline?.() ?? [];
+        const flat: Array<{ sym: any; depth: number }> = [];
+        const walk = (list: any[], depth: number) => {
+          for (const s of list) {
+            flat.push({ sym: s, depth });
+            if (Array.isArray(s.children) && s.children.length > 0) {
+              walk(s.children, depth + 1);
+            }
+          }
+        };
+        walk(outline, 0);
+
+        const q = (search || '').trim().toLowerCase();
+        const matched = q
+          ? flat.filter(({ sym }) => String(sym.name || '').toLowerCase().includes(q))
+          : flat;
+
+        if (matched.length === 0) {
+          return [{ id: 'no-symbols', label: 'No symbols found in editor', readonly: true }];
+        }
+        return matched.map(({ sym, depth }, idx) => ({
+          id: `sym-${idx}-${sym.name}-${sym.range?.startLineNumber ?? 1}`,
+          label: `${depth > 0 ? '  '.repeat(depth) : ''}${sym.name}`,
+          description: sym.detail || `Ln ${sym.range?.startLineNumber ?? 1}`,
+          leftIcon: 'symbol-misc',
+          onSelect: () => {
+            if (!activeEd) return;
+            const target = sym.selectionRange ?? sym.range;
+            const ln = target?.startLineNumber ?? 1;
+            const col = target?.startColumn ?? 1;
+            activeEd.setPosition?.({ lineNumber: ln, column: col });
+            if (typeof activeEd.revealLineInCenter === 'function') {
+              activeEd.revealLineInCenter(ln);
+            } else {
+              activeEd.revealLine?.(ln, col);
+            }
+            activeEd.focus?.();
+          },
+        }));
+      },
+    });
+
     if (typeof console !== 'undefined') {
-      console.debug('[palette] providers registered for >, :, help; editor=', !!editor);
+      console.debug('[palette] providers registered for >, :, @, help; editor=', !!editor);
     }
 
     return () => {
       unregisterProvider('');
       unregisterProvider('>');
       unregisterProvider(':');
+      unregisterProvider('@');
     };
   }, [editor]);
 }

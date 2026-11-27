@@ -1,6 +1,6 @@
 // src/core/theme/service/themeService.ts
 
-import * as monaco from 'monaco-editor';
+import * as mono from '@/core/mono';
 import { configRegistry } from '@/core/extensionAPI/registry/configurationRegistry';
 import { useSettingsStore } from '@/features/settings/store/settingsStore'; 
 import { useThemeStore } from '@/core/theme/store/themeStore';
@@ -184,8 +184,8 @@ class ThemeService {
       }
     }
 
-    // Phase 2: Structural translation mapping abstract color arrays into native Monaco token configuration trees
-    const rules: monaco.editor.ITokenThemeRule[] = [];
+    // Phase 2: Structural translation mapping abstract color arrays into Mono token configuration trees
+    const rules: mono.editor.ITokenThemeRule[] = [];
     for (const token of def.tokenColors) {
       const scopes = Array.isArray(token.scope) ? token.scope : [token.scope];
       for (const scope of scopes) {
@@ -198,16 +198,16 @@ class ThemeService {
       }
     }
 
-    // Phase 3: Update Monaco context instances using standard baseline configuration options
-    monaco.editor.defineTheme(def.id, {
+    // Phase 3: Update Mono Editor theme registry
+    mono.editor.defineTheme(def.id, {
       base:    def.type === 'light' ? 'vs' : def.type === 'high-contrast' ? 'hc-black' : 'vs-dark',
       inherit: true,   
       rules,
       colors:  def.editorColors ?? {},
     });
-    monaco.editor.setTheme(def.id);
+    mono.editor.setTheme(def.id);
 
-    // Sync canvas mono-editor (Monaco-level theme registry)
+    // Sync canvas mono-editor
     applyThemeToMonoEditor(def);
 
     console.log(`[ThemeService] Execution cycle completed: loaded "${def.name}" via [${source}]`);

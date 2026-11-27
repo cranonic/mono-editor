@@ -2,7 +2,7 @@
 
 import { useTabStore } from '@/store/tabStore';
 import { useEditorViewStateStore } from '@/features/editor/store/editorViewStateStore';
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 export const createEditorAPI = () => ({
   
   /**

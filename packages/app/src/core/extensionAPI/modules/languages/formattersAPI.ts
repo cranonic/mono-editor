@@ -1,6 +1,6 @@
 // src/core/extensionAPI/modules/languages/formattersAPI.ts
 
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 
 /**
  * Interface representing a provider that supplies formatting edits for a document.

@@ -75,23 +75,32 @@ export class ContextMenuContribution implements IContextMenuContribution {
       this.menu.setMenuOptions(host.initialOptions.contextMenu);
     }
 
-    // Register standard clipboard commands so registry entries execute cleanly
-    host.commands.registerCommand(BUILTIN_CLIPBOARD_COMMANDS.Copy, () => this.menu.copy(), {
-      title: 'Copy',
-      category: 'Edit',
-    });
-    host.commands.registerCommand(BUILTIN_CLIPBOARD_COMMANDS.Cut, () => this.menu.cut(), {
-      title: 'Cut',
-      category: 'Edit',
-    });
-    host.commands.registerCommand(BUILTIN_CLIPBOARD_COMMANDS.Paste, () => this.menu.paste(), {
-      title: 'Paste',
-      category: 'Edit',
-    });
-    host.commands.registerCommand(BUILTIN_CLIPBOARD_COMMANDS.SelectAll, () => this.menu.selectAll(), {
-      title: 'Select All',
-      category: 'Selection',
-    });
+    // Register standard clipboard commands only if not already provided by core keybindings
+    const existingCmds = new Set(host.commands.getCommands().map((c) => c.id));
+    if (!existingCmds.has(BUILTIN_CLIPBOARD_COMMANDS.Copy)) {
+      host.commands.registerCommand(BUILTIN_CLIPBOARD_COMMANDS.Copy, () => this.menu.copy(), {
+        title: 'Copy',
+        category: 'Edit',
+      });
+    }
+    if (!existingCmds.has(BUILTIN_CLIPBOARD_COMMANDS.Cut)) {
+      host.commands.registerCommand(BUILTIN_CLIPBOARD_COMMANDS.Cut, () => this.menu.cut(), {
+        title: 'Cut',
+        category: 'Edit',
+      });
+    }
+    if (!existingCmds.has(BUILTIN_CLIPBOARD_COMMANDS.Paste)) {
+      host.commands.registerCommand(BUILTIN_CLIPBOARD_COMMANDS.Paste, () => this.menu.paste(), {
+        title: 'Paste',
+        category: 'Edit',
+      });
+    }
+    if (!existingCmds.has(BUILTIN_CLIPBOARD_COMMANDS.SelectAll)) {
+      host.commands.registerCommand(BUILTIN_CLIPBOARD_COMMANDS.SelectAll, () => this.menu.selectAll(), {
+        title: 'Select All',
+        category: 'Selection',
+      });
+    }
 
     host.root.addEventListener('contextmenu', this.onContextMenuDom);
   }

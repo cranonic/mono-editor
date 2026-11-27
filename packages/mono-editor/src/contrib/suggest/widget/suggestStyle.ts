@@ -13,6 +13,8 @@ export interface SuggestWidgetOptions {
   fontSize?: number;
   rowHeight?: number;
   docsMode?: SuggestDocsMode;
+  showIcons?: boolean;
+  showStatusBar?: boolean;
   background?: string;
   border?: string;
   foreground?: string;
@@ -97,7 +99,7 @@ const ICON_KEY: Record<number, string> = {
   [Kind.Color]: 'color', [Kind.File]: 'file', [Kind.Reference]: 'reference',
   [Kind.Folder]: 'folder', [Kind.EnumMember]: 'enumMember', [Kind.Constant]: 'constant',
   [Kind.Struct]: 'struct', [Kind.Event]: 'event', [Kind.Operator]: 'operator',
-  [Kind.TypeParameter]: 'typeParameter',
+  [Kind.TypeParameter]: 'typeParameter', [Kind.User]: 'user', [Kind.Issue]: 'issue',
 };
 
 const KIND_NAME: Record<number, string> = {
@@ -109,7 +111,7 @@ const KIND_NAME: Record<number, string> = {
   [Kind.Color]: 'color', [Kind.File]: 'file', [Kind.Reference]: 'reference',
   [Kind.Folder]: 'folder', [Kind.EnumMember]: 'enum member', [Kind.Constant]: 'constant',
   [Kind.Struct]: 'struct', [Kind.Event]: 'event', [Kind.Operator]: 'operator',
-  [Kind.TypeParameter]: 'type parameter',
+  [Kind.TypeParameter]: 'type parameter', [Kind.User]: 'user', [Kind.Issue]: 'issue',
 };
 
 export function kindLabel(k?: number): string {

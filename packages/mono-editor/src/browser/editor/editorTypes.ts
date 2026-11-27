@@ -42,8 +42,10 @@ import type {
   TextEdit,
   WorkspaceEdit,
 } from '../../common/languages/providers/types';
+import type { IBreadcrumbsModel, IBreadcrumbsSnapshot } from '../../common/breadcrumbs/breadcrumbsTypes';
 import type { TokenizationSupport } from '../../common/languages/tokenization/TokenizationSupport';
 import type { TextModel } from '../../common/model/TextModel';
+import type { IDocumentStructure } from '../../common/structure/types';
 import type { FoldingModel } from '../../common/viewModel/FoldingModel';
 import type { MonoStickyScrollOptions } from '../../common/viewModel/StickyScroll';
 import type { CommandService } from '../../platform/commands/CommandService';
@@ -89,6 +91,12 @@ export interface IScrollEvent {
   scrollHeight: number;
   scrollTopChanged: boolean;
   scrollLeftChanged: boolean;
+}
+
+export interface IGoToLineRequestEvent {
+  readonly lineNumber: number;
+  readonly column: number;
+  readonly lineCount: number;
 }
 
 export interface IMonoEditorAction {
@@ -210,6 +218,9 @@ export interface IMonoEditor {
   onDidDispose(listener: () => void): MonoDisposable;
   onDidChangeMarkers(listener: (markers: IMarker[]) => void): MonoDisposable;
   onDidClickInlayHint(listener: (e: IInlayHintClickEvent) => void): MonoDisposable;
+  onDidRequestGoToLine(listener: (e: IGoToLineRequestEvent) => void): MonoDisposable;
+  onDidRequestGoToSymbol(listener: () => void): MonoDisposable;
+  onDidChangeBreadcrumbs(listener: (snapshot: IBreadcrumbsSnapshot) => void): MonoDisposable;
 
   addAction(action: MonoAction): MonoDisposable;
   getAction(id: string): IMonoEditorAction | null;
@@ -255,6 +266,8 @@ export interface IMonoEditor {
   prevGhostText(): void;
   dismissGhostText(): void;
   getDocumentSymbols(): Promise<DocumentSymbol[]>;
+  getStructure(): IDocumentStructure;
+  getBreadcrumbs(): IBreadcrumbsModel | undefined;
 
   dispose(): void;
 }
@@ -286,6 +299,7 @@ export const ContributionIds = {
   LinkedEditing: 'editor.contrib.linkedEditing',
   CodeLens: 'editor.contrib.codeLens',
   MobileAccessory: 'editor.contrib.mobileAccessory',
+  Breadcrumbs: 'editor.contrib.breadcrumbs',
 } as const;
 
 /** Lifecycle interface implemented by every self-contained feature in `src/contrib/`. */
@@ -372,7 +386,11 @@ export interface IEditorContributionHost {
   removeOverlayWidget(widget: IOverlayWidget): void;
   announce(message: string): void;
   getDocumentSymbols(): Promise<DocumentSymbol[]>;
+  getStructure(): IDocumentStructure;
+  setExternalStructureSymbols(symbols: readonly DocumentSymbol[] | null): void;
   emitInlayHintClick(e: IInlayHintClickEvent): void;
+  emitRequestGoToLine(e: IGoToLineRequestEvent): void;
+  emitRequestGoToSymbol(): void;
   setContext(key: string, value: boolean | string | number): void;
   getContext(key: string): boolean | string | number | undefined;
   setSuggestWidgetRect(rect: WidgetBoxRect | null): void;
@@ -425,4 +443,9 @@ export interface IDocumentSymbolsContribution extends IEditorContribution {
 
 export interface IPasteEditContribution extends IEditorContribution {
   tryHandlePaste(text: string): Promise<boolean>;
+}
+
+export interface IBreadcrumbsContribution extends IEditorContribution {
+  getBreadcrumbs(): IBreadcrumbsModel;
+  onDidChangeBreadcrumbs(listener: (snapshot: IBreadcrumbsSnapshot) => void): MonoDisposable;
 }

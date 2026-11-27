@@ -8,6 +8,7 @@ import { useTabStore } from '@/store/tabStore';
 import { Icon } from '@/ui/components/Icon/IconRegistry';
 import { contextKeyService } from '@/core/keybindings/contextKeyService';
 import { useStatusBarSync } from '@/features/statusbar/hooks/useStatusBarSync';
+import { useActiveEditorStore } from '@/features/editor/store/activeEditorStore';
 import './StatusBar.css';
 
 interface SideWrapperProps {
@@ -24,9 +25,6 @@ interface SideWrapperProps {
 const SideWrapper: React.FC<SideWrapperProps> = ({ items, alignment, overflowMode, position }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [hasOverflow, setHasOverflow] = useState(false);
-  const [editorInstance] = useState<any>(null);
-  
-  useStatusBarSync(editorInstance);
 
   useEffect(() => {
     if (overflowMode !== 'more' || !containerRef.current) return;
@@ -94,8 +92,18 @@ export const StatusBar: React.FC = () => {
   const itemsObj = useStatusBarStore((state) => state.items);
   const settings = useSettingsStore((state) => state.settings);
   const { activeTabId, tabs } = useTabStore(); 
-  
+  const editorsByTab = useActiveEditorStore((s) => s.editorsByTab);
+  const fallbackActiveEditor = useActiveEditorStore((s) => s.activeEditor);
+
   const activeTab = tabs.find(t => t.id === activeTabId);
+  const activeEditor = (activeTabId ? editorsByTab[activeTabId] : null) ?? fallbackActiveEditor;
+
+  useEffect(() => {
+    const resolvedType = activeTab?.type === 'fallback_text' ? 'code' : (activeTab?.type ?? null);
+    contextKeyService.setContext('activeTabType', resolvedType);
+  }, [activeTab?.type]);
+
+  useStatusBarSync(activeEditor, activeTabId);
 
   //  Default to SHOWING the status bar on all pages, 
   // UNLESS the developer explicitly passed `showStatusBar: false` when opening the tab.

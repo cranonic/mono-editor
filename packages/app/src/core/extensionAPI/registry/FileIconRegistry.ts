@@ -1,99 +1,258 @@
 // src/core/extensionAPI/registry/FileIconRegistry.ts
-import defaultThemeMap from '@/core/constants/defaultIconTheme';
+// Full VS Code-compatible File Icon Registry supporting:
+//   1. TTF / WOFF / WOFF2 font-based icon themes (built-in & extensions)
+//   2. Image-based (SVG / PNG) extension icon themes (ms-storage://, http(s)://, data:)
+//   3. CSS class fallbacks
 
-/**
- * Interface definition for configuration schemas mapping structural workspace targets 
- * to unique string asset identification labels. Fully mirrors VS Code's material icon map structure.
- */
+import { fs } from '@/core/fileSystem';
+
+export interface IconFontSource {
+  path: string;
+  format?: string;
+}
+
+export interface IconFontDefinition {
+  id: string;
+  src: IconFontSource[];
+  weight?: string;
+  style?: string;
+  size?: string;
+}
+
+export interface IconDefinitionEntry {
+  iconPath?: string;
+  fontCharacter?: string;
+  fontColor?: string;
+  fontId?: string;
+  fontSize?: string;
+}
+
 export interface IconThemeMap {
-  /** Root catalog mapping abstract symbol identifiers to clear filesystem asset locations */
-  iconDefinitions?: Record<string, { iconPath: string }>;
-  /** Primary map binding localized explicit file syntax identifiers to internal symbol keys */
+  /** Font definitions (@font-face) for TTF/WOFF/WOFF2 file icon themes */
+  fonts?: IconFontDefinition[];
+  /** Root catalog mapping abstract symbol identifiers to font glyphs or image asset paths */
+  iconDefinitions?: Record<string, IconDefinitionEntry>;
+  /** Primary map binding file extensions to icon definition keys */
   fileExtensions?: Record<string, string>;
-  /** Secondary or alternative design specification container tracking file suffix strings */
-  extensions?: Record<string, string>; 
-  /** High-precedence matching dictionary indexing standalone unique files (e.g., '.gitignore', 'package.json') */
+  /** Alternative extension map key */
+  extensions?: Record<string, string>;
+  /** Exact filename dictionary (case-insensitive) */
   fileNames?: Record<string, string>;
-  /** Folder categorization indices matching exact collection directory names */
+  /** Exact folder name dictionary (closed state) */
   folderNames?: Record<string, string>;
-  /** Alternate collection labels mapping state transformations across expanded paths */
+  /** Exact folder name dictionary (open/expanded state) */
   folderNamesExpanded?: Record<string, string>;
-  /** Generic baseline symbol key assigned to file elements failing distinct lookups */
+  /** Default file icon definition ID */
   file?: string;
-  /** Generic baseline symbol key assigned to collection directories failing distinct lookups */
+  /** Default closed folder icon definition ID */
   folder?: string;
-  /** Generic baseline symbol key assigned to active open directories failing distinct lookups */
+  /** Default open folder icon definition ID */
   folderExpanded?: string;
-  /** Explicit dictionary mapping engine-level language strings back to target icon keys */
+  /** Language ID -> icon definition ID */
   languageIds?: Record<string, string>;
-  /** Relative or absolute root network address prefix path used to mount image nodes */
-  basePath?: string; 
+  /** Base path prefix for resolving relative extension icon/font paths */
+  basePath?: string;
+  /** Optional VS Code flag hiding tree chevrons */
+  hidesExplorerArrows?: boolean;
 }
 
-/**
- * Resolved icon payload contract dispatched downstream to render components.
- * Specifies whether a target identifier should generate a font style class string or mount an external source image.
- */
-export interface ResolvedIcon {
-  type: 'class' | 'image';
-  value: string;
+export type ResolvedIcon =
+  | {
+      type: 'font';
+      fontFamily: string;
+      character: string;
+      color?: string;
+      fontSize?: string;
+      fontWeight?: string;
+      fontStyle?: string;
+    }
+  | {
+      type: 'image';
+      value: string;
+    }
+  | {
+      type: 'class';
+      value: string;
+    };
+
+const STYLE_TAG_ID = 'ms-file-icon-fonts';
+const fontDataUriCache = new Map<string, string>();
+
+function decodeFontCharacter(raw: string): string {
+  if (!raw) return '';
+  if (raw.startsWith('\\')) {
+    const hex = raw.slice(1).replace(/^u/i, '');
+    const cp = parseInt(hex, 16);
+    if (!Number.isNaN(cp)) return String.fromCodePoint(cp);
+  }
+  return raw;
 }
 
-/**
- * IconThemeRegistry Orchestration Engine
- * Calculates, resolves, and manages contextual lookups translating raw file metrics 
- * (names, suffixes, open/closed states, programmatic languages) into structural visual assets.
- */
+function guessFontFormat(path: string, explicit?: string): { format: string; mime: string } {
+  const lower = (explicit || path.split('.').pop() || '').toLowerCase();
+  if (lower === 'woff2') return { format: 'woff2', mime: 'font/woff2' };
+  if (lower === 'woff') return { format: 'woff', mime: 'font/woff' };
+  if (lower === 'otf' || lower === 'opentype') return { format: 'opentype', mime: 'font/otf' };
+  return { format: 'truetype', mime: 'font/ttf' };
+}
+
+function resolveAssetPath(rawPath: string, basePath?: string): string {
+  if (
+    rawPath.startsWith('/') ||
+    rawPath.startsWith('http://') ||
+    rawPath.startsWith('https://') ||
+    rawPath.startsWith('data:') ||
+    rawPath.startsWith('ms-storage://') ||
+    rawPath.startsWith('file://')
+  ) {
+    return rawPath;
+  }
+  const clean = rawPath.replace(/^\.\//, '');
+  return basePath ? `${basePath.replace(/\/$/, '')}/${clean}` : `/${clean}`;
+}
+
 class IconThemeRegistry {
-  private theme: IconThemeMap = { ...defaultThemeMap };
+  private theme: IconThemeMap = {};
+  private fontMap = new Map<string, IconFontDefinition>();
+  private defaultFontId: string | null = null;
+  private listeners = new Set<() => void>();
+  private version = 0;
+
   private defaultFileClass = 'ms-icon-default-file';
   private defaultFolderClass = 'ms-icon-default-folder';
   private folderOpenClass = 'ms-icon-default-folder-open';
 
-  /**
-   * Initializes or hot-swaps the underlying target style layer map configuration.
-   * Gracefully merges incoming structural customizations or reverts back to core default baselines.
-   * 
-   * @param newTheme Incoming schema structure mappings, or null to invoke system restoration cascades.
-   */
-  loadIconTheme(newTheme: IconThemeMap | null): void {
-    if (!newTheme || !newTheme.iconDefinitions) {
-      this.theme = newTheme ? { ...defaultThemeMap, ...newTheme } : JSON.parse(JSON.stringify(defaultThemeMap));
-      return;
-    }
-    this.theme = newTheme;
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
-  /**
-   * Resolves an internal configuration tracking identifier string to its final deployment asset metadata type.
-   * Sanitizes relative locations and injects base platform network endpoint prefixes where necessary.
-   */
-  private resolveIdToIcon(id: string): ResolvedIcon {
-    if (!id) return { type: 'class', value: this.defaultFileClass };
-    
-    if (this.theme.iconDefinitions && this.theme.iconDefinitions[id]) {
-      let path = this.theme.iconDefinitions[id].iconPath;
-      if (path.startsWith('./')) path = path.slice(2);
-      if (this.theme.basePath) {
-        return { type: 'image', value: `${this.theme.basePath}/${path}` };
+  getVersion(): number {
+    return this.version;
+  }
+
+  private notify(): void {
+    this.version++;
+    this.listeners.forEach((fn) => {
+      try {
+        fn();
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+
+  loadIconTheme(newTheme: IconThemeMap | null): void {
+    this.theme = newTheme ? { ...newTheme } : {};
+    this.fontMap.clear();
+    this.defaultFontId = null;
+
+    const fonts = this.theme.fonts ?? [];
+    for (const f of fonts) {
+      if (!f?.id) continue;
+      this.fontMap.set(f.id, f);
+      if (!this.defaultFontId) this.defaultFontId = f.id;
+    }
+
+    void this.injectFontFaces(fonts, this.theme.basePath);
+    this.notify();
+  }
+
+  private async injectFontFaces(fonts: IconFontDefinition[], basePath?: string): Promise<void> {
+    if (typeof document === 'undefined') return;
+    let styleEl = document.getElementById(STYLE_TAG_ID) as HTMLStyleElement | null;
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = STYLE_TAG_ID;
+      document.head.appendChild(styleEl);
+    }
+
+    if (!fonts.length) {
+      styleEl.textContent = '';
+      return;
+    }
+
+    const rules: string[] = [];
+    for (const font of fonts) {
+      const srcParts: string[] = [];
+      for (const s of font.src ?? []) {
+        const resolved = resolveAssetPath(s.path, basePath);
+        const { format, mime } = guessFontFormat(s.path, s.format);
+
+        if (resolved.startsWith('ms-storage://')) {
+          let dataUri = fontDataUriCache.get(resolved);
+          if (!dataUri) {
+            try {
+              const raw = await fs.readFile(resolved);
+              dataUri = raw.startsWith('data:') ? raw : `data:${mime};base64,${raw}`;
+              fontDataUriCache.set(resolved, dataUri);
+            } catch (err) {
+              console.warn(`[FileIconRegistry] Failed to load extension font: ${resolved}`, err);
+              continue;
+            }
+          }
+          srcParts.push(`url("${dataUri}") format("${format}")`);
+        } else {
+          srcParts.push(`url("${resolved}") format("${format}")`);
+        }
+      }
+
+      if (srcParts.length > 0) {
+        rules.push(
+          `@font-face { font-family: "${font.id}"; src: ${srcParts.join(', ')}; font-weight: ${font.weight || 'normal'}; font-style: ${font.style || 'normal'}; font-display: block; }`,
+        );
       }
     }
+
+    styleEl.textContent = rules.join('\n');
+    this.notify();
+  }
+
+  private resolveIdToIcon(id: string, isDirectory = false, isOpen = false): ResolvedIcon {
+    if (!id) {
+      return {
+        type: 'class',
+        value: isDirectory
+          ? isOpen
+            ? this.folderOpenClass
+            : this.defaultFolderClass
+          : this.defaultFileClass,
+      };
+    }
+
+    const def = this.theme.iconDefinitions?.[id];
+    if (def) {
+      if (def.fontCharacter) {
+        const fontId = def.fontId || this.defaultFontId;
+        const fontMeta = fontId ? this.fontMap.get(fontId) : undefined;
+        if (fontId) {
+          return {
+            type: 'font',
+            fontFamily: `"${fontId}"`,
+            character: decodeFontCharacter(def.fontCharacter),
+            color: def.fontColor,
+            fontSize: def.fontSize || fontMeta?.size,
+            fontWeight: fontMeta?.weight,
+            fontStyle: fontMeta?.style,
+          };
+        }
+      }
+
+      if (def.iconPath) {
+        const resolvedPath = resolveAssetPath(def.iconPath, this.theme.basePath);
+        return { type: 'image', value: resolvedPath };
+      }
+    }
+
     return { type: 'class', value: id };
   }
 
-  /**
-   * Primary translation query gateway evaluating structural file variables to derive final visual assets.
-   * Executes cascading resolution tiers prioritizing name match rules before evaluating extension mappings.
-   * 
-   * @param fileName The raw base filename extracted from the physical target system.
-   * @param isDirectory Flag specifying if the current node represents a collection folder element.
-   * @param isOpen Optional flag setting structural state variations across folder elements.
-   * @returns An asset routing payload specifying formatting requirements.
-   */
   getFileIcon(fileName: string, isDirectory: boolean, isOpen: boolean = false): ResolvedIcon {
     const lowerName = fileName.toLowerCase();
 
-    // ── 1. FOLDER RESOLUTION LOGIC ──
+    // 1. Folder resolution
     if (isDirectory) {
       let folderId = '';
       const fNames = this.theme.folderNames || {};
@@ -103,89 +262,91 @@ class IconThemeRegistry {
       else if (fNames[lowerName]) folderId = fNames[lowerName];
       else folderId = isOpen ? (this.theme.folderExpanded || 'folder-open') : (this.theme.folder || 'folder');
 
-      // Fallback boundaries for lightweight icon themes without distinct image asset tracking
-      if (!this.theme.iconDefinitions) {
-         if (folderId === 'folder-open') return { type: 'class', value: this.folderOpenClass };
-         if (folderId === 'folder') return { type: 'class', value: this.defaultFolderClass };
+      if (!this.theme.iconDefinitions?.[folderId]) {
+        if (folderId === 'folder-open') return { type: 'class', value: this.folderOpenClass };
+        if (folderId === 'folder') return { type: 'class', value: this.defaultFolderClass };
       }
-      return this.resolveIdToIcon(folderId);
+      return this.resolveIdToIcon(folderId, true, isOpen);
     }
 
-    // ── 2. EXACT MATCH STANDALONE FILE NAME LOGIC ──
+    // 2. Exact filename match
     const fileNames = this.theme.fileNames || {};
     if (fileNames[lowerName]) return this.resolveIdToIcon(fileNames[lowerName]);
 
-    // ── 3. CASCADING EXTENSION EXTRACTION & LANGUAGE LOOKUP ──
+    // 3. Extension matching (multi-dot then single-dot)
     const exts = this.theme.fileExtensions || this.theme.extensions || {};
     const parts = lowerName.split('.');
-    
-    // Tier A: Intercept double-dot multi-extensions (e.g., '.test.tsx', '.blade.php')
+
     if (parts.length > 2) {
-       const doubleExt = parts.slice(-2).join('.'); 
-       if (exts[doubleExt]) return this.resolveIdToIcon(exts[doubleExt]);
+      const doubleExt = parts.slice(-2).join('.');
+      if (exts[doubleExt]) return this.resolveIdToIcon(exts[doubleExt]);
     }
-    
+
     const ext = parts.pop() || '';
-    
-    // Tier B: Standard Extension Verification Matches
     if (exts[ext]) return this.resolveIdToIcon(exts[ext]);
     if (exts['.' + ext]) return this.resolveIdToIcon(exts['.' + ext]);
 
-    // Tier C: Native Language Identifier Schema Matching
+    // 4. Language ID lookup
     const langIds = this.theme.languageIds || {};
     if (langIds[ext]) return this.resolveIdToIcon(langIds[ext]);
 
-    // Tier D: Smart Extension Interpolation Heuristics
-    // Fallback dictionary mapping common file suffixes to canonical workspace language IDs.
-    // Safeguards layout delivery when tracking themes miss structural definitions.
+    // 5. Smart extension -> canonical language heuristic
     const smartMap: Record<string, string> = {
-        'js': 'javascript', 'jsx': 'react', 'ts': 'typescript', 'tsx': 'react_ts',
-        'py': 'python', 'rb': 'ruby', 'html': 'html', 'css': 'css', 
-        'json': 'json', 'md': 'markdown', 'sh': 'console', 'bash': 'console',
-        'yml': 'yaml', 'xml': 'xml', 'csv': 'csv', 'svg': 'svg', 'cpp': 'cpp', 'c': 'c',
-        'java': 'java', 'kt': 'kotlin'
+      js: 'javascript',
+      mjs: 'javascript',
+      cjs: 'javascript',
+      jsx: 'javascriptreact',
+      ts: 'typescript',
+      mts: 'typescript',
+      cts: 'typescript',
+      tsx: 'typescriptreact',
+      py: 'python',
+      rb: 'ruby',
+      html: 'html',
+      css: 'css',
+      scss: 'scss',
+      json: 'json',
+      md: 'markdown',
+      sh: 'shellscript',
+      bash: 'shellscript',
+      yml: 'yaml',
+      yaml: 'yaml',
+      xml: 'xml',
+      svg: 'svg',
+      cpp: 'cpp',
+      c: 'c',
+      java: 'java',
+      kt: 'kotlin',
+      rs: 'rust',
+      go: 'go',
     };
-    
+
     const mappedLang = smartMap[ext];
     if (mappedLang) {
-        if (langIds[mappedLang]) return this.resolveIdToIcon(langIds[mappedLang]);
-        if (this.theme.iconDefinitions && this.theme.iconDefinitions[mappedLang]) {
-            return this.resolveIdToIcon(mappedLang);
-        }
+      if (langIds[mappedLang]) return this.resolveIdToIcon(langIds[mappedLang]);
+      if (this.theme.iconDefinitions?.[mappedLang]) return this.resolveIdToIcon(mappedLang);
     }
 
-    // Tier E: Direct Identity Symbol Property Check
-    if (this.theme.iconDefinitions && this.theme.iconDefinitions[ext]) {
-        return this.resolveIdToIcon(ext);
+    if (this.theme.iconDefinitions?.[ext]) {
+      return this.resolveIdToIcon(ext);
     }
 
-    // ── 4. DEFAULT FILE FALLBACK BOUNDARY ──
+    // 6. Default file fallback
     const fileId = this.theme.file || 'file';
-    if (!this.theme.iconDefinitions && fileId === 'file') {
-        return { type: 'class', value: this.defaultFileClass };
+    if (!this.theme.iconDefinitions?.[fileId] && fileId === 'file') {
+      return { type: 'class', value: this.defaultFileClass };
     }
-    return this.resolveIdToIcon(fileId);
+    return this.resolveIdToIcon(fileId, false, false);
   }
 
-  /**
-   * Resolves symbol references using direct programmatic language classification strings.
-   * Utilized primarily by code elements, terminal panels, and tab components requiring quick indicators.
-   * 
-   * @param langId Target standard language tracking key (e.g., 'typescript').
-   * @returns Resolved structural icon configurations.
-   */
   getLanguageIcon(langId: string): ResolvedIcon {
     const lowerLangId = langId.toLowerCase();
-    const iconId = this.theme.languageIds?.[lowerLangId] || (this.theme.file || 'file');
-    
-    if (!this.theme.iconDefinitions && iconId === 'file') {
-        return { type: 'class', value: this.defaultFileClass };
+    const iconId = this.theme.languageIds?.[lowerLangId] || this.theme.file || 'file';
+    if (!this.theme.iconDefinitions?.[iconId] && iconId === 'file') {
+      return { type: 'class', value: this.defaultFileClass };
     }
     return this.resolveIdToIcon(iconId);
   }
 }
 
-/**
- * Global singleton access provider managing application-wide workspace file tree visual iconography.
- */
 export const fileIconRegistry = new IconThemeRegistry();

@@ -1,7 +1,7 @@
 // src/features/editor/hooks/useStickyHighlight.ts
 
 import { useEffect } from 'react';
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import { symbolManager } from '@/core/symbols';
 import type { DocumentSymbol } from '@/core/symbols';
 

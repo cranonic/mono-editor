@@ -22,6 +22,7 @@ import {
 } from '../../common/editOperations/lineTransforms';
 import { getLanguageConfiguration } from '../../common/languages/languageConfigurationRegistry';
 import type { TextModel } from '../../common/model/TextModel';
+import { readClipboardText, writeClipboardText } from '../../platform/clipboard/clipboard';
 import type { CommandService } from '../../platform/commands/CommandService';
 import { KeybindingService, MonoCommands } from '../../platform/keybindings/KeybindingService';
 import type { ViewController } from '../view/ViewController';
@@ -38,6 +39,7 @@ export interface CoreKeybindingHost {
   getTabSize(): number;
   getInsertSpaces?(): boolean;
   getEmptySelectionClipboard?(): boolean;
+  getNativePasteSeq?(): number;
   getLanguageIdAtPosition?: (lineNumber: number, column: number) => string;
   onBeforePaste?: (text: string) => Promise<boolean>;
   onAfterPaste?: (range: IRange) => void;
@@ -119,19 +121,10 @@ export function registerCoreKeybindingsAndActions(host: CoreKeybindingHost): voi
 
   const writeClipboard = async (text: string) => {
     if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      ta.remove();
-    }
+    await writeClipboardText(text);
   };
 
-  const doCopy = () => { void writeClipboard(selectionText()); };
+  const doCopy = () => writeClipboard(selectionText());
 
   const doCut = () => {
     if (host.isReadOnly()) return;
@@ -188,8 +181,7 @@ export function registerCoreKeybindingsAndActions(host: CoreKeybindingHost): voi
 
   const doPaste = async () => {
     if (host.isReadOnly()) return;
-    let text = '';
-    try { text = await navigator.clipboard.readText(); } catch { return; }
+    const text = await readClipboardText();
     if (!text) return;
     if (host.onBeforePaste && (await host.onBeforePaste(text))) return;
     const model = host.getModel();
@@ -245,9 +237,29 @@ export function registerCoreKeybindingsAndActions(host: CoreKeybindingHost): voi
     { id: MonoCommands.Undo, primary: 'ctrl+z', weight: 5, handler: () => { const e = host.getModel().undoEntry(); if (e) { host.applyStackSelection(e, 'undo'); runAfter(); } } },
     { id: MonoCommands.Redo, primary: 'ctrl+shift+z', weight: 5, handler: () => { const e = host.getModel().redoEntry(); if (e) { host.applyStackSelection(e, 'redo'); runAfter(); } } },
     { id: MonoCommands.Redo + '.y', primary: 'ctrl+y', weight: 5, handler: () => { const e = host.getModel().redoEntry(); if (e) { host.applyStackSelection(e, 'redo'); runAfter(); } } },
-    { id: MonoCommands.Copy, primary: 'ctrl+c', weight: 5, handler: () => doCopy() },
+    { id: MonoCommands.Copy, primary: 'ctrl+c', weight: 5, handler: () => { void doCopy(); } },
     { id: MonoCommands.Cut, primary: 'ctrl+x', weight: 5, handler: () => doCut() },
-    { id: MonoCommands.Paste, primary: 'ctrl+v', weight: 5, handler: () => { void doPaste(); } },
+    {
+      id: MonoCommands.Paste,
+      primary: 'ctrl+v',
+      weight: 5,
+      preventDefault: false,
+      handler: (e) => {
+        if (!e || !e.isTrusted) {
+          void doPaste();
+          return;
+        }
+        // Let the browser fire a native `paste` event on the focused textarea so real OS
+        // clipboard data arrives via `e.clipboardData` without needing `clipboard-read` permission.
+        // If native `paste` does not fire (e.g. mobile soft keyboard IME sendKeyEvent), fall back.
+        const seqBefore = host.getNativePasteSeq?.() ?? 0;
+        window.setTimeout(() => {
+          if ((host.getNativePasteSeq?.() ?? 0) === seqBefore) {
+            void doPaste();
+          }
+        }, 60);
+      },
+    },
     {
       id: MonoCommands.SelectAll, primary: 'ctrl+a', weight: 5,
       handler: () => {
@@ -335,6 +347,18 @@ export function registerCoreKeybindingsAndActions(host: CoreKeybindingHost): voi
   };
 
   for (const [id, meta] of Object.entries(coreTitles)) {
+    if (id === MonoCommands.Copy) {
+      host.commands.registerCommand(id, () => doCopy(), { title: meta.title, category: meta.category, precondition: meta.precondition });
+      continue;
+    }
+    if (id === MonoCommands.Cut) {
+      host.commands.registerCommand(id, () => doCut(), { title: meta.title, category: meta.category, precondition: meta.precondition });
+      continue;
+    }
+    if (id === MonoCommands.Paste) {
+      host.commands.registerCommand(id, () => doPaste(), { title: meta.title, category: meta.category, precondition: meta.precondition });
+      continue;
+    }
     host.commands.registerCommand(
       id,
       () => {

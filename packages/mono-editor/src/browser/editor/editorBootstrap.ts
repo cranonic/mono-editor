@@ -12,6 +12,7 @@ import type { MarkerService } from '../../common/decorations/MarkerService';
 import type { Location, TextEdit, WorkspaceEdit } from '../../common/languages/providers/types';
 import type { TokenizationSupport } from '../../common/languages/tokenization/TokenizationSupport';
 import type { TextModel } from '../../common/model/TextModel';
+import type { DocumentStructureService } from '../../common/structure/StructureBuilder';
 import type { FoldingModel } from '../../common/viewModel/FoldingModel';
 import type { CommandService } from '../../platform/commands/CommandService';
 import type { KeybindingService } from '../../platform/keybindings/KeybindingService';
@@ -55,7 +56,8 @@ export function createInitialOptionState(options: MonoEditorOptions): EditorOpti
     emptySelectionClipboard: options.emptySelectionClipboard ?? true,
     formatOnPaste: options.formatOnPaste ?? false,
     readOnly: !!options.readOnly,
-    foldingEnabled: options.folding !== false,
+    foldingEnabled: typeof options.folding === 'boolean' ? options.folding : options.folding?.enabled !== false,
+    foldingStrategy: options.foldingStrategy ?? (typeof options.folding === 'object' ? options.folding?.strategy : undefined) ?? 'auto',
     glyphMargin: !!options.glyphMargin,
     renderWhitespace: options.renderWhitespace ?? 'none',
     rulers: options.rulers ? [...options.rulers] : [],
@@ -115,6 +117,8 @@ export function createEditorSubsystems(params: {
   onDidPaste?: (range: IRange) => void;
   onKeyDownEvent?: (e: KeyboardEvent) => void;
   onKeyUpEvent?: (e: KeyboardEvent) => void;
+  onTextFocus?: () => void;
+  onTextBlur?: () => void;
 }) {
   const renderer = new CanvasRenderer(params.canvas);
   const view = new ViewController(
@@ -240,6 +244,8 @@ export function createEditorSubsystems(params: {
       onDidPaste: params.onDidPaste,
       onKeyDownEvent: params.onKeyDownEvent,
       onKeyUpEvent: params.onKeyUpEvent,
+      onFocus: params.onTextFocus,
+      onBlur: params.onTextBlur,
     },
   );
 
@@ -256,6 +262,7 @@ export function buildContributionHost(params: {
   commands: CommandService;
   keybindings: KeybindingService;
   folding: FoldingModel;
+  structure: DocumentStructureService;
   tokenization: TokenizationSupport;
   markers: MarkerService;
   minimap: MinimapController;
@@ -325,7 +332,11 @@ export function buildContributionHost(params: {
     removeOverlayWidget: (w) => params.widgets.removeOverlayWidget(w),
     announce: (msg) => params.input.announce(msg),
     getDocumentSymbols: () => params.editor.getDocumentSymbols(),
+    getStructure: () => params.structure,
+    setExternalStructureSymbols: (syms) => params.structure.setExternalSymbols(syms),
     emitInlayHintClick: (e) => params.events.emitInlayHintClick(e),
+    emitRequestGoToLine: (e) => params.events.emitRequestGoToLine(e),
+    emitRequestGoToSymbol: () => params.events.emitRequestGoToSymbol(),
     setContext: (k, v) => params.commands.setContext(k, v),
     getContext: (k) => params.commands.getContext(k),
     setSuggestWidgetRect: (r) => {

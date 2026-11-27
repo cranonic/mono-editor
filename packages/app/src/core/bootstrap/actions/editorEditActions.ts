@@ -1,7 +1,7 @@
 // src/core/bootstrap/actions/editorEditActions.ts
 // Select All, Find/Replace, Format, Rename Symbol, Go to Definition
 import { commands } from '@/core/extensionAPI/registry/commandRegistry';
-import { getActiveMonacoEditor, triggerOnActiveEditor } from './getActiveMonacoEditor';
+import { getActiveMonoEditor, triggerOnActiveEditor } from './getActiveMonoEditor';
 
 export function registerEditorEditActions(): void {
   // ── Select All ──────────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ export function registerEditorEditActions(): void {
     (editorArg?: any) => {
       const mono = (window as any).__monoEditor;
       if (mono?.revealFind) { mono.revealFind(); return; }
-      const editor = editorArg || getActiveMonacoEditor() || commands.getActiveEditor?.();
+      const editor = editorArg || getActiveMonoEditor() || commands.getActiveEditor?.();
       if (editor) {
         editor.trigger('keyboard', 'actions.find', null);
         editor.focus();

@@ -12,12 +12,16 @@ import type { TextModel } from '../../common/model/TextModel';
 import { monoThemeService } from '../../platform/theme';
 import type { ResolvedWidgetTheme } from '../../platform/theme/widgetTheme';
 import { SuggestController } from './SuggestController';
+import { buildKindVisibilityMap } from './suggestFilter';
 
 export class SuggestContribution implements IEditorContribution {
   readonly id = ContributionIds.Suggest;
   private readonly host: IEditorContributionHost;
   private readonly suggest: SuggestController;
   private readonly snippetSession: SnippetSession;
+  private suggestFontSizeOverride = 0;
+  private suggestLineHeightOverride = 0;
+  private insertSpaces = true;
 
   constructor(host: IEditorContributionHost) {
     this.host = host;
@@ -29,6 +33,15 @@ export class SuggestContribution implements IEditorContribution {
     });
 
     const opts = host.initialOptions;
+    this.suggestFontSizeOverride = Math.max(0, opts.suggestFontSize ?? 0);
+    this.suggestLineHeightOverride = Math.max(0, opts.suggestLineHeight ?? 0);
+    this.insertSpaces = opts.insertSpaces !== false;
+
+    const effectiveFontSize =
+      this.suggestFontSizeOverride > 0 ? this.suggestFontSizeOverride : host.getFontSize();
+    const effectiveRowHeight =
+      this.suggestLineHeightOverride > 0 ? this.suggestLineHeightOverride : undefined;
+
     this.suggest = new SuggestController(
       host.root,
       host.getModel(),
@@ -44,7 +57,10 @@ export class SuggestContribution implements IEditorContribution {
       },
       {
         fontFamily: host.getFontFamily(),
-        fontSize: host.getFontSize(),
+        fontSize: effectiveFontSize,
+        rowHeight: effectiveRowHeight,
+        showIcons: opts.suggest?.showIcons ?? true,
+        showStatusBar: opts.suggest?.showStatusBar ?? false,
       },
       {
         quickSuggestions: opts.quickSuggestions,
@@ -52,6 +68,22 @@ export class SuggestContribution implements IEditorContribution {
         suggestOnTriggerCharacters: opts.suggestOnTriggerCharacters,
         suggestMode: opts.suggest?.mode ?? 'palette',
         suggestDocs: opts.suggest?.docs ?? 'off',
+        acceptSuggestionOnCommitCharacter: opts.acceptSuggestionOnCommitCharacter ?? true,
+        acceptSuggestionOnEnter: opts.acceptSuggestionOnEnter ?? 'on',
+        suggestSelection: opts.suggestSelection ?? 'first',
+        insertMode: opts.suggest?.insertMode ?? 'insert',
+        filterGraceful: opts.suggest?.filterGraceful ?? true,
+        matchOnWordStartOnly:
+          opts.suggestMatchOnWordStartOnly ?? opts.suggest?.matchOnWordStartOnly ?? true,
+        localityBonus: opts.suggest?.localityBonus ?? false,
+        preview: opts.suggest?.preview ?? false,
+        previewMode: opts.suggest?.previewMode ?? 'subwordSmart',
+        showIcons: opts.suggest?.showIcons ?? true,
+        showStatusBar: opts.suggest?.showStatusBar ?? false,
+        wordBasedSuggestions: opts.wordBasedSuggestions ?? 'matchingDocuments',
+        snippetSuggestions: opts.snippetSuggestions ?? 'inline',
+        tabCompletion: opts.tabCompletion ?? 'off',
+        kindVisibility: buildKindVisibilityMap(opts.suggest),
         getTokenTypeAt: (ln, col) => host.getTokenTypeAt(ln, col),
         getLanguageIdAtPosition: (ln, col) => host.getLanguageIdAtPosition(ln, col),
         onVisibilityChange: (visible, rect) => {
@@ -61,6 +93,7 @@ export class SuggestContribution implements IEditorContribution {
         setGhostTexts: (items) => host.setGhostTexts(items),
         clearGhostTexts: (owner) => host.clearGhostTexts(owner),
         getGhostTexts: (owner) => host.getGhostTexts(owner),
+        onTabFallback: () => this.insertStandardTab(),
       },
     );
     this.suggest.setSnippetSession(this.snippetSession);
@@ -133,29 +166,72 @@ export class SuggestContribution implements IEditorContribution {
   }
 
   onOptionsChange(patch: Partial<MonoEditorOptions>): void {
-    if (patch.fontFamily != null || patch.fontSize != null) {
+    if (patch.insertSpaces !== undefined) {
+      this.insertSpaces = patch.insertSpaces;
+    }
+    let styleDirty = patch.fontFamily != null || patch.fontSize != null;
+    if (patch.suggestFontSize !== undefined) {
+      this.suggestFontSizeOverride = Math.max(0, patch.suggestFontSize);
+      styleDirty = true;
+    }
+    if (patch.suggestLineHeight !== undefined) {
+      this.suggestLineHeightOverride = Math.max(0, patch.suggestLineHeight);
+      styleDirty = true;
+    }
+    if (styleDirty) {
       this.applySuggestStyle(this.host.getTheme());
     }
-    if (
-      patch.quickSuggestions !== undefined ||
-      patch.quickSuggestionsDelay !== undefined ||
-      patch.suggestOnTriggerCharacters !== undefined ||
-      patch.suggest !== undefined
-    ) {
-      this.suggest.setOptions({
-        quickSuggestions: patch.quickSuggestions,
-        quickSuggestionsDelay: patch.quickSuggestionsDelay,
-        suggestOnTriggerCharacters: patch.suggestOnTriggerCharacters,
-        suggestMode: patch.suggest?.mode,
-        suggestDocs: patch.suggest?.docs,
-      });
-    }
+
+    const matchWordStart =
+      patch.suggestMatchOnWordStartOnly !== undefined
+        ? patch.suggestMatchOnWordStartOnly
+        : patch.suggest?.matchOnWordStartOnly;
+
+    this.suggest.setOptions({
+      quickSuggestions: patch.quickSuggestions,
+      quickSuggestionsDelay: patch.quickSuggestionsDelay,
+      suggestOnTriggerCharacters: patch.suggestOnTriggerCharacters,
+      suggestMode: patch.suggest?.mode,
+      suggestDocs: patch.suggest?.docs,
+      acceptSuggestionOnCommitCharacter: patch.acceptSuggestionOnCommitCharacter,
+      acceptSuggestionOnEnter: patch.acceptSuggestionOnEnter,
+      suggestSelection: patch.suggestSelection,
+      insertMode: patch.suggest?.insertMode,
+      filterGraceful: patch.suggest?.filterGraceful,
+      matchOnWordStartOnly: matchWordStart,
+      localityBonus: patch.suggest?.localityBonus,
+      preview: patch.suggest?.preview,
+      previewMode: patch.suggest?.previewMode,
+      showIcons: patch.suggest?.showIcons,
+      showStatusBar: patch.suggest?.showStatusBar,
+      wordBasedSuggestions: patch.wordBasedSuggestions,
+      snippetSuggestions: patch.snippetSuggestions,
+      tabCompletion: patch.tabCompletion,
+      kindVisibility: patch.suggest ? buildKindVisibilityMap(patch.suggest) : undefined,
+    });
   }
 
   dispose(): void {
     this.host.input.setPreKeyHandler(null);
     this.snippetSession.cancel();
     this.suggest.dispose();
+  }
+
+  private insertStandardTab(): void {
+    if (this.host.isReadOnly()) return;
+    const pos = this.host.selection.active;
+    const text = this.insertSpaces ? ' '.repeat(Math.max(1, this.host.getTabSize())) : '\t';
+    this.host.executeEdits('tab', [
+      {
+        range: {
+          startLineNumber: pos.lineNumber,
+          startColumn: pos.column,
+          endLineNumber: pos.lineNumber,
+          endColumn: pos.column,
+        },
+        text,
+      },
+    ]);
   }
 
   private applySuggestStyle(editorTheme: MonoEditorTheme): void {
@@ -171,7 +247,10 @@ export class SuggestContribution implements IEditorContribution {
     try { colors = monoThemeService.resolve().colors; } catch { /* */ }
     this.suggest.setWidgetOptions({
       fontFamily: this.host.getFontFamily(),
-      fontSize: this.host.getFontSize(),
+      fontSize:
+        this.suggestFontSizeOverride > 0 ? this.suggestFontSizeOverride : this.host.getFontSize(),
+      rowHeight:
+        this.suggestLineHeightOverride > 0 ? this.suggestLineHeightOverride : undefined,
       themeType: dark ? 'dark' : 'light',
       themeColors: colors,
     });

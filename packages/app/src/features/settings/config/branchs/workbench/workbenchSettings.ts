@@ -25,10 +25,28 @@ export const workbenchSection: IConfigurationSection = {
       subCategory: 'Appearance',
       type: 'select',
       defaultValue: 'mscode-icons',
-      markdownDescription: 'Specifies the file icon theme used in the file explorer, activity bar, and editor tabs.\n\n> **Tip:** You can install more icon themes from the Extensions Marketplace.',
+      markdownDescription:
+        'Specifies the file icon theme used in the file explorer, breadcrumbs, and editor tabs. Built-in themes use local TTF/WOFF icon fonts.\n\n> **Tip:** You can also load custom file icon themes via extensions.',
       options: [
-        { label: 'MS Code Icons (Default)', value: 'mscode-icons' }
-        // other themes from themeService
+        { label: 'Seti (Mono Default)', value: 'mscode-icons' },
+        { label: 'Devicon (Vibrant TTF)', value: 'mono-devicon' },
+        { label: 'Mono Vivid (Codicons Color TTF)', value: 'mono-vivid' },
+        { label: 'Minimal (Codicons Monochrome TTF)', value: 'mono-minimal' },
+      ]
+    },
+
+    // Product (App) Icon Theme Setting
+    'workbench.productIconTheme': {
+      title: 'Product Icon Theme',
+      subCategory: 'Appearance',
+      type: 'select',
+      defaultValue: 'mscode-codicons',
+      markdownDescription:
+        'Specifies the product (app UI) icon theme used across the activity bar, menus, toolbars, and panels.\n\n> **Tip:** Extensions can also contribute custom TTF/WOFF or SVG product icon themes via `contributes.productIconThemes` or `mscode.themes.productIcon`.',
+      options: [
+        { label: 'Codicons (Default TTF)', value: 'mscode-codicons' },
+        { label: 'Lucide (Minimal TTF)', value: 'mscode-lucide' },
+        { label: 'Remix (Modern TTF)', value: 'mscode-remix' },
       ]
     },
 
@@ -100,8 +118,9 @@ export const workbenchSection: IConfigurationSection = {
     markdownDescription: 'Customize the action keys shown in the mobile quick keyboard.',
     defaultValue: [
       { id: 'esc', label: 'Esc', action: 'esc' },
-      // { id: 'ctrl', label: 'Ctrl', action: 'ctrl' }, 
-      // { id: 'alt', label: 'Alt', action: 'alt' },   
+      { id: 'ctrl', label: 'Ctrl', action: 'ctrl' },
+      { id: 'alt', label: 'Alt', action: 'alt' },
+      { id: 'shift', label: 'Shift', action: 'shift' },
       { id: 'tab', label: 'Tab', action: 'tab' },
       { id: 'left', icon: 'chevron-left', action: 'cursorLeft' },
       { id: 'right', icon: 'chevron-right', action: 'cursorRight' },

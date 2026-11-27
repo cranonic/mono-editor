@@ -1,5 +1,5 @@
 // Model change tracking – debounced textDocument/didChange + didOpen on new models
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import type { LspState } from '../types';
 import { sendNotify } from '../LspTransport';
 import { getDocUri } from '../utils/uriHelpers';

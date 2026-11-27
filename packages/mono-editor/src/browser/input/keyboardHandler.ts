@@ -37,6 +37,37 @@ export interface KeyboardHandlerState {
   onChange: (ev: KeyboardChangeEvent) => void;
 }
 
+function resolveNavigationKey(e: KeyboardEvent): string {
+  const k = e.key || '';
+  if (k && k !== 'Unidentified' && k !== 'Process') {
+    if (k === 'Up') return 'ArrowUp';
+    if (k === 'Down') return 'ArrowDown';
+    if (k === 'Left') return 'ArrowLeft';
+    if (k === 'Right') return 'ArrowRight';
+    if (k === 'Esc') return 'Escape';
+    if (k === 'Del') return 'Delete';
+    return k;
+  }
+  const kc = e.keyCode || e.which || 0;
+  switch (kc) {
+    case 8: return 'Backspace';
+    case 9: return 'Tab';
+    case 13: return 'Enter';
+    case 27: return 'Escape';
+    case 33: return 'PageUp';
+    case 34: return 'PageDown';
+    case 35: return 'End';
+    case 36: return 'Home';
+    case 37: return 'ArrowLeft';
+    case 38: return 'ArrowUp';
+    case 39: return 'ArrowRight';
+    case 40: return 'ArrowDown';
+    case 46: return 'Delete';
+    case 65: return 'a';
+    default: return k;
+  }
+}
+
 export function handleEditorKeyDown(e: KeyboardEvent, st: KeyboardHandlerState): void {
   const { model, selection } = st;
   const lineCount = model.getLineCount();
@@ -44,6 +75,7 @@ export function handleEditorKeyDown(e: KeyboardEvent, st: KeyboardHandlerState):
   const lineText = model.getLineContent(lineNumber);
   const extend = e.shiftKey;
   const ctrl = e.ctrlKey || e.metaKey;
+  const navKey = resolveNavigationKey(e);
 
   const move = (ln: number, col: number, keepGoal = false) => {
     const clampedLine = Math.max(1, Math.min(lineCount, ln));
@@ -55,7 +87,7 @@ export function handleEditorKeyDown(e: KeyboardEvent, st: KeyboardHandlerState):
     st.onChange({ kind: 'move' });
   };
 
-  if (ctrl && (e.key === 'a' || e.key === 'A')) {
+  if (ctrl && (navKey === 'a' || navKey === 'A')) {
     e.preventDefault();
     selection.anchor = { lineNumber: 1, column: 1 };
     const last = model.getLineCount();
@@ -65,20 +97,20 @@ export function handleEditorKeyDown(e: KeyboardEvent, st: KeyboardHandlerState):
     return;
   }
 
-  if (ctrl && e.key === 'Home') {
+  if (ctrl && navKey === 'Home') {
     e.preventDefault();
     st.setGoalColumn(null);
     move(1, 1);
     return;
   }
-  if (ctrl && e.key === 'End') {
+  if (ctrl && navKey === 'End') {
     e.preventDefault();
     st.setGoalColumn(null);
     move(lineCount, model.getLineContent(lineCount).length + 1);
     return;
   }
 
-  if (ctrl && e.key === 'ArrowLeft') {
+  if (ctrl && navKey === 'ArrowLeft') {
     e.preventDefault();
     st.setGoalColumn(null);
     if (column <= 1) {
@@ -88,7 +120,7 @@ export function handleEditorKeyDown(e: KeyboardEvent, st: KeyboardHandlerState):
     }
     return;
   }
-  if (ctrl && e.key === 'ArrowRight') {
+  if (ctrl && navKey === 'ArrowRight') {
     e.preventDefault();
     st.setGoalColumn(null);
     if (column >= lineText.length + 1) {
@@ -99,7 +131,7 @@ export function handleEditorKeyDown(e: KeyboardEvent, st: KeyboardHandlerState):
     return;
   }
 
-  if (ctrl && e.key === 'Backspace') {
+  if (ctrl && navKey === 'Backspace') {
     e.preventDefault();
     if (st.readOnly) return;
     if (!selection.isEmpty) {
@@ -124,7 +156,7 @@ export function handleEditorKeyDown(e: KeyboardEvent, st: KeyboardHandlerState):
     }
     return;
   }
-  if (ctrl && e.key === 'Delete') {
+  if (ctrl && navKey === 'Delete') {
     e.preventDefault();
     if (st.readOnly) return;
     if (!selection.isEmpty) {
@@ -143,7 +175,10 @@ export function handleEditorKeyDown(e: KeyboardEvent, st: KeyboardHandlerState):
     return;
   }
 
-  switch (e.key) {
+  // Do not treat Alt-modified keys as plain caret movement or text deletion
+  if (e.altKey) return;
+
+  switch (navKey) {
     case 'Escape': {
       if (selection.hasMultipleCursors) {
         e.preventDefault();

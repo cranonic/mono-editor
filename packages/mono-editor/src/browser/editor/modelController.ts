@@ -180,18 +180,46 @@ export class ModelController {
       },
       isDisposed: () => this.disposed,
       isAttachedToEditor: () => !this.disposed,
+      onDidChangeContent: (listener) => {
+        const unsub = model.onDidChange((_v, change) => {
+          let cached: string | undefined;
+          listener({
+            changes: change?.changes ?? [],
+            eol: model.getEOL(),
+            versionId: model.getVersionId(),
+            isUndoing: Boolean(change?.isUndoing),
+            isRedoing: Boolean(change?.isRedoing),
+            isFlush: Boolean(change?.isFlush),
+            get value(): string { return cached ?? (cached = model.getValue()); },
+          });
+        });
+        return { dispose: unsub };
+      },
+      onDidChangeLanguage: (listener) => {
+        const unsub = model.onDidChangeLanguage(listener);
+        return { dispose: unsub };
+      },
+      onDidChangeOptions: (listener) => {
+        const unsub = model.onDidChangeOptions(listener);
+        return { dispose: unsub };
+      },
     };
   }
 
   asFeatureLike(): ModelLike {
     const model = this.model;
     return {
+      id: this.modelUriKey,
       getValue: () => model.getValue(),
+      getValueInRange: (r: IRange) => model.getValueInRange(r),
       getLineContent: (n: number) => model.getLineContent(n),
       getLineCount: () => model.getLineCount(),
       getOffsetAt: (l: number, c: number) => model.getOffsetAt(l, c),
       getPositionAt: (o: number) => model.getPositionAt(o),
       getLanguageId: () => model.getLanguageId(),
+      getVersionId: () => model.getVersionId(),
+      getWordAtPosition: (pos) => model.getWordAtPosition(pos),
+      getWordUntilPosition: (pos) => model.getWordUntilPosition(pos),
       uri: Uri.parse(this.modelUriKey),
       uriString: this.modelUriKey,
     };

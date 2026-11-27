@@ -1,4 +1,4 @@
-// Default engine: Mono Editor (canvas). Monaco removed from this path.
+// Default engine: Mono Editor (canvas).
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createMonoEditor,
@@ -9,17 +9,23 @@ import {
 import { useSettingsStore } from '@/features/settings/store/settingsStore';
 import { useFileLoader } from './hooks/useFileLoader';
 import { useEditorViewStateStore } from '@/features/editor/store/editorViewStateStore';
+import { useActiveEditorStore } from '@/features/editor/store/activeEditorStore';
 import { useTerminalBoot } from '@/features/termis/components/terminal/hooks/useTerminalBoot';
 import { useMonoPaletteProviders } from './hooks/useMonoPaletteProviders';
 import { useMonoEditorBridge } from './hooks/useMonoEditorBridge';
+import { useLspSync } from './hooks/useLspSync';
+import { buildMonoEditorOptions } from './mono/monoOptions';
 import { usePaletteStore } from '@/store/paletteStore';
+import { useTabStore } from '@/store/tabStore';
 import { commands } from '@/core/extensionAPI/registry/commandRegistry';
-// debug: log a few critical commands on mount
+import { monoKeybindingBridge } from '@/core/keybindings/monoKeybindingBridge';
+import { Breadcrumbs } from './components/BreadCrumb/Breadcrumbs';
 import './CodeEditor.css';
 
 interface CodeEditorProps {
   tabId: string;
   filePath: string;
+  tab?: { showBreadcrumb?: boolean; showStatusBar?: boolean };
 }
 
 function guessLanguage(filePath: string): string {
@@ -36,16 +42,17 @@ function guessLanguage(filePath: string): string {
   return map[ext] || 'plaintext';
 }
 
-export const CodeEditor: React.FC<CodeEditorProps> = ({ tabId, filePath }) => {
+export const CodeEditor: React.FC<CodeEditorProps> = ({ tabId, filePath, tab }) => {
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<IMonoEditor | null>(null);
   const [paletteHost, setPaletteHost] = useState<IMonoEditor | null>(null);
   const settings = useSettingsStore((s) => s.settings);
+  const activeTabId = useTabStore((s) => s.activeTabId);
   const updateViewState = useEditorViewStateStore((s) => s.updateViewState);
   const { initialContent, isLoading, handleEditorChange } = useFileLoader({ tabId, filePath });
 
   useTerminalBoot();
-  useMonoPaletteProviders(paletteHost);
+  useMonoPaletteProviders(activeTabId === tabId ? paletteHost : null);
   useMonoEditorBridge({
     editor: paletteHost,
     tabId,
@@ -53,11 +60,18 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ tabId, filePath }) => {
     settings: settings as Record<string, unknown>,
     isLoading,
   });
+  useLspSync(paletteHost, tabId);
 
-  const fontSize = Number(settings['editor.fontSize'] ?? 14);
-  const lineNumbers = settings['editor.lineNumbers'] === 'off' ? 'off' : 'on';
-  const tabSize = Number(settings['editor.tabSize'] ?? 2);
   const language = useMemo(() => guessLanguage(filePath), [filePath]);
+
+  // Keep active editor store synced when tab becomes active
+  useEffect(() => {
+    if (activeTabId === tabId && editorRef.current) {
+      useActiveEditorStore.getState().setActiveEditor(editorRef.current, tabId);
+      commands.setActiveEditor?.(editorRef.current as any);
+      (window as any).__monoEditor = editorRef.current;
+    }
+  }, [activeTabId, tabId, paletteHost]);
 
   // Create / dispose editor
   useEffect(() => {
@@ -66,33 +80,30 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ tabId, filePath }) => {
 
     registerBuiltinThemes();
     const themePartial = monoThemeService.toPartialEditorTheme();
+    const monoOpts = buildMonoEditorOptions(
+      useSettingsStore.getState().settings as Record<string, unknown>,
+    );
 
     const editor = createMonoEditor(host, {
+      ...monoOpts,
       value: initialContent,
       language,
-      fontSize,
-      tabSize,
-      lineNumbers: lineNumbers as 'on' | 'off',
       theme: themePartial,
     });
 
     editorRef.current = editor;
     setPaletteHost(editor);
+    useActiveEditorStore.getState().registerEditor(tabId, editor);
+    if (useTabStore.getState().activeTabId === tabId) {
+      useActiveEditorStore.getState().setActiveEditor(editor, tabId);
+    }
+    monoKeybindingBridge.attach(editor);
 
-    // Expose for Eruda / console testing
+    // Expose active Mono editor for console/debugging
     const w = window as any;
     w.__monoEditor = editor;
-    console.log('[palette] closeAll registered?', commands.hasCommand?.('workbench.action.closeAllEditors'));
-    console.log('[palette] openSettings registered?', commands.hasCommand?.('workbench.action.openSettings'));
     if (!w.__monoEditors) w.__monoEditors = new Set();
     w.__monoEditors.add(editor);
-    w.__testMarkers = () => {
-      editor.setModelMarkers('test', [
-        { severity: 8, message: 'Unexpected token', startLineNumber: 2, startColumn: 1, endLineNumber: 2, endColumn: 10 },
-        { severity: 4, message: 'Unused variable', startLineNumber: 5, startColumn: 3, endLineNumber: 5, endColumn: 15 },
-      ]);
-      console.log('markers set, count=', editor.getModelMarkers().length);
-    };
 
     // Ctrl+Shift+P from Mono → open app command palette
     const onShowCommands = () => {
@@ -108,21 +119,43 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ tabId, filePath }) => {
     };
     window.addEventListener('mono:executeCommand', onExecuteCommand);
 
+    // 2.2 External Go-to-Line & Go-to-Symbol delegation to Mono Studio's palette
+    const subGotoLine = editor.onDidRequestGoToLine?.((ev) => {
+      const lineNum = ev?.lineNumber ?? editor.getPosition()?.lineNumber ?? 1;
+      usePaletteStore.setState({
+        isOpen: true,
+        isQuickPick: false,
+        query: `:${lineNum}`,
+      });
+    });
+
+    const subGotoSymbol = editor.onDidRequestGoToSymbol?.(() => {
+      usePaletteStore.setState({
+        isOpen: true,
+        isQuickPick: false,
+        query: '@',
+      });
+    });
+
     const sub = editor.onDidChangeModelContent((e) => {
       handleEditorChange(e.value);
     });
 
-    // Layout when host size changes
     const ro = new ResizeObserver(() => {
       editor.layout();
     });
     ro.observe(host);
 
-    editor.focus();
+    if (useTabStore.getState().activeTabId === tabId) {
+      editor.focus();
+    }
 
     return () => {
       ro.disconnect();
       sub.dispose();
+      subGotoLine?.dispose();
+      subGotoSymbol?.dispose();
+      useActiveEditorStore.getState().unregisterEditor(tabId, editor);
       const w = window as any;
       if (w.__monoEditor === editor) w.__monoEditor = null;
       w.__monoEditors?.delete(editor);
@@ -166,6 +199,11 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ tabId, filePath }) => {
       data-engine="mono-editor"
       data-tab-id={tabId}
     >
+      <Breadcrumbs
+        editor={paletteHost}
+        filePath={filePath}
+        showBreadcrumb={tab?.showBreadcrumb !== false}
+      />
       {isLoading && (
         <div style={{ padding: 20, color: 'var(--ms-text-faded)', fontStyle: 'italic' }}>
           Loading…

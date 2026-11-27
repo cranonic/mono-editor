@@ -74,7 +74,7 @@ class KeybindingManager {
    */
   private handleKeyDown(e: KeyboardEvent): void {
     // Structural Guard: Ignore lone meta keystrokes to ensure modifier key combinations register properly
-    if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+    if (['Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'CapsLock', 'NumLock', 'ScrollLock', 'OS', 'Fn'].includes(e.key)) return;
 
     const pressedCombo = this.getEventString(e);
     if (!pressedCombo) return;
@@ -117,7 +117,7 @@ class KeybindingManager {
 
     // ── INTERCEPTIVE CHORD SWALLOW ENGINE ──
     // Blocks unmapped secondary keystrokes within active chord frameworks to 
-    // prevent underlying context instances (e.g., Monaco Editor) from triggering default behaviors.
+    // prevent underlying context instances (e.g., Mono Editor) from triggering default behaviors.
     if (wasInChordMode && !matchFound) {
       e.preventDefault();
       e.stopPropagation();
@@ -153,6 +153,15 @@ class KeybindingManager {
    * Re-orders modifier parameters symmetrically: ctrl + cmd + alt + shift + targetKey.
    */
   private normalizeKeyCombo(combo: string): string {
+    const keyAlias: Record<string, string> = {
+      arrowup: 'up',
+      arrowdown: 'down',
+      arrowleft: 'left',
+      arrowright: 'right',
+      esc: 'escape',
+      del: 'delete',
+      spacebar: 'space',
+    };
     return combo.toLowerCase().split(' ').map(part => {
       const keys = part.split('+');
       const modifiers = { ctrl: false, shift: false, alt: false, cmd: false };
@@ -163,7 +172,7 @@ class KeybindingManager {
         else if (k === 'shift') modifiers.shift = true;
         else if (k === 'alt') modifiers.alt = true;
         else if (k === 'cmd' || k === 'meta') modifiers.cmd = true;
-        else mainKey = k;
+        else mainKey = keyAlias[k] ?? k;
       });
 
       const result = [];
@@ -177,24 +186,121 @@ class KeybindingManager {
     }).join(' ');
   }
 
-  /** Extracts atomic token descriptions directly out of active DOM event elements */
+  /** Extracts atomic token descriptions directly out of active DOM event elements (mobile soft keyboard safe) */
   private getEventString(e: KeyboardEvent): string {
-    const result = [];
-    if (e.ctrlKey) result.push('ctrl');
-    if (e.metaKey) result.push('cmd');
-    if (e.altKey) result.push('alt');
-    if (e.shiftKey) result.push('shift');
+    const shiftedSymbolToBase: Record<string, string> = {
+      '{': '[', '}': ']', '|': '\\', '?': '/', '<': ',', '>': '.', '~': '`', ':': ';', '"': "'", '_': '-',
+    };
 
-    let key = e.key.toLowerCase();
-    
-    if (key === ' ') key = 'space';
-    else if (key === '+') key = 'plus';
-    
-    if (!['control', 'shift', 'alt', 'meta'].includes(key)) {
-      result.push(key);
+    const altGraph = typeof e.getModifierState === 'function' ? e.getModifierState('AltGraph') : false;
+    const alt = e.altKey || (!e.ctrlKey && !e.metaKey && altGraph);
+    let shift = e.shiftKey;
+    const rawKey = e.key || '';
+
+    // Mobile soft keyboards (Hacker's Keyboard, Unexpected Keyboard) can encode Shift into
+    // uppercase `e.key` (e.g. 'K') or shifted punctuation while leaving `e.shiftKey === false`.
+    if (!shift && (e.ctrlKey || e.metaKey || alt) && rawKey.length === 1) {
+      const capsLock = typeof e.getModifierState === 'function' ? e.getModifierState('CapsLock') : false;
+      if (rawKey >= 'A' && rawKey <= 'Z' && !capsLock) shift = true;
+      else if (shiftedSymbolToBase[rawKey]) shift = true;
     }
 
+    let key = this.extractKeyToken(e, shiftedSymbolToBase);
+    if (!key) return '';
+
+    const result: string[] = [];
+    if (e.ctrlKey) result.push('ctrl');
+    if (e.metaKey) result.push('cmd');
+    if (alt) result.push('alt');
+    if (shift) result.push('shift');
+    result.push(key);
+
     return result.join('+');
+  }
+
+  private extractKeyToken(e: KeyboardEvent, shiftedSymbolToBase: Record<string, string>): string {
+    const code = e.code || '';
+    if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
+    if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+    if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code.toLowerCase();
+    switch (code) {
+      case 'Space': return 'space';
+      case 'ArrowUp': return 'up';
+      case 'ArrowDown': return 'down';
+      case 'ArrowLeft': return 'left';
+      case 'ArrowRight': return 'right';
+      case 'Enter':
+      case 'NumpadEnter': return 'enter';
+      case 'Tab':
+      case 'Backspace':
+      case 'Delete':
+      case 'Escape':
+      case 'Home':
+      case 'End':
+      case 'PageUp':
+      case 'PageDown': return code.toLowerCase();
+      case 'Slash': return '/';
+      case 'Period': return '.';
+      case 'Comma': return ',';
+      case 'Backquote': return '`';
+      case 'BracketLeft': return '[';
+      case 'BracketRight': return ']';
+      case 'Backslash': return '\\';
+      case 'Minus': return '-';
+      case 'Equal': return '=';
+      default: break;
+    }
+
+    const rawKey = e.key || '';
+    const lower = rawKey.toLowerCase();
+    const kc = e.keyCode || e.which || 0;
+
+    if (['control', 'shift', 'alt', 'meta', 'altgraph', 'capslock', 'numlock', 'scrolllock', 'os', 'fn'].includes(lower)) {
+      return '';
+    }
+
+    if (lower && lower !== 'unidentified' && lower !== 'process' && lower !== 'dead') {
+      if (lower === ' ' || lower === 'spacebar') return 'space';
+      if (lower === '+') return 'plus';
+      if (lower === 'arrowup') return 'up';
+      if (lower === 'arrowdown') return 'down';
+      if (lower === 'arrowleft') return 'left';
+      if (lower === 'arrowright') return 'right';
+      if (lower === 'esc') return 'escape';
+      if (lower === 'del') return 'delete';
+
+      if (rawKey.length === 1) {
+        const cc = rawKey.charCodeAt(0);
+        if (cc >= 1 && cc <= 26 && (e.ctrlKey || e.metaKey)) {
+          if (kc === 8) return 'backspace';
+          if (kc === 9) return 'tab';
+          if (kc === 13) return 'enter';
+          return String.fromCharCode(96 + cc);
+        }
+        if ((e.ctrlKey || e.metaKey || e.altKey) && shiftedSymbolToBase[rawKey]) {
+          return shiftedSymbolToBase[rawKey];
+        }
+        return lower;
+      }
+
+      return lower;
+    }
+
+    if (kc && kc !== 229) {
+      if (kc >= 65 && kc <= 90) return String.fromCharCode(kc + 32);
+      if (kc >= 48 && kc <= 57) return String.fromCharCode(kc);
+      if (kc >= 112 && kc <= 135) return `f${kc - 111}`;
+      const map: Record<number, string> = {
+        8: 'backspace', 9: 'tab', 13: 'enter', 27: 'escape', 32: 'space',
+        33: 'pageup', 34: 'pagedown', 35: 'end', 36: 'home',
+        37: 'left', 38: 'up', 39: 'right', 40: 'down', 46: 'delete',
+        186: ';', 187: '=', 188: ',', 189: '-', 190: '.', 191: '/', 192: '`',
+        219: '[', 220: '\\', 221: ']', 222: "'",
+      };
+      if (map[kc]) return map[kc];
+    }
+
+    return '';
   }
   
   /** Registers a standalone dynamic macro configuration directly into hot operational stacks */

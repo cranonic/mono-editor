@@ -2,11 +2,11 @@
 import { generateLspLanguageSettings } from '../lspFactory';
 
 // When HTML5 extension is installed it registers dynamicConfig and useLspSync
-// prefers the external vscode-html-language-server (Monaco becomes fallback only).
+// prefers the external vscode-html-language-server (Mono becomes fallback only).
 export const htmlLspProperties = generateLspLanguageSettings(
   'HTML',
   'html',
-  'vscode-html-language-server (or Monaco fallback)',
+  'vscode-html-language-server (or Mono fallback)',
   {
     'lsp.html.tagMatching': {
       title:               'Tag Matching Highlight',

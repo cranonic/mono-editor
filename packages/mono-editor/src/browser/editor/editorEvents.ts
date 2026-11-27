@@ -20,6 +20,7 @@ import type { ModelChange, TextModel } from '../../common/model/TextModel';
 import type {
   ICursorPositionChangedEvent,
   ICursorSelectionChangedEvent,
+  IGoToLineRequestEvent,
   IScrollEvent,
   MonoContentChangeEvent,
 } from './editorTypes';
@@ -76,6 +77,8 @@ export class EditorEventBus {
   private markerListeners = new Set<(markers: IMarker[]) => void>();
   private modelListeners = new Set<(e: IModelChangedEvent) => void>();
   private inlayHintClickListeners = new Set<(e: IInlayHintClickEvent) => void>();
+  private goToLineListeners = new Set<(e: IGoToLineRequestEvent) => void>();
+  private goToSymbolListeners = new Set<() => void>();
 
   altVersionId = 1;
   private lastChange: ModelChange | undefined;
@@ -112,6 +115,8 @@ export class EditorEventBus {
   onDidChangeMarkers(l: (markers: IMarker[]) => void): MonoDisposable { return add(this.markerListeners, l); }
   onDidChangeModel(l: (e: IModelChangedEvent) => void): MonoDisposable { return add(this.modelListeners, l); }
   onDidClickInlayHint(l: (e: IInlayHintClickEvent) => void): MonoDisposable { return add(this.inlayHintClickListeners, l); }
+  onDidRequestGoToLine(l: (e: IGoToLineRequestEvent) => void): MonoDisposable { return add(this.goToLineListeners, l); }
+  onDidRequestGoToSymbol(l: () => void): MonoDisposable { return add(this.goToSymbolListeners, l); }
 
   emitContent(model: TextModel, change?: ModelChange): void {
     this.altVersionId++;
@@ -181,6 +186,8 @@ export class EditorEventBus {
   emitMarkers(markers: IMarker[]): void { safeEmit(this.markerListeners, markers); }
   emitModelChanged(ev: IModelChangedEvent): void { safeEmit(this.modelListeners, ev); }
   emitInlayHintClick(ev: IInlayHintClickEvent): void { safeEmit(this.inlayHintClickListeners, ev); }
+  emitRequestGoToLine(ev: IGoToLineRequestEvent): void { safeEmit(this.goToLineListeners, ev); }
+  emitRequestGoToSymbol(): void { safeEmitVoid(this.goToSymbolListeners); }
   emitDispose(): void { safeEmitVoid(this.disposeListeners); }
 
   dispose(): void {
@@ -195,5 +202,6 @@ export class EditorEventBus {
     this.mouseLeaveListeners.clear(); this.contextMenuListeners.clear();
     this.keyDownListeners.clear(); this.keyUpListeners.clear(); this.disposeListeners.clear();
     this.markerListeners.clear(); this.modelListeners.clear(); this.inlayHintClickListeners.clear();
+    this.goToLineListeners.clear(); this.goToSymbolListeners.clear();
   }
 }

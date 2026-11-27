@@ -1,6 +1,7 @@
 import type { MonoContextMenuOptions } from '../../common/config/editorOptions';
 import type { SelectionState } from '../../common/core/SelectionState';
 import type { TextModel } from '../../common/model/TextModel';
+import { readClipboardText, writeClipboardText } from '../../platform/clipboard/clipboard';
 import {
   BUILTIN_CLIPBOARD_COMMANDS,
   type ResolvedMenuEntry,
@@ -233,16 +234,7 @@ export class ContextMenuController {
   async copy(): Promise<void> {
     const text = this.getSelectionText();
     if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      ta.remove();
-    }
+    await writeClipboardText(text);
   }
 
   async cut(): Promise<void> {
@@ -265,8 +257,7 @@ export class ContextMenuController {
   }
 
   async paste(): Promise<void> {
-    let text = '';
-    try { text = await navigator.clipboard.readText(); } catch { return; }
+    const text = await readClipboardText();
     if (!text) return;
     if (!this.selection.isEmpty) {
       const a = this.selection.anchor;
@@ -280,12 +271,12 @@ export class ContextMenuController {
         this.model.getOffsetAt(b.lineNumber, b.column),
       );
       this.model.replaceRange(start, end, text);
-      const pos = this.model.getPositionAt(start + text.length);
+      const pos = this.model.getPositionAt(start + this.model.normalizeEol(text).length);
       this.selection.setCaret(pos.lineNumber, pos.column);
     } else {
       const off = this.model.getOffsetAt(this.selection.active.lineNumber, this.selection.active.column);
       this.model.insert(off, text);
-      const pos = this.model.getPositionAt(off + text.length);
+      const pos = this.model.getPositionAt(off + this.model.normalizeEol(text).length);
       this.selection.setCaret(pos.lineNumber, pos.column);
     }
     this.onEdit();

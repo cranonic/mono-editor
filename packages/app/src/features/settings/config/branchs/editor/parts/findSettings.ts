@@ -2,7 +2,6 @@
 import type { IConfigurationSection } from '@/core/extensionAPI/registry/configurationRegistry';
 
 export const findProperties: IConfigurationSection['properties'] = {
-
   'editor.find.cursorMoveOnType': {
     title: 'Cursor Move On Type',
     type: 'boolean',
@@ -10,6 +9,7 @@ export const findProperties: IConfigurationSection['properties'] = {
     defaultValue: true,
     order: 1,
     tags: ['find', 'search'],
+    supportStatus: 'not-available',
     description: 'Controls whether the cursor should jump to find matches while typing.',
   },
 
@@ -20,6 +20,7 @@ export const findProperties: IConfigurationSection['properties'] = {
     defaultValue: 'always',
     order: 2,
     tags: ['find', 'search'],
+    supportStatus: 'not-available',
     description: 'Controls whether the search string in the Find Widget is seeded from the editor selection.',
     enum: ['never', 'always', 'selection'],
     enumItemLabels: ['Never', 'Always', 'Selection'],
@@ -37,6 +38,7 @@ export const findProperties: IConfigurationSection['properties'] = {
     defaultValue: 'never',
     order: 3,
     tags: ['find', 'search'],
+    supportStatus: 'not-available',
     description: 'Controls the condition for turning on "Find in Selection" automatically.',
     enum: ['never', 'always', 'multiline'],
     enumItemLabels: ['Never', 'Always', 'Multiline'],
@@ -54,6 +56,8 @@ export const findProperties: IConfigurationSection['properties'] = {
     defaultValue: true,
     order: 4,
     tags: ['find'],
+    supportStatus: 'removed',
+    supportNote: 'Monaco-specific top-padding layout workaround — Mono Find widget overlays cleanly.',
     description: 'Controls whether the Find Widget should add extra lines on top of the editor.',
   },
 
@@ -64,14 +68,12 @@ export const findProperties: IConfigurationSection['properties'] = {
     defaultValue: true,
     order: 5,
     tags: ['find'],
+    supportStatus: 'not-available',
     description: 'Controls whether the search automatically restarts from the beginning (or the end) when no further matches can be found.',
   },
 };
 
-
-// src/features/settings/config/branchs/editor/parts/formattingSettings.ts
 export const formattingProperties: IConfigurationSection['properties'] = {
-
   'editor.formatOnSave': {
     title: 'Format On Save',
     type: 'boolean',
@@ -89,6 +91,7 @@ export const formattingProperties: IConfigurationSection['properties'] = {
     defaultValue: 'file',
     order: 2,
     tags: ['formatting'],
+    supportStatus: 'not-available',
     markdownDescription: 'Controls if format on save formats the whole file or only modifications. Only applies when `#editor.formatOnSave#` is enabled.',
     enum: ['file', 'modifications', 'modificationsIfAvailable'],
     enumItemLabels: ['File', 'Modifications', 'Modifications If Available'],
@@ -106,6 +109,7 @@ export const formattingProperties: IConfigurationSection['properties'] = {
     defaultValue: false,
     order: 3,
     tags: ['formatting'],
+    supportStatus: 'not-available',
     description: 'Controls whether the editor should automatically format the line after typing.',
   },
 
@@ -115,8 +119,8 @@ export const formattingProperties: IConfigurationSection['properties'] = {
     subCategory: 'Format',
     defaultValue: false,
     order: 4,
-    tags: ['formatting'],
-    description: 'Controls whether the editor should automatically format the pasted content. A formatter must be available and the formatter should be able to format a range in a document.',
+    tags: ['formatting', 'mono'],
+    description: 'Controls whether the editor should automatically format the pasted content when a formatter is registered.',
   },
 
   'editor.defaultFormatter': {

@@ -15,6 +15,7 @@ import type { DecorationsCollection } from '../../common/decorations/Decorations
 import type { IEditorDecorationsCollection, IModelDeltaDecoration } from '../../common/decorations/types';
 import type { TokenizationSupport } from '../../common/languages/tokenization/TokenizationSupport';
 import type { TextModel } from '../../common/model/TextModel';
+import type { DocumentStructureService } from '../../common/structure/StructureBuilder';
 import type { FoldingModel } from '../../common/viewModel/FoldingModel';
 import type { CommandService } from '../../platform/commands/CommandService';
 import type { CanvasRenderer } from '../render/CanvasRenderer';
@@ -257,6 +258,7 @@ export function getResolvedEditorOptions(opts: EditorOptionState): Readonly<Mono
     formatOnPaste: opts.formatOnPaste,
     readOnly: opts.readOnly,
     folding: opts.foldingEnabled,
+    foldingStrategy: opts.foldingStrategy,
     glyphMargin: opts.glyphMargin,
     renderWhitespace: opts.renderWhitespace,
     rulers: [...opts.rulers],
@@ -313,17 +315,19 @@ export function subscribeActiveTextModel(params: {
   tokenization: TokenizationSupport;
   bracketColorizer: BracketColorizer;
   folding: FoldingModel;
+  structure: DocumentStructureService;
   selection: SelectionState;
   view: ViewController;
   contributions: Map<string, IEditorContribution>;
   onContentSizeCheck: () => void;
 }): () => void {
-  const { model, events, tokenization, bracketColorizer, folding, selection, view, contributions, onContentSizeCheck } = params;
+  const { model, events, tokenization, bracketColorizer, folding, structure, selection, view, contributions, onContentSizeCheck } = params;
   const u1 = model.onDidChange((versionId, change) => {
     events.recordModelChange(change);
     tokenization.applyChange(change, versionId);
     if (!change || change.full) bracketColorizer.invalidateAll();
     else bracketColorizer.applyChange(change.startLine, change.newLineCount - change.oldLineCount, versionId);
+    structure.invalidate();
     folding.updateSync();
     if (folding.isLineHidden(selection.active.lineNumber)) folding.unfoldContaining(selection.active.lineNumber);
     for (const c of contributions.values()) c.onModelContentChange?.(versionId);

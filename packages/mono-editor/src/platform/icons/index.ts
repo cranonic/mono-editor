@@ -94,6 +94,8 @@ export function kindToCodicon(kind?: number): string {
     22: 'symbol-event',
     23: 'symbol-operator',
     24: 'symbol-parameter',
+    25: 'account',
+    26: 'issues',
   };
   return map[kind ?? 0] ?? 'symbol-text';
 }

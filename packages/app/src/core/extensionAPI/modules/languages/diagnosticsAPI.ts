@@ -1,6 +1,6 @@
 // src/core/extensionAPI/modules/languages/diagnosticsAPI.ts
 
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import { useProblemsStore } from '@/features/termis/components/problems/store/problemsStore';
 import { msEvents } from '@/core/extensionAPI/events/EventManager';
 

@@ -1,6 +1,6 @@
 // src/features/termis/components/output/problemsStore.ts
 import { create } from 'zustand';
-import * as monaco from 'monaco-editor';
+import * as monaco from '@/core/mono';
 import { msEvents } from '@/core/extensionAPI/events/EventManager';
 
 interface ProblemsState {

@@ -1,62 +1,176 @@
 // src/ui/components/QuickKeyboard/QuickKeyboardBar.tsx
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import * as monaco from 'monaco-editor';
-import { useQuickKeyboardStore } from '@/store/quickKeyboardStore';
+import { MonoCommands, type IMonoEditor } from '@mono/editor';
+import * as monaco from '@/core/mono';
+import {
+  useQuickKeyboardStore,
+  type ModifierKey,
+  type ModifierState,
+} from '@/store/quickKeyboardStore';
 import { useTabStore } from '@/store/tabStore';
 import { useSettingsStore } from '@/features/settings/store/settingsStore';
+import { useActiveEditorStore } from '@/features/editor/store/activeEditorStore';
 import { commands } from '@/core/extensionAPI/registry/commandRegistry';
 import { Icon } from '@/ui/components/Icon/IconRegistry';
 import './QuickKeyboardBar.css';
 
-type Modifier = 'ctrl' | 'alt' | 'shift';
-interface Mods { ctrl: boolean; alt: boolean; shift: boolean; }
+interface Mods {
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+}
 
-const asStandalone = (e: any) => e as monaco.editor.IStandaloneCodeEditor;
-const getActiveEditor = () => {
-  const editors = monaco.editor.getEditors();
-  const focused = editors.find(e => e.hasTextFocus());
-  return (focused ?? editors[0]) ? asStandalone(focused ?? editors[0]) : undefined;
-};
+function getActiveMonoEditor(): IMonoEditor | null {
+  const fromStore = useActiveEditorStore.getState().activeEditor;
+  if (fromStore) return fromStore;
+  const winEd = (window as any).__monoEditor as IMonoEditor | undefined;
+  if (winEd) return winEd;
+  const editors = monaco.editor.getEditors?.() ?? [];
+  return (editors.find((e: any) => e.hasTextFocus?.()) ?? editors[0] ?? null) as IMonoEditor | null;
+}
 
-const runModifierAction = (char: string, mods: Mods, editor: monaco.editor.IStandaloneCodeEditor) => {
+function getMonoInputTarget(editor: IMonoEditor): HTMLElement | null {
+  const root = editor.getDomNode?.();
+  if (!root) return null;
+  return (root.querySelector('textarea') as HTMLElement | null) ?? root;
+}
+
+function dispatchMonoKey(
+  editor: IMonoEditor,
+  key: string,
+  code: string,
+  keyCode: number,
+  mods: Mods,
+): boolean {
+  const target = getMonoInputTarget(editor);
+  if (!target) return false;
+  const evt = new KeyboardEvent('keydown', {
+    key,
+    code,
+    keyCode,
+    which: keyCode,
+    ctrlKey: mods.ctrl,
+    altKey: mods.alt,
+    shiftKey: mods.shift,
+    metaKey: false,
+    bubbles: true,
+    cancelable: true,
+  });
+  target.dispatchEvent(evt);
+  return evt.defaultPrevented;
+}
+
+function charToCode(char: string): { code: string; keyCode: number } {
+  const upper = char.toUpperCase();
+  if (upper >= 'A' && upper <= 'Z') {
+    return { code: `Key${upper}`, keyCode: upper.charCodeAt(0) };
+  }
+  if (char >= '0' && char <= '9') {
+    return { code: `Digit${char}`, keyCode: char.charCodeAt(0) };
+  }
+  const punctuation: Record<string, [string, number]> = {
+    '/': ['Slash', 191],
+    '.': ['Period', 190],
+    ',': ['Comma', 188],
+    ';': ['Semicolon', 186],
+    '[': ['BracketLeft', 219],
+    ']': ['BracketRight', 221],
+    '\\': ['Backslash', 220],
+    '-': ['Minus', 189],
+    '=': ['Equal', 187],
+    '`': ['Backquote', 192],
+    "'": ['Quote', 222],
+  };
+  const hit = punctuation[char];
+  if (hit) return { code: hit[0], keyCode: hit[1] };
+  return { code: '', keyCode: upper.charCodeAt(0) || 0 };
+}
+
+function runModifierCharAction(char: string, mods: Mods, editor: IMonoEditor): void {
   const lower = char.toLowerCase();
 
-  if (mods.ctrl) {
-    switch (lower) {
-      case 'a': editor.setSelection(editor.getModel()!.getFullModelRange()); break;
-      case 'c': document.execCommand('copy'); break;
-      case 'x': document.execCommand('cut'); break;
-      case 'v':
-        navigator.clipboard?.readText()
-          .then(text => editor.trigger('keyboard', 'type', { text }))
-          .catch(() => document.execCommand('paste'));
-        break;
-      case 'z': editor.trigger('keyboard', 'undo', null); break;
-      case 'y': editor.trigger('keyboard', 'redo', null); break;
-      case 's': editor.getAction('editor.action.save')?.run(); break;
-      case 'f': editor.getAction('actions.find')?.run(); break;
-      case 'd': editor.getAction('editor.action.addSelectionToNextFindMatch')?.run(); break;
-      case '/': editor.getAction('editor.action.commentLine')?.run(); break;
-      case 'p':
-        // Ctrl+P Global File Search ট্রিগার করার জন্য
-        window.dispatchEvent(new KeyboardEvent('keydown', {
-          key: 'p', ctrlKey: true, shiftKey: mods.shift, bubbles: true, cancelable: true
-        }));
-        break;
-      default: break;
-    }
-  } else if (mods.alt) {
-    if (lower === 'z') editor.getAction('editor.action.toggleWordWrap')?.run();
-  } else if (mods.shift && !mods.alt) {
-    const shiftMap: Record<string,string> = { '1':'!','2':'@','3':'#','4':'$','5':'%','6':'^','7':'&','8':'*','9':'(','0':')','-':'_','=':'+','[':'{',']':'}','\\':'|',';':':','\'':'"',',':'<','.':'>','/':'?' };
-    editor.trigger('keyboard', 'type', { text: shiftMap[lower] ?? lower.toUpperCase() });
+  // Workbench shortcuts that bubble to window
+  if (mods.ctrl && lower === 'p') {
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'p',
+        code: 'KeyP',
+        keyCode: 80,
+        ctrlKey: true,
+        shiftKey: mods.shift,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    return;
   }
-};
+
+  // Explicit save command
+  if (mods.ctrl && !mods.alt && !mods.shift && lower === 's') {
+    if (commands.hasCommand('workbench.action.files.save')) {
+      void commands.executeCommand('workbench.action.files.save');
+    } else {
+      void editor.executeCommand?.('editor.action.save');
+    }
+    return;
+  }
+
+  // Touch-safe paste
+  if (mods.ctrl && !mods.alt && !mods.shift && lower === 'v') {
+    if (navigator.clipboard?.readText) {
+      navigator.clipboard
+        .readText()
+        .then((text) => {
+          if (text) editor.trigger?.('keyboard', 'type', { text });
+        })
+        .catch(() => {
+          void editor.executeCommand?.('editor.action.clipboardPasteAction');
+        });
+    } else {
+      void editor.executeCommand?.('editor.action.clipboardPasteAction');
+    }
+    return;
+  }
+
+  // Shift-only printable character typing
+  if (mods.shift && !mods.ctrl && !mods.alt) {
+    const shiftMap: Record<string, string> = {
+      '1': '!', '2': '@', '3': '#', '4': '$', '5': '%',
+      '6': '^', '7': '&', '8': '*', '9': '(', '0': ')',
+      '-': '_', '=': '+', '[': '{', ']': '}', '\\': '|',
+      ';': ':', "'": '"', ',': '<', '.': '>', '/': '?',
+    };
+    editor.trigger?.('keyboard', 'type', { text: shiftMap[lower] ?? lower.toUpperCase() });
+    return;
+  }
+
+  // Route through Mono's native KeybindingService / KeyboardController
+  const { code, keyCode } = charToCode(char);
+  const handled = dispatchMonoKey(editor, lower, code, keyCode, mods);
+  if (handled) return;
+
+  // Fallbacks for direct Mono commands
+  if (mods.ctrl && !mods.alt) {
+    if (lower === 'a') void editor.executeCommand?.(MonoCommands.SelectAll);
+    else if (lower === 'z') void editor.executeCommand?.(mods.shift ? MonoCommands.Redo : MonoCommands.Undo);
+    else if (lower === 'y') void editor.executeCommand?.(MonoCommands.Redo);
+    else if (lower === '/') void editor.executeCommand?.(MonoCommands.CommentLine);
+    else if (lower === 'f') editor.revealFind?.();
+    else if (lower === 'h') editor.revealReplace?.();
+    else if (lower === 'g') void editor.executeCommand?.(MonoCommands.GoToLine);
+    else if (lower === 'd') void editor.executeCommand?.(MonoCommands.AddSelectionToNextFindMatch);
+  } else if (mods.alt && !mods.ctrl && lower === 'z') {
+    void editor.executeCommand?.('editor.action.toggleWordWrap');
+  }
+}
 
 function useKeyboardOffset(isVisible: boolean) {
   const [offset, setOffset] = useState(0);
   useEffect(() => {
-    if (!isVisible) { setOffset(0); return; }
+    if (!isVisible) {
+      setOffset(0);
+      return;
+    }
     if ('virtualKeyboard' in navigator) {
       const vk = (navigator as any).virtualKeyboard;
       vk.overlaysContent = true;
@@ -68,10 +182,29 @@ function useKeyboardOffset(isVisible: boolean) {
   return offset;
 }
 
+const SPECIAL_KEY_MAP: Record<string, [string, string, number]> = {
+  cursorUp: ['ArrowUp', 'ArrowUp', 38],
+  cursorDown: ['ArrowDown', 'ArrowDown', 40],
+  cursorLeft: ['ArrowLeft', 'ArrowLeft', 37],
+  cursorRight: ['ArrowRight', 'ArrowRight', 39],
+  tab: ['Tab', 'Tab', 9],
+  enter: ['Enter', 'Enter', 13],
+  esc: ['Escape', 'Escape', 27],
+  backspace: ['Backspace', 'Backspace', 8],
+  delete: ['Delete', 'Delete', 46],
+};
+
 export const QuickKeyboardBar: React.FC = () => {
-  const { isVisible, keys, setKeys, modifiers, toggleModifier, resetModifiers } = useQuickKeyboardStore();
+  const {
+    isVisible,
+    keys,
+    setKeys,
+    modifierStates,
+    toggleModifier,
+    consumeArmedModifiers,
+  } = useQuickKeyboardStore();
   const { activeTabId, tabs } = useTabStore();
-  const settings = useSettingsStore(s => s.settings);
+  const settings = useSettingsStore((s) => s.settings);
   const keyboardOffset = useKeyboardOffset(isVisible);
   const hiddenInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -80,151 +213,183 @@ export const QuickKeyboardBar: React.FC = () => {
     if (Array.isArray(configKeys)) setKeys(configKeys);
   }, [settings, setKeys]);
 
+  // Intercept soft-keyboard printable character input while a sticky modifier is armed/locked
   useEffect(() => {
-    const unsub = useQuickKeyboardStore.subscribe((state) => {
-      const { ctrl, alt, shift } = state.modifiers;
-      if (ctrl || alt || shift) {
-        hiddenInputRef.current?.focus();
-      } else {
-        hiddenInputRef.current?.blur();
-        getActiveEditor()?.focus();
-      }
-    });
-    return unsub;
-  }, []);
-
-  useEffect(() => {
-    const el = hiddenInputRef.current;
-    if (!el) return;
-
-    const onInput = () => {
-      const char = el.value;
-      el.value = ''; 
-      if (!char || char.length > 1) return;
-
+    const onBeforeInput = (e: InputEvent) => {
       const { ctrl, alt, shift } = useQuickKeyboardStore.getState().modifiers;
       if (!ctrl && !alt && !shift) return;
+      const char = e.data;
+      if (!char || char.length !== 1) return;
+      const editor = getActiveMonoEditor();
+      if (!editor) return;
+      const dom = editor.getDomNode?.();
+      if (!dom || !dom.contains(e.target as Node)) return;
 
-      const editor = getActiveEditor();
-      if (editor) runModifierAction(char, { ctrl, alt, shift }, editor);
-      
-      resetModifiers();
+      e.preventDefault();
+      e.stopPropagation();
+      runModifierCharAction(char, { ctrl, alt, shift }, editor);
+      consumeArmedModifiers();
     };
-    el.addEventListener('input', onInput);
-    return () => el.removeEventListener('input', onInput);
-  }, [resetModifiers]);
 
-  const handleKeyClick = useCallback((action: string) => {
-    const MODIFIER_ACTIONS: readonly string[] = ['ctrl', 'alt', 'shift'];
-    if (MODIFIER_ACTIONS.includes(action)) {
-      toggleModifier(action as Modifier);
-      return;
-    }
+    window.addEventListener('beforeinput', onBeforeInput as EventListener, true);
+    return () => window.removeEventListener('beforeinput', onBeforeInput as EventListener, true);
+  }, [consumeArmedModifiers]);
 
-    const { ctrl, alt, shift } = useQuickKeyboardStore.getState().modifiers;
-    const mods: Mods = { ctrl, alt, shift };
-    const hasModifier = ctrl || alt || shift;
-    
-    const rawTab = tabs.find(t => t.id === activeTabId);
-    if (rawTab?.type === 'termis') {
-      const tc = (rawTab as any).terminalComponent;
-      if (action.startsWith('type_') && tc?.terminal) {
-        tc.terminal.paste?.(action.split('_')[1]);
-      } else if (tc?.terminal?.textarea) {
-        const map: any = { esc: [27,'Escape'], tab: [9,'Tab'], enter: [13,'Enter'], backspace: [8,'Backspace'], cursorUp: [38,'ArrowUp'], cursorDown: [40,'ArrowDown'], cursorLeft: [37,'ArrowLeft'], cursorRight: [39,'ArrowRight'] };
-        if (map[action]) {
-          tc.terminal.textarea.dispatchEvent(new KeyboardEvent('keydown', { key: map[action][1], keyCode: map[action][0], which: map[action][0], ctrlKey: ctrl, altKey: alt, shiftKey: shift, bubbles: true, cancelable: true }));
-        }
+  const handleKeyClick = useCallback(
+    (action: string) => {
+      if (action === 'ctrl' || action === 'alt' || action === 'shift') {
+        toggleModifier(action as ModifierKey);
+        return;
       }
-      if (hasModifier) resetModifiers();
-      return;
-    }
 
-    const editor = getActiveEditor();
-    if (!editor) return;
+      const { ctrl, alt, shift } = useQuickKeyboardStore.getState().modifiers;
+      const mods: Mods = { ctrl, alt, shift };
+      const hasModifier = ctrl || alt || shift;
 
-    if (['cursorUp', 'cursorDown', 'cursorLeft', 'cursorRight', 'tab', 'enter', 'esc', 'backspace', 'delete'].includes(action)) {
-       if (action === 'cursorUp') {
-         if (mods.alt) editor.getAction('editor.action.moveLinesUpAction')?.run();
-         else editor.trigger('keyboard', 'cursorUp', null);
-       } else if (action === 'cursorDown') {
-         if (mods.alt) editor.getAction('editor.action.moveLinesDownAction')?.run();
-         else editor.trigger('keyboard', 'cursorDown', null);
-       } else if (action === 'cursorLeft') {
-         if (mods.ctrl) editor.trigger('keyboard', 'cursorWordLeft', null);
-         else editor.trigger('keyboard', 'cursorLeft', null);
-       } else if (action === 'cursorRight') {
-         if (mods.ctrl) editor.trigger('keyboard', 'cursorWordRight', null);
-         else editor.trigger('keyboard', 'cursorRight', null);
-       } else if (action === 'backspace') {
-         editor.trigger('keyboard', 'deleteLeft', null);
-       } else if (action === 'enter') {
-         editor.trigger('keyboard', 'type', { text: '\n' });
-       } else if (action === 'esc') {
-         editor.trigger('keyboard', 'cancelSelection', null);
-       } else if (action === 'tab') {
-         editor.trigger('keyboard', 'tab', null);
-       }
-       if (hasModifier) resetModifiers();
-       return;
-    }
+      const rawTab = tabs.find((t) => t.id === activeTabId);
+      if (rawTab?.type === 'termis') {
+        const tc = (rawTab as any).terminalComponent;
+        if (action.startsWith('type_') && tc?.terminal) {
+          tc.terminal.paste?.(action.slice(5));
+        } else if (tc?.terminal?.textarea && SPECIAL_KEY_MAP[action]) {
+          const [key, code, keyCode] = SPECIAL_KEY_MAP[action]!;
+          tc.terminal.textarea.dispatchEvent(
+            new KeyboardEvent('keydown', {
+              key,
+              code,
+              keyCode,
+              which: keyCode,
+              ctrlKey: ctrl,
+              altKey: alt,
+              shiftKey: shift,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+        }
+        if (hasModifier) consumeArmedModifiers();
+        return;
+      }
 
-    if (action.startsWith('type_')) {
-      const char = action.split('_')[1];
-      if (hasModifier) runModifierAction(char, mods, editor);
-      else editor.trigger('keyboard', 'type', { text: char });
-      if (hasModifier) resetModifiers();
-      return;
-    }
+      const editor = getActiveMonoEditor();
+      if (!editor) return;
 
-    if (commands.hasCommand(action)) {
-      commands.executeCommand(action);
-      if (hasModifier) resetModifiers();
-      return;
-    }
+      // Special keys: route through real Mono keydown / MonoCommands
+      if (SPECIAL_KEY_MAP[action]) {
+        const [key, code, keyCode] = SPECIAL_KEY_MAP[action]!;
+        if (action === 'cursorUp' && mods.alt && !mods.ctrl) {
+          void editor.executeCommand?.(
+            mods.shift ? MonoCommands.CopyLinesUp : MonoCommands.MoveLinesUp,
+          );
+        } else if (action === 'cursorDown' && mods.alt && !mods.ctrl) {
+          void editor.executeCommand?.(
+            mods.shift ? MonoCommands.CopyLinesDown : MonoCommands.MoveLinesDown,
+          );
+        } else {
+          dispatchMonoKey(editor, key, code, keyCode, mods);
+        }
+        editor.focus?.();
+        if (hasModifier) consumeArmedModifiers();
+        return;
+      }
 
-    editor.trigger('keyboard', action, null);
-    if (hasModifier) resetModifiers();
-  }, [toggleModifier, resetModifiers, tabs, activeTabId]);
+      if (action.startsWith('type_')) {
+        const char = action.slice(5);
+        if (hasModifier) runModifierCharAction(char, mods, editor);
+        else editor.trigger?.('keyboard', 'type', { text: char });
+        editor.focus?.();
+        if (hasModifier) consumeArmedModifiers();
+        return;
+      }
 
-  const activeTab = tabs.find(t => t.id === activeTabId);
+      if (action === 'actions.find' || action === 'editor.action.startFindAction') {
+        editor.revealFind?.();
+        if (hasModifier) consumeArmedModifiers();
+        return;
+      }
+
+      if (commands.hasCommand(action)) {
+        void commands.executeCommand(action);
+        if (hasModifier) consumeArmedModifiers();
+        return;
+      }
+
+      if (typeof editor.executeCommand === 'function') {
+        void editor.executeCommand(action);
+      } else {
+        editor.trigger?.('keyboard', action, null);
+      }
+      editor.focus?.();
+      if (hasModifier) consumeArmedModifiers();
+    },
+    [toggleModifier, consumeArmedModifiers, tabs, activeTabId],
+  );
+
+  const activeTab = tabs.find((t) => t.id === activeTabId);
   if (!(isVisible && !!activeTab && activeTab.showQuickBar !== false)) return null;
 
-  const floatingStyle: React.CSSProperties = keyboardOffset > 0 ? {
-    position: 'absolute', bottom: `${Math.max(0, keyboardOffset - 24)}px`,
-    left: 0, right: 0, zIndex: 99999, boxShadow: '0 -4px 10px rgba(0,0,0,0.4)', borderTop: '1px solid var(--ms-accent)'
-  } : {};
+  const floatingStyle: React.CSSProperties =
+    keyboardOffset > 0
+      ? {
+          position: 'absolute',
+          bottom: `${Math.max(0, keyboardOffset - 24)}px`,
+          left: 0,
+          right: 0,
+          zIndex: 99999,
+          boxShadow: '0 -4px 10px rgba(0,0,0,0.4)',
+          borderTop: '1px solid var(--ms-accent)',
+        }
+      : {};
 
   return (
-    <div 
-      className="ms-quick-keyboard" 
+    <div
+      className="ms-quick-keyboard"
       style={floatingStyle}
-      onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
     >
       <input
         ref={hiddenInputRef}
         type="text"
-        autoCapitalize="none"
-        spellCheck={false}
-        autoComplete="off"
-        autoCorrect="off"
-        style={{
-          position: 'fixed', top: '50vh', left: '50vw',
-          width: '10px', height: '10px', opacity: 0.01,
-          pointerEvents: 'none', zIndex: -1
-        }}
+        aria-hidden="true"
+        tabIndex={-1}
+        style={{ display: 'none' }}
       />
 
       {keys.map((k: any) => {
-        const isModActive = (['ctrl', 'alt', 'shift'] as string[]).includes(k.action) && modifiers[k.action as Modifier];
+        const isModKey = k.action === 'ctrl' || k.action === 'alt' || k.action === 'shift';
+        const modState: ModifierState = isModKey
+          ? modifierStates[k.action as ModifierKey]
+          : 'off';
+        const modClass =
+          modState === 'locked'
+            ? ' mod-locked'
+            : modState === 'armed'
+              ? ' mod-armed'
+              : '';
+        const title = isModKey
+          ? modState === 'locked'
+            ? `${k.label} locked (tap to unlock)`
+            : modState === 'armed'
+              ? `${k.label} armed for next key (double-tap to lock)`
+              : `${k.label} (tap for one-shot, double-tap to lock)`
+          : k.label || k.action;
+
         return (
           <button
             key={k.id}
-            className={`ms-qk-btn${isModActive ? ' active-mod' : ''}`}
-            style={isModActive ? { backgroundColor: 'var(--ms-accent)', color: 'white' } : undefined}
+            type="button"
+            className={`ms-qk-btn${modClass}`}
+            aria-pressed={isModKey ? modState !== 'off' : undefined}
+            data-mod-state={isModKey ? modState : undefined}
+            title={title}
             onClick={() => handleKeyClick(k.action)}
           >
             {k.icon ? <Icon name={k.icon as any} size={14} /> : k.label}
+            {modState === 'armed' && <span className="ms-qk-mod-dot" aria-hidden="true" />}
+            {modState === 'locked' && <span className="ms-qk-mod-lock" aria-hidden="true" />}
           </button>
         );
       })}
