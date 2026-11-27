@@ -8,6 +8,7 @@ import {
   type IBreadcrumbItem,
   type IBreadcrumbsModel,
   type IMonoEditor,
+  type PickerPalette,
   type ResolvedBreadcrumbsOptions,
 } from '@mono/editor';
 import { Icon } from '@/ui/components/Icon/IconRegistry';
@@ -34,6 +35,7 @@ interface BreadcrumbsDropdownProps {
   model: IBreadcrumbsModel;
   anchorRect: DOMRect;
   hostRect: DOMRect;
+  palette: PickerPalette;
   activeItem: IBreadcrumbItem;
   options: ResolvedBreadcrumbsOptions;
   onClose: (refocusEditor?: boolean) => void;
@@ -137,6 +139,7 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
   model,
   anchorRect,
   hostRect,
+  palette,
   activeItem,
   options,
   onClose,
@@ -424,25 +427,46 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
     margin: 6,
   });
 
-  const top = Math.round(anchorRect.bottom - hostRect.top + 2);
+  const ARROW = 7;
+  const top = Math.round(anchorRect.bottom - hostRect.top + ARROW);
   const maxH = Math.max(140, Math.min(320, Math.floor((hostRect.height || 400) * 0.6)));
+  const arrowLeft = Math.round(
+    Math.min(
+      Math.max(anchorRect.left + Math.min(anchorRect.width, 24) / 2 - hostRect.left - placed.left - ARROW, 8),
+      Math.max(8, placed.width - ARROW * 2 - 8),
+    ),
+  );
+  const isCoarse =
+    typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)')?.matches;
+  // VS Code has no visible input: typing filters in place. Keep the box on touch (no keyboard events).
+  const showFilterRow = isCoarse || filter.length > 0 || dirStack.length > 0;
+
+  const cssVars = {
+    '--bc-bg': palette.background,
+    '--bc-border': palette.border,
+    '--bc-fg': palette.foreground,
+    '--bc-detail': palette.detailForeground,
+    '--bc-sel-bg': palette.selectedBackground,
+    '--bc-sel-fg': palette.selectedForeground,
+    '--bc-hover-bg': palette.hoverBackground,
+    '--bc-hl': palette.highlight,
+    '--bc-shadow': palette.shadow,
+    '--bc-arrow': ARROW,
+  } as React.CSSProperties;
 
   return (
     <div
       ref={containerRef}
       className="ms-bc-dropdown"
-      style={{
-        left: placed.left,
-        top,
-        width: placed.width,
-        maxHeight: maxH,
-      }}
+      style={{ ...cssVars, left: placed.left, top, width: placed.width }}
       tabIndex={-1}
       role="dialog"
       aria-label={isSymbolMode ? 'Document symbols outline' : 'Folder siblings'}
       onKeyDown={handleKeyDown}
     >
-      <div className="ms-bc-filter-row">
+      <span className="ms-bc-arrow" style={{ left: arrowLeft }} aria-hidden="true" />
+      <div className="ms-bc-panel" style={{ maxHeight: maxH }}>
+      <div className={`ms-bc-filter-row${showFilterRow ? '' : ' is-hidden'}`}>
         {dirStack.length > 0 && (
           <button
             type="button"
@@ -509,7 +533,8 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
                     {row.kind === 'symbol' ? (
                       <Icon
                         name={getSymbolIconName((row.symbolKind ?? 12) as any) as any}
-                        size={14}
+                        size={16}
+                        color={palette.iconForSymbolKind(row.symbolKind)}
                       />
                     ) : (
                       <FileIcon name={row.label} isDir={row.kind === 'folder'} />
@@ -528,6 +553,7 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
               </div>
             );
           })}
+      </div>
       </div>
     </div>
   );

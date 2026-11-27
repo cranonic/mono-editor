@@ -1,3 +1,4 @@
+import { symbolIconColor, WIDGET_DARK, WIDGET_LIGHT } from '../../../platform/theme/widgetPalette';
 import {
   CompletionItemKind as Kind,
   type CompletionItem,
@@ -52,43 +53,8 @@ export interface SuggestPalette {
 export const LABEL_OFFSET = 4 + 2 + 16 + 4;
 export const BORDER = 1;
 
-const DARK = {
-  background: '#252526',
-  border: '#454545',
-  foreground: '#cccccc',
-  detailForeground: 'rgba(204, 204, 204, 0.65)',
-  selectedBackground: '#04395e',
-  selectedForeground: '#ffffff',
-  selectedDetailForeground: 'rgba(255, 255, 255, 0.82)',
-  hoverBackground: '#2a2d2e',
-  highlight: '#2aaaff',
-  focusHighlight: '#2aaaff',
-  shadow: 'rgba(0, 0, 0, 0.36)',
-  iconDefault: '#cccccc',
-  method: '#b180d7',
-  field: '#75beff',
-  klass: '#ee9d28',
-  typeParam: '#4ec9b0',
-};
-
-const LIGHT = {
-  background: '#f3f3f3',
-  border: '#c8c8c8',
-  foreground: '#616161',
-  detailForeground: 'rgba(97, 97, 97, 0.72)',
-  selectedBackground: '#0060c0',
-  selectedForeground: '#ffffff',
-  selectedDetailForeground: 'rgba(255, 255, 255, 0.86)',
-  hoverBackground: '#e8e8e8',
-  highlight: '#0066bf',
-  focusHighlight: '#bbe7ff',
-  shadow: 'rgba(0, 0, 0, 0.16)',
-  iconDefault: '#616161',
-  method: '#652d90',
-  field: '#007acc',
-  klass: '#d67e00',
-  typeParam: '#267f99',
-};
+const DARK = WIDGET_DARK;
+const LIGHT = WIDGET_LIGHT;
 
 const ICON_KEY: Record<number, string> = {
   [Kind.Text]: 'text', [Kind.Method]: 'method', [Kind.Function]: 'function',
@@ -164,31 +130,8 @@ export function resolveSuggestPalette(o: SuggestWidgetOptions): SuggestPalette {
   const base = o.themeType === 'light' ? LIGHT : DARK;
   const foreground =
     o.foreground ?? c['editorSuggestWidget.foreground'] ?? c['editorWidget.foreground'] ?? base.foreground;
-  const iconColor = (key: string, fallback: string) => c[`symbolIcon.${key}Foreground`] ?? fallback;
-  const pick = (kind: number | undefined): string => {
-    const key = ICON_KEY[kind ?? 0] ?? 'text';
-    switch (key) {
-      case 'method':
-      case 'function':
-      case 'constructor':
-        return iconColor(key, base.method);
-      case 'field':
-      case 'variable':
-      case 'interface':
-      case 'enumMember':
-      case 'constant':
-        return iconColor(key, base.field);
-      case 'class':
-      case 'enum':
-      case 'event':
-      case 'struct':
-        return iconColor(key, base.klass);
-      case 'typeParameter':
-        return iconColor(key, base.typeParam);
-      default:
-        return iconColor(key, base.iconDefault);
-    }
-  };
+  const pick = (kind: number | undefined): string =>
+    symbolIconColor(ICON_KEY[kind ?? 0] ?? 'text', c, o.themeType);
   return {
     background: o.background ?? c['editorSuggestWidget.background'] ?? c['editorWidget.background'] ?? base.background,
     border: o.border ?? `1px solid ${c['editorSuggestWidget.border'] ?? c['editorWidget.border'] ?? base.border}`,

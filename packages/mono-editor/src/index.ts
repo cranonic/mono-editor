@@ -460,6 +460,11 @@ export {
   MSCODE_LIGHT_ID,
   registerBuiltinThemes,
   resolveWidgetTheme,
+  activeWidgetThemeType,
+  getActivePickerPalette,
+  resolvePickerPalette,
+  symbolIconColor,
+  symbolKindIconKey,
   SOLARIZED_DARK_ID,
   SOLARIZED_LIGHT_ID,
 } from './platform/theme';
@@ -470,6 +475,8 @@ export type {
   MonoThemeRule,
   ResolvedMonoEditorTheme,
   ResolvedWidgetTheme,
+  PickerPalette,
+  WidgetThemeType,
 } from './platform/theme';
 
 // Decorations / markers (diagnostics)

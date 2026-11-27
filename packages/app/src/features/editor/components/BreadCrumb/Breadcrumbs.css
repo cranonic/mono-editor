@@ -70,6 +70,7 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
+  margin-right: -1px;
 }
 
 .ms-breadcrumb-label {
@@ -78,29 +79,59 @@
   white-space: nowrap;
 }
 
-/* ── Picker Popover ──────────────────────────────────────────────────────── */
+/* ── Picker Popover (VS Code breadcrumb picker) ──────────────────────────────
+   Colours come from the active colour theme through the --bc-* variables set by
+   BreadcrumbsDropdown (same palette as the completion list). */
 
 .ms-bc-dropdown {
   position: absolute;
   z-index: 60;
+  color: var(--bc-fg, #cccccc);
+  font-size: 13px;
+  outline: none;
+}
+
+.ms-bc-arrow {
+  position: absolute;
+  top: calc(var(--bc-arrow, 7) * -1px);
+  width: 0;
+  height: 0;
+  border: calc(var(--bc-arrow, 7) * 1px) solid transparent;
+  border-top-width: 0;
+  border-bottom-color: var(--bc-bg, #252526);
+  filter: drop-shadow(0 -1px 0 var(--bc-border, #454545));
+  z-index: 1;
+  pointer-events: none;
+}
+
+.ms-bc-panel {
   display: flex;
   flex-direction: column;
-  background-color: var(--ms-bg-side, #252526);
-  color: var(--ms-text-main, #cccccc);
-  border: 1px solid var(--ms-menu-border, rgba(255, 255, 255, 0.14));
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  background-color: var(--bc-bg, #252526);
+  border: 1px solid var(--bc-border, #454545);
+  border-radius: 5px;
+  box-shadow: 0 2px 8px var(--bc-shadow, rgba(0, 0, 0, 0.36));
   overflow: hidden;
-  outline: none;
 }
 
 .ms-bc-filter-row {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--ms-border-light, rgba(255, 255, 255, 0.08));
-  background: var(--ms-bg-main, rgba(0, 0, 0, 0.15));
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--bc-border, #454545);
+}
+
+/* Desktop: no visible box until the user types, but the input still takes the keys. */
+.ms-bc-filter-row.is-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .ms-bc-back-btn,
@@ -110,7 +141,7 @@
   justify-content: center;
   background: transparent;
   border: none;
-  color: var(--ms-text-faded, #999);
+  color: var(--bc-detail, #999);
   cursor: pointer;
   padding: 2px 4px;
   border-radius: 3px;
@@ -119,8 +150,8 @@
 
 .ms-bc-back-btn:hover,
 .ms-bc-clear-btn:hover {
-  background: var(--ms-icon-hover-bg, rgba(255, 255, 255, 0.1));
-  color: var(--ms-text-main, #fff);
+  background: var(--bc-hover-bg, rgba(255, 255, 255, 0.1));
+  color: var(--bc-fg, #fff);
 }
 
 .ms-bc-filter-input {
@@ -129,49 +160,62 @@
   background: transparent;
   border: none;
   outline: none;
-  color: var(--ms-text-main, #e5e7eb);
-  font-size: 12px;
-  line-height: 18px;
+  color: var(--bc-fg, #cccccc);
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .ms-bc-filter-input::placeholder {
-  color: var(--ms-text-faded, #888);
+  color: var(--bc-detail, #888);
 }
 
 .ms-bc-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 0;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(121, 121, 121, 0.4) transparent;
 }
 
 .ms-bc-empty {
-  padding: 10px 12px;
-  font-size: 12px;
-  color: var(--ms-text-faded, #888);
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--bc-detail, #888);
   text-align: center;
 }
 
 .ms-bc-option {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  font-size: 12px;
+  gap: 4px;
+  padding: 0 8px 0 10px;
+  font-size: 13px;
+  line-height: 22px;
+  height: 22px;
   cursor: pointer;
-  min-height: 28px;
   white-space: nowrap;
 }
 
+@media (pointer: coarse) {
+  .ms-bc-option {
+    height: 30px;
+    line-height: 30px;
+  }
+}
+
+.ms-bc-option:hover:not(.is-selected) {
+  background-color: var(--bc-hover-bg, #2a2d2e);
+}
+
 .ms-bc-option.is-selected {
-  background-color: var(--ms-accent, #094771);
-  color: #ffffff;
+  background-color: var(--bc-sel-bg, #04395e);
+  color: var(--bc-sel-fg, #ffffff);
 }
 
 .ms-bc-option.is-current:not(.is-selected) {
   font-weight: 600;
-  color: var(--ms-text-bright, #ffffff);
 }
 
 .ms-bc-opt-icon {
@@ -188,12 +232,18 @@
 }
 
 .ms-bc-opt-detail {
-  font-size: 11px;
-  opacity: 0.7;
+  font-size: 85%;
+  color: var(--bc-detail, rgba(204, 204, 204, 0.65));
   max-width: 110px;
   overflow: hidden;
   text-overflow: ellipsis;
   flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.ms-bc-option.is-selected .ms-bc-opt-detail {
+  color: var(--bc-sel-fg, #ffffff);
+  opacity: 0.82;
 }
 
 .ms-bc-opt-chevron {
@@ -205,10 +255,11 @@
 
 .ms-bc-match {
   background: transparent;
-  color: var(--ms-accent-bright, #4fc1ff);
+  color: var(--bc-hl, #2aaaff);
   font-weight: 700;
 }
 
 .ms-bc-option.is-selected .ms-bc-match {
-  color: #ffe082;
+  color: var(--bc-sel-fg, #ffffff);
+  text-decoration: underline;
 }

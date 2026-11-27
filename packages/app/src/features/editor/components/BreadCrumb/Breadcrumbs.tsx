@@ -6,6 +6,7 @@ import { FileIcon } from '@/ui/components/FileIcon/DefaultIconTheme';
 import { getSymbolIconName } from '@/core/symbols/utils/iconMap';
 import { createAppBreadcrumbsPathProvider } from './pathProvider';
 import { BreadcrumbsDropdown } from './BreadcrumbsDropdown';
+import { useBreadcrumbPalette } from './hooks/useBreadcrumbPalette';
 import './Breadcrumbs.css';
 
 export interface BreadcrumbsProps {
@@ -19,6 +20,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   filePath = '',
   showBreadcrumb = true,
 }) => {
+  const palette = useBreadcrumbPalette();
   const barRef = useRef<HTMLDivElement>(null);
   const segRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
   const [snapshot, setSnapshot] = useState<IBreadcrumbsSnapshot | null>(null);
@@ -170,7 +172,8 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
                     {item.kind === 'symbol' ? (
                       <Icon
                         name={getSymbolIconName((item.symbolKind ?? 12) as any) as any}
-                        size={13}
+                        size={16}
+                        color={palette.iconForSymbolKind(item.symbolKind)}
                       />
                     ) : (
                       <FileIcon name={item.label} isDir={item.kind === 'folder'} />
@@ -190,6 +193,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
           model={model}
           anchorRect={anchorRect}
           hostRect={hostRect}
+          palette={palette}
           activeItem={activeItem}
           options={snapshot.options}
           onClose={handleClose}

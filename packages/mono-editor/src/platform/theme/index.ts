@@ -19,3 +19,11 @@ export {
 } from './builtins/ids';
 export { resolveWidgetTheme, isDarkColor } from './widgetTheme';
 export type { ResolvedWidgetTheme } from './widgetTheme';
+export {
+  activeWidgetThemeType,
+  getActivePickerPalette,
+  resolvePickerPalette,
+  symbolIconColor,
+  symbolKindIconKey,
+} from './widgetPalette';
+export type { PickerPalette, WidgetThemeType } from './widgetPalette';
