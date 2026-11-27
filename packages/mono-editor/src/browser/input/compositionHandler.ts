@@ -73,6 +73,12 @@ export class CompositionHandler {
   }
 
   handleUpdate(model: TextModel, selection: SelectionState, data: string): void {
+    // The caret left the open composition (tap / arrows between two keystrokes) but the IME never
+    // sent compositionend: close that session as its own undo step first, so the new text is typed
+    // at the new caret and Ctrl+Z undoes them one at a time.
+    if (this.composing && this.caretLeftComposition(model, selection)) {
+      this.commitDetached(model, selection);
+    }
     if (!this.composing) {
       this.handleStart(model, selection);
     }
@@ -95,6 +101,35 @@ export class CompositionHandler {
           }
         : null,
     );
+  }
+
+  private caretLeftComposition(model: TextModel, selection: SelectionState): boolean {
+    const c = this.composing;
+    if (!c || !selection.isEmpty) return false;
+    const off = model.getOffsetAt(selection.active.lineNumber, selection.active.column);
+    return off < c.startOffset || off > c.endOffset;
+  }
+
+  /** Record the live composition as one undo step without touching the user's current caret. */
+  private commitDetached(model: TextModel, selection: SelectionState): void {
+    const c = this.composing;
+    this.composing = null;
+    this.onCompositionChange?.(null);
+    if (!c || (c.text.length === 0 && c.replacedText.length === 0)) return;
+    const keep = model.getOffsetAt(selection.active.lineNumber, selection.active.column);
+    // revert the unrecorded preview, then re-apply it as a recorded edit (document ends up identical)
+    model.applyEdit({ startOffset: c.startOffset, endOffset: c.endOffset, text: c.replacedText }, false);
+    selection.anchor = { lineNumber: c.beforeSel.aLine, column: c.beforeSel.aCol };
+    selection.active = { lineNumber: c.beforeSel.bLine, column: c.beforeSel.bCol };
+    model.replaceRange(
+      c.startOffset,
+      c.startOffset + c.replacedText.length,
+      c.text,
+      undefined,
+      c.text.includes('\n') ? 'other' : 'typing',
+    );
+    const pos = model.getPositionAt(keep);
+    selection.setCaret(pos.lineNumber, pos.column);
   }
 
   handleEnd(

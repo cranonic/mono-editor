@@ -54,6 +54,12 @@ export class FormatController implements IEditorContribution {
     if (!matching.length) return false;
 
     this.onTypeInFlight = true;
+    // Edits are computed for the document as it is now; if the user types on before they arrive
+    // (or the model is swapped) they would land at the wrong offsets, so they are dropped.
+    const model = this.host.getModel();
+    const versionAtRequest = model.getVersionId();
+    const stale = (): boolean =>
+      this.host.isDisposed() || this.host.getModel() !== model || model.getVersionId() !== versionAtRequest;
     try {
       const modelLike = this.host.modelAsFeatureLike();
       const opts = { tabSize: this.host.getTabSize(), insertSpaces: true };
@@ -63,7 +69,8 @@ export class FormatController implements IEditorContribution {
           const edits = await Promise.resolve(
             p.provideOnTypeFormattingEdits(modelLike, pos, ch, opts, token),
           );
-          if (edits?.length && !this.host.isDisposed()) {
+          if (stale()) return false;
+          if (edits?.length) {
             return this.host.applyTextEditsAtomic(edits, 'formatOnType');
           }
         } catch (e) {

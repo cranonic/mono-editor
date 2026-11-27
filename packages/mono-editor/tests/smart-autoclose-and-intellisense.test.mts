@@ -160,7 +160,7 @@ test('suggestApply: inserts completion items with Monaco CompletionItemRanges ({
     { prefix: 'doc', insertMode: 'insert' },
   );
   assert.equal(model1.getValue(), 'document');
-  assert.equal(sel1.primary.activeCol, 9);
+  assert.equal(sel1.active.column, 9);
 
   // Flat IRange
   const model2 = new TextModel('con', 'javascript');
@@ -179,7 +179,7 @@ test('suggestApply: inserts completion items with Monaco CompletionItemRanges ({
     { prefix: 'con', insertMode: 'insert' },
   );
   assert.equal(model2.getValue(), 'console');
-  assert.equal(sel2.primary.activeCol, 8);
+  assert.equal(sel2.active.column, 8);
 });
 
 test('suggestFilter: suppresses completion trigger on (, {, [ and identifies snippet items', () => {
