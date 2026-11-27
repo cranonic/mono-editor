@@ -5,6 +5,9 @@ import {
   DOUBLE_TAP_LOCK_MS,
   getActiveModifiers,
   hasAnyActiveModifier,
+  mergeNativeAndStickyModifiers,
+  normalizeNativeKey,
+  shouldInterceptNativeKeyDown,
   tapModifier,
 } from '../src/store/quickKeyboardModifiers';
 
@@ -76,6 +79,47 @@ test('Mixed states: locked Shift + armed Alt consumes Alt only and keeps Shift l
   assert.equal(snap.states.shift, 'locked');
   assert.equal(snap.states.alt, 'off');
   assert.deepEqual(getActiveModifiers(snap.states), { ctrl: false, alt: false, shift: true });
+});
+
+test('Soft-keyboard ArrowUp/ArrowDown is intercepted and merged when Quick Tool Alt is active', () => {
+  const stickyAlt = { ctrl: false, alt: true, shift: false };
+  assert.equal(shouldInterceptNativeKeyDown({ key: 'ArrowUp', keyCode: 38 }, stickyAlt), true);
+  assert.equal(shouldInterceptNativeKeyDown({ key: 'ArrowDown', keyCode: 40 }, stickyAlt), true);
+  // Android WebView legacy/empty key with keyCode 38/40
+  assert.equal(shouldInterceptNativeKeyDown({ key: 'Unidentified', keyCode: 38 }, stickyAlt), true);
+  assert.deepEqual(normalizeNativeKey('Unidentified', 38, ''), {
+    key: 'ArrowUp',
+    code: 'ArrowUp',
+    keyCode: 38,
+  });
+  assert.deepEqual(normalizeNativeKey('Down', 40, ''), {
+    key: 'ArrowDown',
+    code: 'ArrowDown',
+    keyCode: 40,
+  });
+
+  // Standalone modifiers and IME composition (229) are NOT intercepted
+  assert.equal(shouldInterceptNativeKeyDown({ key: 'Alt', keyCode: 18 }, stickyAlt), false);
+  assert.equal(shouldInterceptNativeKeyDown({ key: 'Shift', keyCode: 16 }, stickyAlt), false);
+  assert.equal(shouldInterceptNativeKeyDown({ key: 'Unidentified', keyCode: 229 }, stickyAlt), false);
+  assert.equal(
+    shouldInterceptNativeKeyDown({ key: 'a', keyCode: 65, isComposing: true }, stickyAlt),
+    false,
+  );
+  // No sticky modifier active -> never intercept
+  assert.equal(
+    shouldInterceptNativeKeyDown({ key: 'ArrowUp', keyCode: 38 }, { ctrl: false, alt: false, shift: false }),
+    false,
+  );
+
+  // Merge native Shift + Quick Tool Alt -> Alt+Shift
+  assert.deepEqual(
+    mergeNativeAndStickyModifiers(
+      { ctrl: false, alt: false, shift: true },
+      { ctrl: false, alt: true, shift: false },
+    ),
+    { ctrl: false, alt: true, shift: true },
+  );
 });
 
 console.log('All Quick Keyboard Sticky Modifiers tests passed!');

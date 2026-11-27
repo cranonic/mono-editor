@@ -12,23 +12,31 @@ assert.equal(dark.iconForSymbolKind(SK.Function), '#b180d7');
 assert.equal(dark.iconForSymbolKind(SK.Constructor), '#b180d7');
 assert.equal(dark.iconForSymbolKind(SK.Field), '#75beff');
 assert.equal(dark.iconForSymbolKind(SK.Variable), '#75beff');
+assert.equal(dark.iconForSymbolKind(SK.Constant), '#75beff');
 assert.equal(dark.iconForSymbolKind(SK.Interface), '#75beff');
 assert.equal(dark.iconForSymbolKind(SK.Enum), '#ee9d28');
 assert.equal(dark.iconForSymbolKind(SK.EnumMember), '#75beff');
 assert.equal(dark.iconForSymbolKind(SK.TypeParameter), '#4ec9b0');
 assert.equal(dark.iconForSymbolKind(SK.String), '#cccccc');
+assert.ok(dark.indentGuide.length > 0);
 const light = resolvePickerPalette({}, 'light');
 assert.equal(light.iconForSymbolKind(SK.Class), '#d67e00');
 assert.equal(light.iconForSymbolKind(SK.Method), '#652d90');
 
 // theme override wins, incl. VS Code's real enum names
 const themed = resolvePickerPalette(
-  { 'symbolIcon.classForeground': '#111111', 'symbolIcon.enumeratorForeground': '#222222', 'symbolIcon.enumeratorMemberForeground': '#333333' },
+  {
+    'symbolIcon.classForeground': '#111111',
+    'symbolIcon.enumeratorForeground': '#222222',
+    'symbolIcon.enumeratorMemberForeground': '#333333',
+    'tree.indentGuidesStroke': '#556677',
+  },
   'dark',
 );
 assert.equal(themed.iconForSymbolKind(SK.Class), '#111111');
 assert.equal(themed.iconForSymbolKind(SK.Enum), '#222222');
 assert.equal(themed.iconForSymbolKind(SK.EnumMember), '#333333');
+assert.equal(themed.activeIndentGuide, '#556677');
 
 // unknown / missing kind never throws
 assert.equal(symbolKindIconKey(undefined), 'variable');
@@ -55,11 +63,10 @@ assert.equal(pick.iconForSymbolKind(SK.Field), sug.icon(CK.Field));
 // breadcrumbPicker.background overrides only the picker
 assert.equal(resolvePickerPalette({ ...colors, 'breadcrumbPicker.background': '#123456' }, 'dark').background, '#123456');
 assert.equal(symbolIconColor('class', undefined, undefined), '#ee9d28');
-console.log('widget-palette.test.mts OK');
 
 // light selection background without an explicit foreground must stay readable
 const lightSel = resolvePickerPalette({ 'editorSuggestWidget.selectedBackground': '#d6ebff', 'editorSuggestWidget.foreground': '#000000' }, 'light');
 assert.equal(lightSel.selectedForeground, '#000000');
-assert.equal(resolvePickerPalette({}, 'light').selectedForeground, '#ffffff'); // #0060c0 default stays white-on-blue
+assert.equal(resolvePickerPalette({}, 'light').selectedForeground, '#ffffff');
 assert.equal(resolvePickerPalette({ 'editorSuggestWidget.selectedForeground': '#123123', 'editorSuggestWidget.selectedBackground': '#d6ebff' }, 'light').selectedForeground, '#123123');
-console.log('widget-palette contrast OK');
+console.log('widget-palette.test.mts OK');

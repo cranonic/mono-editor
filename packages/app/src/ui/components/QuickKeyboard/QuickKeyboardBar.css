@@ -3,6 +3,7 @@
   display: flex;
   align-items: center;
   overflow-x: auto;
+  overflow-y: hidden;
   background-color: var(--ms-bg-side);
   border-top: 1px solid var(--ms-menu-border);
   padding: 4px 8px;
@@ -11,6 +12,9 @@
   flex-shrink: 0;
   scrollbar-width: none;
   user-select: none;
+  -webkit-user-select: none;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
 }
 
 .ms-quick-keyboard::-webkit-scrollbar {
@@ -35,6 +39,8 @@
   cursor: pointer;
   flex-shrink: 0;
   outline: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   transition: background-color 0.12s, border-color 0.12s, color 0.12s;
 }
 

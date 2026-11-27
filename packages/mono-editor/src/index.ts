@@ -243,6 +243,7 @@ export type {
   ResolvedBreadcrumbsOptions,
 } from './common/breadcrumbs/breadcrumbsTypes';
 export type {
+  BreadcrumbFolderClickBehavior,
   BreadcrumbPathMode,
   BreadcrumbSymbolSortOrder,
   FoldingStrategy,

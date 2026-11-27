@@ -7,6 +7,11 @@ import {
   type ModifierKey,
   type ModifierState,
 } from '@/store/quickKeyboardStore';
+import {
+  mergeNativeAndStickyModifiers,
+  normalizeNativeKey,
+  shouldInterceptNativeKeyDown,
+} from '@/store/quickKeyboardModifiers';
 import { useTabStore } from '@/store/tabStore';
 import { useSettingsStore } from '@/features/settings/store/settingsStore';
 import { useActiveEditorStore } from '@/features/editor/store/activeEditorStore';
@@ -19,6 +24,10 @@ interface Mods {
   alt: boolean;
   shift: boolean;
 }
+
+/** Tracks synthetic KeyboardEvents dispatched by QuickKeyboardBar so the capture listener won't re-intercept them. */
+const SYNTHETIC_KEY_EVENTS = new WeakSet<Event>();
+const TAP_MOVE_TOLERANCE_PX = 10;
 
 function getActiveMonoEditor(): IMonoEditor | null {
   const fromStore = useActiveEditorStore.getState().activeEditor;
@@ -33,6 +42,25 @@ function getMonoInputTarget(editor: IMonoEditor): HTMLElement | null {
   const root = editor.getDomNode?.();
   if (!root) return null;
   return (root.querySelector('textarea') as HTMLElement | null) ?? root;
+}
+
+/**
+ * Only re-focuses Mono's textarea if focus was actually lost.
+ * Calling `.focus()` redundantly while the textarea is already focused can cause
+ * Android WebView to toggle/dismiss the soft keyboard.
+ */
+function preserveMonoFocus(editor: IMonoEditor): void {
+  const target = getMonoInputTarget(editor);
+  if (target && document.activeElement === target) return;
+  editor.focus?.();
+}
+
+function isEditableElementOutsideEditor(target: EventTarget | null, editorDom: HTMLElement): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (editorDom.contains(target)) return false;
+  const tag = target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  return target.isContentEditable;
 }
 
 function dispatchMonoKey(
@@ -56,6 +84,7 @@ function dispatchMonoKey(
     bubbles: true,
     cancelable: true,
   });
+  SYNTHETIC_KEY_EVENTS.add(evt);
   target.dispatchEvent(evt);
   return evt.defaultPrevented;
 }
@@ -91,17 +120,17 @@ function runModifierCharAction(char: string, mods: Mods, editor: IMonoEditor): v
 
   // Workbench shortcuts that bubble to window
   if (mods.ctrl && lower === 'p') {
-    window.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        code: 'KeyP',
-        keyCode: 80,
-        ctrlKey: true,
-        shiftKey: mods.shift,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
+    const evt = new KeyboardEvent('keydown', {
+      key: 'p',
+      code: 'KeyP',
+      keyCode: 80,
+      ctrlKey: true,
+      shiftKey: mods.shift,
+      bubbles: true,
+      cancelable: true,
+    });
+    SYNTHETIC_KEY_EVENTS.add(evt);
+    window.dispatchEvent(evt);
     return;
   }
 
@@ -164,6 +193,28 @@ function runModifierCharAction(char: string, mods: Mods, editor: IMonoEditor): v
   }
 }
 
+function runMergedSpecialKey(
+  editor: IMonoEditor,
+  key: string,
+  code: string,
+  keyCode: number,
+  mods: Mods,
+): void {
+  if (key === 'ArrowUp' && mods.alt && !mods.ctrl) {
+    void editor.executeCommand?.(
+      mods.shift ? MonoCommands.CopyLinesUp : MonoCommands.MoveLinesUp,
+    );
+    return;
+  }
+  if (key === 'ArrowDown' && mods.alt && !mods.ctrl) {
+    void editor.executeCommand?.(
+      mods.shift ? MonoCommands.CopyLinesDown : MonoCommands.MoveLinesDown,
+    );
+    return;
+  }
+  dispatchMonoKey(editor, key, code, keyCode, mods);
+}
+
 function useKeyboardOffset(isVisible: boolean) {
   const [offset, setOffset] = useState(0);
   useEffect(() => {
@@ -206,33 +257,95 @@ export const QuickKeyboardBar: React.FC = () => {
   const { activeTabId, tabs } = useTabStore();
   const settings = useSettingsStore((s) => s.settings);
   const keyboardOffset = useKeyboardOffset(isVisible);
-  const hiddenInputRef = useRef<HTMLInputElement | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number; action: string } | null>(null);
+  const lastTouchTapAtRef = useRef(0);
 
   useEffect(() => {
     const configKeys = settings['workbench.editor.quickKeyboard.keys'];
     if (Array.isArray(configKeys)) setKeys(configKeys);
   }, [settings, setKeys]);
 
-  // Intercept soft-keyboard printable character input while a sticky modifier is armed/locked
+  // Intercept soft-keyboard & hardware-keyboard `keydown` AND `beforeinput` events
+  // while a Quick Tool Bar sticky modifier (Ctrl / Alt / Shift) is armed or locked.
   useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (SYNTHETIC_KEY_EVENTS.has(e)) return;
+      const sticky = useQuickKeyboardStore.getState().modifiers;
+      if (!shouldInterceptNativeKeyDown(e, sticky)) return;
+
+      const editor = getActiveMonoEditor();
+      if (!editor) return;
+      const dom = editor.getDomNode?.();
+      if (!dom) return;
+
+      // Never hijack keys typed into another input (Command Palette, Find widget, etc.)
+      if (isEditableElementOutsideEditor(e.target, dom)) return;
+      if (!dom.contains(e.target as Node) && !editor.hasTextFocus?.()) return;
+
+      const norm = normalizeNativeKey(e.key, e.keyCode, e.code);
+      const merged = mergeNativeAndStickyModifiers(
+        { ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey },
+        sticky,
+      );
+
+      e.preventDefault();
+      e.stopImmediatePropagation();
+
+      if (norm.key.length === 1) {
+        runModifierCharAction(norm.key, merged, editor);
+      } else {
+        runMergedSpecialKey(editor, norm.key, norm.code, norm.keyCode, merged);
+      }
+      consumeArmedModifiers();
+    };
+
     const onBeforeInput = (e: InputEvent) => {
-      const { ctrl, alt, shift } = useQuickKeyboardStore.getState().modifiers;
-      if (!ctrl && !alt && !shift) return;
-      const char = e.data;
-      if (!char || char.length !== 1) return;
+      const sticky = useQuickKeyboardStore.getState().modifiers;
+      if (!sticky.ctrl && !sticky.alt && !sticky.shift) return;
+
       const editor = getActiveMonoEditor();
       if (!editor) return;
       const dom = editor.getDomNode?.();
       if (!dom || !dom.contains(e.target as Node)) return;
 
+      // Handle soft keyboards (e.g. Gboard) that fire delete/enter via beforeinput
+      if (e.inputType === 'deleteContentBackward') {
+        e.preventDefault();
+        e.stopPropagation();
+        runMergedSpecialKey(editor, 'Backspace', 'Backspace', 8, sticky);
+        consumeArmedModifiers();
+        return;
+      }
+      if (e.inputType === 'deleteContentForward') {
+        e.preventDefault();
+        e.stopPropagation();
+        runMergedSpecialKey(editor, 'Delete', 'Delete', 46, sticky);
+        consumeArmedModifiers();
+        return;
+      }
+      if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') {
+        e.preventDefault();
+        e.stopPropagation();
+        runMergedSpecialKey(editor, 'Enter', 'Enter', 13, sticky);
+        consumeArmedModifiers();
+        return;
+      }
+
+      const char = e.data;
+      if (!char || char.length !== 1) return;
+
       e.preventDefault();
       e.stopPropagation();
-      runModifierCharAction(char, { ctrl, alt, shift }, editor);
+      runModifierCharAction(char, sticky, editor);
       consumeArmedModifiers();
     };
 
+    window.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('beforeinput', onBeforeInput as EventListener, true);
-    return () => window.removeEventListener('beforeinput', onBeforeInput as EventListener, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('beforeinput', onBeforeInput as EventListener, true);
+    };
   }, [consumeArmedModifiers]);
 
   const handleKeyClick = useCallback(
@@ -253,19 +366,19 @@ export const QuickKeyboardBar: React.FC = () => {
           tc.terminal.paste?.(action.slice(5));
         } else if (tc?.terminal?.textarea && SPECIAL_KEY_MAP[action]) {
           const [key, code, keyCode] = SPECIAL_KEY_MAP[action]!;
-          tc.terminal.textarea.dispatchEvent(
-            new KeyboardEvent('keydown', {
-              key,
-              code,
-              keyCode,
-              which: keyCode,
-              ctrlKey: ctrl,
-              altKey: alt,
-              shiftKey: shift,
-              bubbles: true,
-              cancelable: true,
-            }),
-          );
+          const evt = new KeyboardEvent('keydown', {
+            key,
+            code,
+            keyCode,
+            which: keyCode,
+            ctrlKey: ctrl,
+            altKey: alt,
+            shiftKey: shift,
+            bubbles: true,
+            cancelable: true,
+          });
+          SYNTHETIC_KEY_EVENTS.add(evt);
+          tc.terminal.textarea.dispatchEvent(evt);
         }
         if (hasModifier) consumeArmedModifiers();
         return;
@@ -277,18 +390,8 @@ export const QuickKeyboardBar: React.FC = () => {
       // Special keys: route through real Mono keydown / MonoCommands
       if (SPECIAL_KEY_MAP[action]) {
         const [key, code, keyCode] = SPECIAL_KEY_MAP[action]!;
-        if (action === 'cursorUp' && mods.alt && !mods.ctrl) {
-          void editor.executeCommand?.(
-            mods.shift ? MonoCommands.CopyLinesUp : MonoCommands.MoveLinesUp,
-          );
-        } else if (action === 'cursorDown' && mods.alt && !mods.ctrl) {
-          void editor.executeCommand?.(
-            mods.shift ? MonoCommands.CopyLinesDown : MonoCommands.MoveLinesDown,
-          );
-        } else {
-          dispatchMonoKey(editor, key, code, keyCode, mods);
-        }
-        editor.focus?.();
+        runMergedSpecialKey(editor, key, code, keyCode, mods);
+        preserveMonoFocus(editor);
         if (hasModifier) consumeArmedModifiers();
         return;
       }
@@ -297,7 +400,7 @@ export const QuickKeyboardBar: React.FC = () => {
         const char = action.slice(5);
         if (hasModifier) runModifierCharAction(char, mods, editor);
         else editor.trigger?.('keyboard', 'type', { text: char });
-        editor.focus?.();
+        preserveMonoFocus(editor);
         if (hasModifier) consumeArmedModifiers();
         return;
       }
@@ -319,7 +422,7 @@ export const QuickKeyboardBar: React.FC = () => {
       } else {
         editor.trigger?.('keyboard', action, null);
       }
-      editor.focus?.();
+      preserveMonoFocus(editor);
       if (hasModifier) consumeArmedModifiers();
     },
     [toggleModifier, consumeArmedModifiers, tabs, activeTabId],
@@ -345,19 +448,19 @@ export const QuickKeyboardBar: React.FC = () => {
     <div
       className="ms-quick-keyboard"
       style={floatingStyle}
-      onPointerDown={(e) => {
+      tabIndex={-1}
+      onMouseDown={(e) => {
         e.preventDefault();
         e.stopPropagation();
       }}
+      onPointerDown={(e) => {
+        // Keep horizontal touch-scrolling working; prevent focus steal for mouse/pen
+        if (e.pointerType !== 'touch') {
+          e.preventDefault();
+        }
+        e.stopPropagation();
+      }}
     >
-      <input
-        ref={hiddenInputRef}
-        type="text"
-        aria-hidden="true"
-        tabIndex={-1}
-        style={{ display: 'none' }}
-      />
-
       {keys.map((k: any) => {
         const isModKey = k.action === 'ctrl' || k.action === 'alt' || k.action === 'shift';
         const modState: ModifierState = isModKey
@@ -381,11 +484,51 @@ export const QuickKeyboardBar: React.FC = () => {
           <button
             key={k.id}
             type="button"
+            tabIndex={-1}
             className={`ms-qk-btn${modClass}`}
             aria-pressed={isModKey ? modState !== 'off' : undefined}
             data-mod-state={isModKey ? modState : undefined}
             title={title}
-            onClick={() => handleKeyClick(k.action)}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onPointerDown={(e) => {
+              if (e.pointerType !== 'touch') {
+                e.preventDefault();
+              }
+              e.stopPropagation();
+            }}
+            onTouchStart={(e) => {
+              const t = e.touches[0];
+              if (t) {
+                touchStartRef.current = { x: t.clientX, y: t.clientY, action: k.action };
+              }
+            }}
+            onTouchEnd={(e) => {
+              const start = touchStartRef.current;
+              touchStartRef.current = null;
+              const t = e.changedTouches[0];
+              if (!start || !t || start.action !== k.action) return;
+              const moved =
+                Math.abs(t.clientX - start.x) > TAP_MOVE_TOLERANCE_PX ||
+                Math.abs(t.clientY - start.y) > TAP_MOVE_TOLERANCE_PX;
+              if (moved) return;
+              // Prevent synthetic focus-stealing mousedown/click so Android soft keyboard stays open
+              e.preventDefault();
+              e.stopPropagation();
+              lastTouchTapAtRef.current = performance.now();
+              handleKeyClick(k.action);
+            }}
+            onTouchCancel={() => {
+              touchStartRef.current = null;
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (performance.now() - lastTouchTapAtRef.current < 450) return;
+              handleKeyClick(k.action);
+            }}
           >
             {k.icon ? <Icon name={k.icon as any} size={14} /> : k.label}
             {modState === 'armed' && <span className="ms-qk-mod-dot" aria-hidden="true" />}

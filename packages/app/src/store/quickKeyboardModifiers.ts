@@ -103,3 +103,102 @@ export function getActiveModifiers(states: ModifierStates): {
 export function hasAnyActiveModifier(states: ModifierStates): boolean {
   return states.ctrl !== 'off' || states.alt !== 'off' || states.shift !== 'off';
 }
+
+export interface ActiveModifierFlags {
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+}
+
+const STANDALONE_MODIFIER_KEYS = new Set([
+  'Control',
+  'Alt',
+  'Shift',
+  'Meta',
+  'AltGraph',
+  'CapsLock',
+  'NumLock',
+  'ScrollLock',
+  'OS',
+  'Dead',
+  'Process',
+]);
+
+export function isStandaloneModifierKey(key: string): boolean {
+  return STANDALONE_MODIFIER_KEYS.has(key);
+}
+
+const LEGACY_KEY_MAP: Record<string, [string, string, number]> = {
+  Up: ['ArrowUp', 'ArrowUp', 38],
+  Down: ['ArrowDown', 'ArrowDown', 40],
+  Left: ['ArrowLeft', 'ArrowLeft', 37],
+  Right: ['ArrowRight', 'ArrowRight', 39],
+  Esc: ['Escape', 'Escape', 27],
+  Del: ['Delete', 'Delete', 46],
+};
+
+const KEYCODE_FALLBACK_MAP: Record<number, [string, string]> = {
+  38: ['ArrowUp', 'ArrowUp'],
+  40: ['ArrowDown', 'ArrowDown'],
+  37: ['ArrowLeft', 'ArrowLeft'],
+  39: ['ArrowRight', 'ArrowRight'],
+  8: ['Backspace', 'Backspace'],
+  46: ['Delete', 'Delete'],
+  9: ['Tab', 'Tab'],
+  13: ['Enter', 'Enter'],
+  27: ['Escape', 'Escape'],
+  36: ['Home', 'Home'],
+  35: ['End', 'End'],
+  33: ['PageUp', 'PageUp'],
+  34: ['PageDown', 'PageDown'],
+};
+
+/**
+ * Normalizes Android WebView / soft keyboard / legacy key names and keyCodes
+ * into standard DOM `KeyboardEvent` `key` + `code` + `keyCode` values.
+ */
+export function normalizeNativeKey(
+  key: string,
+  keyCode: number,
+  code: string,
+): { key: string; code: string; keyCode: number } {
+  if (key && LEGACY_KEY_MAP[key]) {
+    const [normKey, normCode, normKeyCode] = LEGACY_KEY_MAP[key]!;
+    return { key: normKey, code: code || normCode, keyCode: keyCode || normKeyCode };
+  }
+  if ((!key || key === 'Unidentified') && KEYCODE_FALLBACK_MAP[keyCode]) {
+    const [normKey, normCode] = KEYCODE_FALLBACK_MAP[keyCode]!;
+    return { key: normKey, code: code || normCode, keyCode };
+  }
+  return { key, code, keyCode };
+}
+
+/**
+ * Determines whether a native `keydown` event should be intercepted and merged
+ * with active Quick Keyboard Bar sticky modifiers.
+ */
+export function shouldInterceptNativeKeyDown(
+  e: { key: string; keyCode: number; code?: string; isComposing?: boolean },
+  sticky: ActiveModifierFlags,
+): boolean {
+  if (!sticky.ctrl && !sticky.alt && !sticky.shift) return false;
+  if (e.isComposing) return false;
+  if (e.keyCode === 229) return false;
+  const norm = normalizeNativeKey(e.key, e.keyCode, e.code ?? '');
+  if (!norm.key || norm.key === 'Unidentified') return false;
+  if (isStandaloneModifierKey(norm.key)) return false;
+  return true;
+}
+
+/** Merges native event modifier flags with Quick Keyboard Bar sticky modifiers. */
+export function mergeNativeAndStickyModifiers(
+  nativeMods: ActiveModifierFlags,
+  sticky: ActiveModifierFlags,
+): ActiveModifierFlags {
+  return {
+    ctrl: nativeMods.ctrl || sticky.ctrl,
+    alt: nativeMods.alt || sticky.alt,
+    shift: nativeMods.shift || sticky.shift,
+  };
+}
+

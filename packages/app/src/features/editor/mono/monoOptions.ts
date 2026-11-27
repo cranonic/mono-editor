@@ -5,6 +5,7 @@ import type {
   AutoClosingBehavior,
   AutoIndentBehavior,
   AutoSurroundBehavior,
+  BreadcrumbFolderClickBehavior,
   BreadcrumbPathMode,
   BreadcrumbSymbolSortOrder,
   CursorBlinkingMode,
@@ -311,6 +312,9 @@ export function buildMonoEditorOptions(
   const rawBcSort = String(settings['breadcrumbs.symbolSortOrder'] ?? 'position');
   const bcSort: BreadcrumbSymbolSortOrder =
     rawBcSort === 'name' || rawBcSort === 'type' ? rawBcSort : 'position';
+  const rawBcFolderBehavior = String(settings['breadcrumbs.folderClickBehavior'] ?? 'expand');
+  const bcFolderBehavior: BreadcrumbFolderClickBehavior =
+    rawBcFolderBehavior === 'enter' ? 'enter' : 'expand';
 
   return {
     // Font
@@ -356,6 +360,8 @@ export function buildMonoEditorOptions(
       symbolPath: bcSymbolPath,
       icons: bool(settings['breadcrumbs.icons'], true),
       symbolSortOrder: bcSort,
+      showSymbolDetails: bool(settings['breadcrumbs.showSymbolDetails'], false),
+      folderClickBehavior: bcFolderBehavior,
       showFiles: bool(settings['breadcrumbs.showFiles'], true),
       showModules: bool(settings['breadcrumbs.showModules'], true),
       showNamespaces: bool(settings['breadcrumbs.showNamespaces'], true),

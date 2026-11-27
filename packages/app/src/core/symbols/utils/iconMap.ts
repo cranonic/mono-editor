@@ -19,8 +19,8 @@ export const getSymbolIconName = (kind: monaco.languages.SymbolKind): string => 
     case Kinds.Enum: return 'symbol-enum';
     case Kinds.Interface: return 'symbol-interface';
     case Kinds.Function: return 'symbol-method';
-    case Kinds.Variable: return 'symbol-variable';
-    case Kinds.Constant: return 'symbol-constant';
+    case Kinds.Variable:
+    case Kinds.Constant: return 'symbol-variable';
     case Kinds.String: return 'symbol-string';
     case Kinds.Number: return 'symbol-numeric';
     case Kinds.Boolean: return 'symbol-boolean';

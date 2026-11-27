@@ -153,6 +153,7 @@ export interface MonoQuickNavOptions {
 
 export type BreadcrumbPathMode = 'on' | 'off' | 'last';
 export type BreadcrumbSymbolSortOrder = 'position' | 'name' | 'type';
+export type BreadcrumbFolderClickBehavior = 'expand' | 'enter';
 
 export interface MonoBreadcrumbsKindFilter {
   showFiles?: boolean;
@@ -190,6 +191,10 @@ export interface MonoBreadcrumbsOptions extends MonoBreadcrumbsKindFilter {
   icons?: boolean;
   symbolSortOrder?: BreadcrumbSymbolSortOrder;
   symbolPathSeparator?: string;
+  /** Show right-aligned symbol kind/type detail text in the breadcrumb picker (default: false). */
+  showSymbolDetails?: boolean;
+  /** Behavior when tapping/clicking a folder row in the breadcrumb picker: 'expand' (inline tree, default) or 'enter' (drill-down). */
+  folderClickBehavior?: BreadcrumbFolderClickBehavior;
 }
 
 export interface MonoSuggestOptions {

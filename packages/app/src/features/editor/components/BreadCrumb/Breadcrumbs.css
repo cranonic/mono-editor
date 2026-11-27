@@ -89,6 +89,8 @@
   color: var(--bc-fg, #cccccc);
   font-size: 13px;
   outline: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .ms-bc-arrow {
@@ -118,8 +120,9 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 6px;
+  padding: 5px 8px;
   border-bottom: 1px solid var(--bc-border, #454545);
+  flex-shrink: 0;
 }
 
 /* Desktop: no visible box until the user types, but the input still takes the keys. */
@@ -169,10 +172,32 @@
   color: var(--bc-detail, #888);
 }
 
+/* Scrollable tree container + pinned sticky parent rows */
+.ms-bc-list-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ms-bc-sticky-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  background-color: var(--bc-bg, #252526);
+  border-bottom: 1px solid var(--bc-border, #454545);
+  box-shadow: 0 2px 6px var(--bc-shadow, rgba(0, 0, 0, 0.32));
+}
+
 .ms-bc-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 0;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
@@ -187,22 +212,22 @@
 }
 
 .ms-bc-option {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 8px 0 10px;
+  gap: 5px;
+  padding: 0 10px 0 8px;
   font-size: 13px;
-  line-height: 22px;
-  height: 22px;
+  line-height: var(--bc-row-h, 24px);
+  height: var(--bc-row-h, 24px);
   cursor: pointer;
   white-space: nowrap;
+  box-sizing: border-box;
+  -webkit-touch-callout: none;
 }
 
-@media (pointer: coarse) {
-  .ms-bc-option {
-    height: 30px;
-    line-height: 30px;
-  }
+.ms-bc-option.is-sticky-row {
+  background-color: var(--bc-bg, #252526);
 }
 
 .ms-bc-option:hover:not(.is-selected) {
@@ -215,7 +240,50 @@
 }
 
 .ms-bc-option.is-current:not(.is-selected) {
-  font-weight: 600;
+  font-weight: 500;
+}
+
+/* Continuous vertical indent guide lines (VS Code tree style) */
+.ms-bc-guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ms-bc-indent-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: var(--bc-guide, rgba(255, 255, 255, 0.14));
+  pointer-events: none;
+}
+
+.ms-bc-indent-guide.is-active {
+  background-color: var(--bc-guide-active, rgba(255, 255, 255, 0.32));
+}
+
+/* Expand / collapse twisty chevron slot */
+.ms-bc-twisty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 100%;
+  flex-shrink: 0;
+  color: var(--bc-detail, rgba(204, 204, 204, 0.72));
+}
+
+.ms-bc-twisty.is-clickable {
+  cursor: pointer;
+}
+
+.ms-bc-twisty.is-clickable:hover {
+  color: var(--bc-fg, #ffffff);
+}
+
+.ms-bc-option.is-selected .ms-bc-twisty {
+  color: var(--bc-sel-fg, #ffffff);
 }
 
 .ms-bc-opt-icon {

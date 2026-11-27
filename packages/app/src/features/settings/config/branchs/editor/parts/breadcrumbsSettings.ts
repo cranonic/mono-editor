@@ -115,5 +115,31 @@ export const breadcrumbsProperties: IConfigurationSection['properties'] = {
     ],
   },
 
+  'breadcrumbs.showSymbolDetails': {
+    title: 'Breadcrumbs: Show Symbol Details',
+    type: 'boolean',
+    defaultValue: false,
+    order: 215,
+    subCategory: 'Breadcrumbs',
+    tags: ['breadcrumbs', 'symbols', 'mono'],
+    description: 'Show right-aligned symbol detail text (e.g. let, const, function) in the breadcrumb picker.',
+  },
+
+  'breadcrumbs.folderClickBehavior': {
+    title: 'Breadcrumbs: Folder Click Behavior',
+    type: 'select',
+    defaultValue: 'expand',
+    order: 216,
+    subCategory: 'Breadcrumbs',
+    tags: ['breadcrumbs', 'navigation', 'mono'],
+    description: 'Controls whether clicking a folder in the breadcrumb picker expands it inline as a tree or enters the folder.',
+    enum: ['expand', 'enter'],
+    enumItemLabels: ['Expand / Collapse Tree', 'Enter Folder'],
+    enumDescriptions: [
+      'Expand or collapse the folder inline with vertical indent guides (VS Code tree style).',
+      'Drill into the folder and display its children with a back button.',
+    ],
+  },
+
   ...kindProperties,
 };

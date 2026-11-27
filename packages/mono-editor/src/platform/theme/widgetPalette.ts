@@ -23,6 +23,8 @@ export const WIDGET_DARK = {
   highlight: '#2aaaff',
   focusHighlight: '#2aaaff',
   shadow: 'rgba(0, 0, 0, 0.36)',
+  indentGuide: 'rgba(255, 255, 255, 0.14)',
+  activeIndentGuide: 'rgba(255, 255, 255, 0.32)',
   iconDefault: '#cccccc',
   method: '#b180d7',
   field: '#75beff',
@@ -42,6 +44,8 @@ export const WIDGET_LIGHT = {
   highlight: '#0066bf',
   focusHighlight: '#bbe7ff',
   shadow: 'rgba(0, 0, 0, 0.16)',
+  indentGuide: 'rgba(0, 0, 0, 0.14)',
+  activeIndentGuide: 'rgba(0, 0, 0, 0.32)',
   iconDefault: '#616161',
   method: '#652d90',
   field: '#007acc',
@@ -137,6 +141,8 @@ export interface PickerPalette {
   hoverBackground: string;
   highlight: string;
   shadow: string;
+  indentGuide: string;
+  activeIndentGuide: string;
   /** Colour of the symbol icon for an outline `SymbolKind`. */
   iconForSymbolKind: (kind: number | undefined) => string;
 }
@@ -176,6 +182,13 @@ export function resolvePickerPalette(
     highlight:
       c['editorSuggestWidget.highlightForeground'] ?? c['list.highlightForeground'] ?? base.highlight,
     shadow: c['widget.shadow'] ?? base.shadow,
+    indentGuide:
+      c['tree.inactiveIndentGuidesStroke'] ??
+      c['tree.indentGuidesStroke'] ??
+      base.indentGuide,
+    activeIndentGuide:
+      c['tree.indentGuidesStroke'] ??
+      base.activeIndentGuide,
     iconForSymbolKind: (kind) => symbolIconColor(symbolKindIconKey(kind), c, type),
   };
 }

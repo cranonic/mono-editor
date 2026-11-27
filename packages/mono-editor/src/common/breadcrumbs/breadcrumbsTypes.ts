@@ -1,4 +1,5 @@
 import type {
+  BreadcrumbFolderClickBehavior,
   BreadcrumbPathMode,
   BreadcrumbSymbolSortOrder,
   MonoBreadcrumbsKindFilter,
@@ -37,6 +38,8 @@ export interface ResolvedBreadcrumbsOptions extends Required<MonoBreadcrumbsKind
   icons: boolean;
   symbolSortOrder: BreadcrumbSymbolSortOrder;
   symbolPathSeparator: string;
+  showSymbolDetails: boolean;
+  folderClickBehavior: BreadcrumbFolderClickBehavior;
 }
 
 export const DEFAULT_BREADCRUMBS_OPTIONS: ResolvedBreadcrumbsOptions = {
@@ -46,6 +49,8 @@ export const DEFAULT_BREADCRUMBS_OPTIONS: ResolvedBreadcrumbsOptions = {
   icons: true,
   symbolSortOrder: 'position',
   symbolPathSeparator: ' › ',
+  showSymbolDetails: false,
+  folderClickBehavior: 'expand',
   showFiles: true,
   showModules: true,
   showNamespaces: true,
