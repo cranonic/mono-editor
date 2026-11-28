@@ -330,7 +330,7 @@ export function subscribeActiveTextModel(params: {
     structure.invalidate();
     folding.updateSync();
     if (folding.isLineHidden(selection.active.lineNumber)) folding.unfoldContaining(selection.active.lineNumber);
-    for (const c of contributions.values()) c.onModelContentChange?.(versionId);
+    for (const c of contributions.values()) c.onModelContentChange?.(versionId, change);
     view.invalidateScopes();
     view.paint();
     onContentSizeCheck();

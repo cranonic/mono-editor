@@ -234,9 +234,9 @@ export function registerCoreKeybindingsAndActions(host: CoreKeybindingHost): voi
   };
 
   host.keybindings.addMany([
-    { id: MonoCommands.Undo, primary: 'ctrl+z', weight: 5, handler: () => { const e = host.getModel().undoEntry(); if (e) { host.applyStackSelection(e, 'undo'); runAfter(); } } },
-    { id: MonoCommands.Redo, primary: 'ctrl+shift+z', weight: 5, handler: () => { const e = host.getModel().redoEntry(); if (e) { host.applyStackSelection(e, 'redo'); runAfter(); } } },
-    { id: MonoCommands.Redo + '.y', primary: 'ctrl+y', weight: 5, handler: () => { const e = host.getModel().redoEntry(); if (e) { host.applyStackSelection(e, 'redo'); runAfter(); } } },
+    { id: MonoCommands.Undo, primary: 'ctrl+z', weight: 5, handler: () => { const e = host.getModel().undoEntry(); if (e) { host.applyStackSelection(e, 'undo'); runAfter(); host.emitCursorEvents('undo'); } } },
+    { id: MonoCommands.Redo, primary: 'ctrl+shift+z', weight: 5, handler: () => { const e = host.getModel().redoEntry(); if (e) { host.applyStackSelection(e, 'redo'); runAfter(); host.emitCursorEvents('redo'); } } },
+    { id: MonoCommands.Redo + '.y', primary: 'ctrl+y', weight: 5, handler: () => { const e = host.getModel().redoEntry(); if (e) { host.applyStackSelection(e, 'redo'); runAfter(); host.emitCursorEvents('redo'); } } },
     { id: MonoCommands.Copy, primary: 'ctrl+c', weight: 5, handler: () => { void doCopy(); } },
     { id: MonoCommands.Cut, primary: 'ctrl+x', weight: 5, handler: () => doCut() },
     {

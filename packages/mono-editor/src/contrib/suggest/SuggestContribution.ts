@@ -8,7 +8,7 @@ import type { PointerInteractKind } from '../../browser/input/pointer/PointerCon
 import type { MonoEditorOptions } from '../../common/config/editorOptions';
 import type { MonoEditorTheme } from '../../common/config/themeTypes';
 import { SnippetSession } from '../../common/editOperations/SnippetSession';
-import type { TextModel } from '../../common/model/TextModel';
+import type { ModelChange, TextModel } from '../../common/model/TextModel';
 import { monoThemeService } from '../../platform/theme';
 import type { ResolvedWidgetTheme } from '../../platform/theme/widgetTheme';
 import { SuggestController } from './SuggestController';
@@ -146,7 +146,19 @@ export class SuggestContribution implements IEditorContribution {
     }
   }
 
-  onCursorChange(_source: string, keepSuggest?: boolean): void {
+  onModelContentChange(_versionId: number, change?: ModelChange): void {
+    if (change?.isUndoing || change?.isRedoing) {
+      this.suggest.cancel();
+      this.snippetSession.cancel();
+    }
+  }
+
+  onCursorChange(source: string, keepSuggest?: boolean): void {
+    if (source === 'undo' || source === 'redo') {
+      this.suggest.cancel();
+      this.snippetSession.cancel();
+      return;
+    }
     if (!keepSuggest) this.suggest.syncCursor();
   }
 

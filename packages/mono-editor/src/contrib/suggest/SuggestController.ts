@@ -399,7 +399,11 @@ export class SuggestController {
   }
 
   syncCursor(): void {
-    if ((!this.open && !this.ghost.hasCandidates()) || !this.anchorPos) return;
+    if (!this.open && !this.ghost.hasCandidates()) {
+      if (this.quickTimer) this.cancel();
+      return;
+    }
+    if (!this.anchorPos) return;
     const a = this.selection.active;
     if (a.lineNumber !== this.anchorPos.lineNumber || a.column !== this.anchorPos.column) this.cancel();
   }

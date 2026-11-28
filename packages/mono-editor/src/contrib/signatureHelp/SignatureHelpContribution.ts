@@ -84,7 +84,7 @@ export class SignatureHelpContribution implements IEditorContribution {
     } else if (source === 'snippet') {
       if (this.controller.isOpen()) this.controller.syncCursor();
       else void this.controller.onCompletionAccepted();
-    } else if (source === 'mouse' || source === 'api' || source === 'keyboard') {
+    } else if (source === 'mouse' || source === 'api' || source === 'keyboard' || source === 'undo' || source === 'redo') {
       this.controller.syncCursor();
     }
   }

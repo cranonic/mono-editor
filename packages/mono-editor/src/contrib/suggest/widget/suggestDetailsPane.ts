@@ -19,6 +19,24 @@ export type DocsPlacementResult = SuggestDocsPlacementResult;
 const MARGIN = 4;
 const GAP = 4;
 
+function normalizeDocSignature(text: string): string {
+  return text.replace(/\r\n/g, '\n').replace(/\s+/g, ' ').trim();
+}
+
+export function isDetailDuplicatedInDoc(detailText: string, docText: string): boolean {
+  const dNorm = normalizeDocSignature(detailText);
+  if (!dNorm || !docText) return false;
+  const fenceRe = /```[^\n]*\n([\s\S]*?)```/g;
+  let m: RegExpExecArray | null;
+  while ((m = fenceRe.exec(docText)) !== null) {
+    const bodyNorm = normalizeDocSignature(m[1] ?? '');
+    if (bodyNorm && (bodyNorm === dNorm || bodyNorm.includes(dNorm))) {
+      return true;
+    }
+  }
+  return docText.trimStart().startsWith(detailText.trim());
+}
+
 /**
  * Pure non-overlapping placement solver for the completion documentation pane.
  * Delegates to `placeSuggestDocs` (priority: right of list -> above cursor line -> below list),
@@ -140,7 +158,8 @@ export class SuggestDetailsPane {
     d.style.maxHeight = 'none';
     d.textContent = '';
 
-    if (detailText) {
+    const showDetailHeader = Boolean(detailText) && !isDetailDuplicatedInDoc(detailText, docText);
+    if (showDetailHeader) {
       const hdr = document.createElement('div');
       hdr.textContent = detailText;
       hdr.style.fontFamily =

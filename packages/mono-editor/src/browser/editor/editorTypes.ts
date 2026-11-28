@@ -44,7 +44,7 @@ import type {
 } from '../../common/languages/providers/types';
 import type { IBreadcrumbsModel, IBreadcrumbsSnapshot } from '../../common/breadcrumbs/breadcrumbsTypes';
 import type { TokenizationSupport } from '../../common/languages/tokenization/TokenizationSupport';
-import type { TextModel } from '../../common/model/TextModel';
+import type { ModelChange, TextModel } from '../../common/model/TextModel';
 import type { IDocumentStructure } from '../../common/structure/types';
 import type { FoldingModel } from '../../common/viewModel/FoldingModel';
 import type { MonoStickyScrollOptions } from '../../common/viewModel/StickyScroll';
@@ -307,7 +307,7 @@ export interface IEditorContribution {
   readonly id: string;
   dispose(): void;
   onModelChange?(model: TextModel): void;
-  onModelContentChange?(versionId: number): void;
+  onModelContentChange?(versionId: number, change?: ModelChange): void;
   onInputChange?(ev: InputChangeEvent): void;
   onCursorChange?(source: string, keepSuggest?: boolean): void;
   onScroll?(): void;
