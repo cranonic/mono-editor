@@ -55,6 +55,13 @@ export function isSuppressedSuggestOpenBracket(typedText: string): boolean {
   );
 }
 
+/** Operators that should not open completion by default. */
+const SUPPRESSED_OPERATORS = new Set(['!', '+', '/', '@', '*', ':', '-', '=', '&', '|', '%', '^', '~', '?', '<', '>']);
+
+export function isSuppressedSuggestOperator(ch: string): boolean {
+  return SUPPRESSED_OPERATORS.has(ch);
+}
+
 /** True when a completion item represents a snippet (suppressed inside strings across all language servers). */
 export function isSnippetCompletionItem(item: CompletionItem): boolean {
   return item.kind === CompletionItemKind.Snippet;

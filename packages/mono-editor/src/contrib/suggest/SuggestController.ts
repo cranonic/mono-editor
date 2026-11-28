@@ -32,6 +32,7 @@ import {
   isMemberAccessContext,
   isSnippetCompletionItem,
   isSuppressedSuggestOpenBracket,
+  isSuppressedSuggestOperator,
   labelOfCompletion,
   orderCompletionProviders,
   scoreCompletionMatch,
@@ -273,6 +274,7 @@ export class SuggestController {
     if (this.disposed || !typedText || typedText.includes('\n')) { this.cancel(); return; }
     const ch = typedText[typedText.length - 1]!;
     if (isSuppressedSuggestOpenBracket(typedText) || isSuppressedSuggestOpenBracket(ch)) { this.cancel(); return; }
+    if (isSuppressedSuggestOperator(ch)) { this.cancel(); return; }
     const triggers = this.collectTriggerCharacters();
     if (this.suggestOnTriggerCharacters && triggers.has(ch)) { await this.trigger(ch, false); return; }
 
@@ -508,6 +510,13 @@ export class SuggestController {
     const seen = new Set<string>();
     return all.filter((it) => {
       if (inString && isSnippetCompletionItem(it)) return false;
+      // After `.` only show properties/fields/methods — no snippets, keywords, or text
+      if (memberAccess) {
+        const k = it.kind ?? 0;
+        // Only Property(9), Method(1), Function(2), Field(4), Variable(5), Constant(20)
+        const allowed = k === 1 || k === 2 || k === 4 || k === 5 || k === 9 || k === 20;
+        if (!allowed) return false;
+      }
       const lab = labelOfCompletion(it);
       if (!lab || seen.has(lab)) return false;
       seen.add(lab);
