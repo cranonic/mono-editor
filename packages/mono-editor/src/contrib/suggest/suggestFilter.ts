@@ -141,7 +141,7 @@ export function ensureDefaultCompletionProviders(): void {
   }));
 
   languageFeatures.registerCompletionItemProvider('html', tagBuiltin({
-    triggerCharacters: ['<', ' '],
+    triggerCharacters: ['<'],
     provideCompletionItems(model, pos) {
       const before = model.getLineContent(pos.lineNumber).slice(0, Math.max(0, pos.column - 1));
       const inTagAttrs = /<[a-zA-Z][\w-]*\s+[^>]*$/.test(before);
@@ -383,4 +383,24 @@ export function filterAndSortSuggestions(
     return a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0;
   });
   return scored.map((s) => s.item);
+}
+
+/** Final pass over merged completion items: drop duplicates and items that do not fit the context. */
+export function dedupeCompletionItems(
+  all: CompletionItem[],
+  ctx: { inString: boolean; memberAccess: boolean },
+): CompletionItem[] {
+  const seen = new Set<string>();
+  return all.filter((it) => {
+    if (ctx.inString && isSnippetCompletionItem(it)) return false;
+    // After `.` only Method(1) Function(2) Field(4) Variable(5) Property(9) Constant(20): no snippets/keywords/text
+    if (ctx.memberAccess) {
+      const k = it.kind ?? 0;
+      if (!(k === 1 || k === 2 || k === 4 || k === 5 || k === 9 || k === 20)) return false;
+    }
+    const lab = labelOfCompletion(it);
+    if (!lab || seen.has(lab)) return false;
+    seen.add(lab);
+    return true;
+  });
 }

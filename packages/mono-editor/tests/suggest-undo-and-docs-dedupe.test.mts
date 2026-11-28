@@ -249,6 +249,7 @@ test('SuggestContribution closes completion palette on Undo (via keybinding comm
       screenPosOf: () => ({ x: 40, y: 120, h: 22 }),
       ensureCaretVisible: () => {},
       paint: () => {},
+      notifyCaretActivity: () => {},
     } as unknown as ViewController;
 
     let contrib!: SuggestContribution;

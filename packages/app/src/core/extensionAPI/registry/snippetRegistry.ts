@@ -41,9 +41,13 @@ class SnippetRegistry {
     this.registeredLanguages.add(languageId);
 
     const provider = monaco.languages.registerCompletionItemProvider(languageId, {
-      triggerCharacters: ['!', ':', '>', '*', '.', '#', '+'],
-      provideCompletionItems: (model: any, position: any) => {
+      // No trigger characters: like VS Code, snippets appear while typing a word (quick suggestions)
+      // or on Ctrl+Space — never because a punctuation key (`!` `>` `*` `+` `.` `#` `:`) was typed.
+      provideCompletionItems: (model: any, position: any, context: any) => {
         try {
+          if (context?.triggerKind === monaco.languages.CompletionTriggerKind.TriggerCharacter) {
+            return { suggestions: [], incomplete: false };
+          }
           const wordUntil = model.getWordUntilPosition(position);
           const wordAt = model.getWordAtPosition(position);
           const currentPath = model.uri.path;
@@ -137,7 +141,10 @@ class SnippetRegistry {
 
           const textContent = model.getValue() as string;
           const uniqueWords = Array.from(new Set(textContent.match(/\b[a-zA-Z_]\w*\b/g) || [])) as string[];
-          const localWords = uniqueWords
+          // Word-based items need a typed word, and markup languages never get them here (Emmet and
+          // the HTML server own those lists; words would only be noise next to `div.` / `<p> |`).
+          const markup = languageId === 'html' || languageId === 'handlebars' || languageId === 'razor' || languageId === 'xml';
+          const localWords = (markup || !wordUntil.word ? [] : uniqueWords)
             .filter((w: string) => w !== wordUntil.word && w.length > 1)
             .map((w: string) => ({
               label: w,

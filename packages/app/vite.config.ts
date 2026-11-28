@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 
 const vscodeShim = path.resolve(__dirname, './src/shims/vscode.ts');
+const utilShim = path.resolve(__dirname, './src/shims/util.ts');
 const tsLibDir = path.resolve(__dirname, './node_modules/typescript/lib');
 const optionalTsExtDir = path.resolve(__dirname, '../extensions/ts');
 
@@ -130,6 +131,7 @@ export default defineConfig({
       { find: '@mono/editor/react', replacement: path.resolve(__dirname, '../mono-editor/src/react/MonoEditor.tsx') },
       { find: '@mono/editor', replacement: path.resolve(__dirname, '../mono-editor/src/index.ts') },
       { find: 'vscode', replacement: vscodeShim },
+      { find: /^util$/, replacement: utilShim },
     ],
   },
   worker: {

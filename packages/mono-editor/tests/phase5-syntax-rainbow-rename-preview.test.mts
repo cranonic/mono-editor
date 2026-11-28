@@ -389,7 +389,7 @@ async function run() {
     registerCoreKeybindingsAndActions({
       getModel: () => model,
       selection,
-      view: { ensureCaretVisible() {}, paint() {} } as any,
+      view: { ensureCaretVisible() {}, paint() {}, notifyCaretActivity() {} } as any,
       keybindings,
       commands,
       isReadOnly: () => false,

@@ -4,7 +4,12 @@ import type { LspState } from '../types';
 import { sendRequest, sendNotify } from '../LspTransport';
 import { getDocUri } from '../utils/uriHelpers';
 import { completionKind } from './helpers';
-import { expandEmmet, emmetTokenBefore, isEmmetLike, tagsMatchingPrefix } from './htmlEmmet';
+import {
+  HTML_EMMET_TRIGGER_CHARACTERS,
+  HTML_LS_TRIGGER_CHARACTERS,
+  htmlEmmetSuggestions,
+  htmlLocationAt,
+} from './htmlEmmet';
 
 const VOID_TAGS = new Set([
   'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta',
@@ -26,16 +31,71 @@ function closeTagSnippet(tagName: string): string {
   return `${base}>$0</${base}>`;
 }
 
+function serverTriggerCharacters(state: LspState, html: boolean): string[] {
+  const caps = state.serverCapabilities as { completionProvider?: { triggerCharacters?: string[] } };
+  const fromServer = caps?.completionProvider?.triggerCharacters;
+  if (Array.isArray(fromServer) && fromServer.length) return fromServer;
+  return html ? [...HTML_LS_TRIGGER_CHARACTERS] : ['.', ':', '/', '<', '"', "'"];
+}
+
+/** Offset of (line, column) — `ModelLike.getOffsetAt` is optional, so fall back to counting lines. */
+function offsetAt(model: any, text: string, line: number, column: number): number {
+  if (typeof model.getOffsetAt === 'function') return model.getOffsetAt(line, column);
+  let off = 0;
+  for (let l = 1; l < line; l++) off += (model.getLineContent(l) as string).length + 1;
+  return Math.min(text.length, off + column - 1);
+}
+
+/** Emmet in HTML — independent of the language server, so it works even before/without it. */
+function registerHtmlEmmet(state: LspState): void {
+  state.disposables.push(
+    monaco.languages.registerCompletionItemProvider(state.languageId, {
+      triggerCharacters: [...HTML_EMMET_TRIGGER_CHARACTERS],
+      provideCompletionItems: (model, position) => {
+        try {
+          const text = model.getValue() as string;
+          const offset = offsetAt(model, text, position.lineNumber, position.column);
+          const loc = htmlLocationAt(text, offset);
+          const line = model.getLineContent(position.lineNumber);
+          const items = htmlEmmetSuggestions(line, position.column, loc);
+          return {
+            incomplete: false,
+            suggestions: items.map((e) => ({
+              label: { label: e.label, description: 'Emmet' },
+              kind: monaco.languages.CompletionItemKind.Property,
+              detail: e.detail,
+              documentation: e.documentation ? { value: e.documentation } : undefined,
+              insertText: e.insertText,
+              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              range: {
+                startLineNumber: position.lineNumber,
+                endLineNumber: position.lineNumber,
+                startColumn: e.startColumn,
+                endColumn: e.endColumn,
+              },
+              sortText: e.sortText ?? '0_' + e.label,
+              filterText: e.filterText ?? e.label,
+            })),
+          };
+        } catch {
+          return { suggestions: [] };
+        }
+      },
+    }),
+  );
+}
+
 export function registerCompletion(state: LspState): void {
   const langId = state.languageId;
   const html = isHtmlLang(langId);
+  if (html) registerHtmlEmmet(state);
 
   state.disposables.push(
     monaco.languages.registerCompletionItemProvider(langId, {
-      // HTML: re-trigger on Emmet operators + digits (p>li*6 while typing)
-      triggerCharacters: html
-        ? ['.', ':', '/', '#', '@', '<', '>', '!', '*', '+', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
-        : ['.', ':', '/', '#', '@', '<', '>'],
+      // Server-advertised trigger characters (initialize result). HTML falls back to the characters of
+      // vscode-html-languageserver. Emmet has its own provider below, so operator characters such as
+      // `>` `!` `*` `+` never open the list from here (typing `=>` must not pop a palette).
+      triggerCharacters: serverTriggerCharacters(state, html),
 
       provideCompletionItems: async (model, position, context) => {
         if (!state.initialized) return { suggestions: [] };
@@ -43,59 +103,6 @@ export function registerCompletion(state: LspState): void {
         try {
           const line = model.getLineContent(position.lineNumber);
           const textBefore = line.substring(0, position.column - 1);
-
-          // ── HTML Emmet / bare-tag completions (VS Code-like, not snippets) ──
-          // Bare `i` should list img/input/iframe… like typing `<i`
-          const emmetSuggestions: monaco.languages.CompletionItem[] = [];
-          if (html) {
-            const tok = emmetTokenBefore(line, position.column);
-            if (tok && isEmmetLike(tok.token)) {
-              const range = {
-                startLineNumber: position.lineNumber,
-                endLineNumber: position.lineNumber,
-                startColumn: tok.startColumn,
-                endColumn: position.column,
-              };
-              const lastSeg = tok.token.split(/[>+*]/).pop() || tok.token;
-              const isPlainTag = /^[a-zA-Z][\w:-]*$/.test(tok.token);
-
-              // Exact Emmet expand for the typed token (i → <i></i>, ul>li*3 → …)
-              const expanded = expandEmmet(tok.token);
-              if (expanded) {
-                emmetSuggestions.push({
-                  label: { label: tok.token, description: 'Emmet' },
-                  kind: monaco.languages.CompletionItemKind.Property,
-                  detail: 'Emmet Abbreviation',
-                  documentation: { value: '```html\n' + expanded.replace(/\$\d+/g, '') + '\n```' },
-                  insertText: expanded,
-                  insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                  range,
-                  sortText: '0_' + tok.token,
-                  filterText: tok.token + ' ' + lastSeg,
-                });
-              }
-
-              // Prefix tag list: `i` → iframe, img, input, ins (same family as `<i`)
-              if (isPlainTag) {
-                for (const tag of tagsMatchingPrefix(tok.token)) {
-                  if (tag === tok.token.toLowerCase()) continue; // already as Emmet above
-                  const tagExp = expandEmmet(tag);
-                  if (!tagExp) continue;
-                  emmetSuggestions.push({
-                    label: tag,
-                    kind: monaco.languages.CompletionItemKind.Property,
-                    detail: 'HTML tag',
-                    documentation: { value: '```html\n' + tagExp.replace(/\$\d+/g, '') + '\n```' },
-                    insertText: tagExp,
-                    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                    range,
-                    sortText: '1_' + tag,
-                    filterText: tag + ' ' + tok.token,
-                  });
-                }
-              }
-            }
-          }
 
           // JIT sync
           sendNotify(state, 'textDocument/didChange', {
@@ -206,9 +213,7 @@ export function registerCompletion(state: LspState): void {
             return suggestion;
           });
 
-          // Bare-tag path: if LSP returned nothing but we have emmet, still show it.
-          // Also: when user typed bare `p`, re-query is not possible; emmet covers it.
-          const suggestions = [...emmetSuggestions, ...lspSuggestions];
+          const suggestions = lspSuggestions;
           if (!suggestions.length) return { suggestions: [], incomplete: false };
 
           return {

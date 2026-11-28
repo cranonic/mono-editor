@@ -30,10 +30,9 @@ import {
   filterAndSortSuggestions,
   isBuiltinCompletionProvider,
   isMemberAccessContext,
-  isSnippetCompletionItem,
+  dedupeCompletionItems,
   isSuppressedSuggestOpenBracket,
   isSuppressedSuggestOperator,
-  labelOfCompletion,
   orderCompletionProviders,
   scoreCompletionMatch,
 } from './suggestFilter';
@@ -495,8 +494,11 @@ export class SuggestController {
       }
     }
 
+    // Word-based items are a fallback (as in VS Code): not beside provider results, not after a trigger char.
     if (
       !memberAccess &&
+      !gotExternalItems &&
+      triggerCharacter === undefined &&
       this.wordBasedSuggestions !== 'off' &&
       completionOptions.wordBasedSuggestions !== false &&
       this.kindVisibility[CompletionItemKind.Text] !== false
@@ -507,21 +509,7 @@ export class SuggestController {
 
     const inString =
       (this.getTokenTypeAt?.(pos.lineNumber, Math.max(1, pos.column - 1)) ?? null) === 'string';
-    const seen = new Set<string>();
-    return all.filter((it) => {
-      if (inString && isSnippetCompletionItem(it)) return false;
-      // After `.` only show properties/fields/methods — no snippets, keywords, or text
-      if (memberAccess) {
-        const k = it.kind ?? 0;
-        // Only Property(9), Method(1), Function(2), Field(4), Variable(5), Constant(20)
-        const allowed = k === 1 || k === 2 || k === 4 || k === 5 || k === 9 || k === 20;
-        if (!allowed) return false;
-      }
-      const lab = labelOfCompletion(it);
-      if (!lab || seen.has(lab)) return false;
-      seen.add(lab);
-      return true;
-    });
+    return dedupeCompletionItems(all, { inString, memberAccess });
   }
 
   private clearQuickTimer(): void {

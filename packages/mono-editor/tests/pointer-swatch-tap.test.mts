@@ -79,6 +79,8 @@ function setupHarness() {
     clampScrollPublic() {},
     schedulePaint() {},
     ensureCaretVisible() {},
+    setPointerHeld() {},
+    notifyCaretActivity() {},
     positionAtPoint: () => ({ lineNumber: 2, column: 3 }),
     hitTestSticky: (_x: number, y: number) => (y < 24 ? { lineNumber: 1, index: 0 } : null),
     revealStickyLine() {},
