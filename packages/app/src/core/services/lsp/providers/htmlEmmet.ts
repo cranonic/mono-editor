@@ -6,7 +6,7 @@
 // (VS Code only offers it in element text — never inside a tag, attribute value, comment, <script>
 // or <style>), `htmlEmmetSuggestions` runs the helper and returns neutral items for completion.ts.
 
-import { doComplete, type EmmetConfiguration } from 'vscode-emmet-helper';
+import { doComplete } from 'vscode-emmet-helper';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
 export type HtmlLocation = 'text' | 'tag' | 'attr-value' | 'comment' | 'script' | 'style';
@@ -84,7 +84,7 @@ export interface EmmetSuggestion {
   filterText?: string;
 }
 
-const CONFIG: EmmetConfiguration = {
+const CONFIG: Parameters<typeof doComplete>[3] = {
   showExpandedAbbreviation: 'always',
   showAbbreviationSuggestions: true,
   syntaxProfiles: {},
