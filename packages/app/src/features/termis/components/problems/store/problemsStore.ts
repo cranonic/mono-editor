@@ -69,7 +69,7 @@ export const useProblemsStore = create<ProblemsState>((set, get) => ({
       if (m.severity === monaco.MarkerSeverity.Warning && !showWarnings) return false;
       if (m.severity === monaco.MarkerSeverity.Info && !showInfos) return false;
 
-      const path = m.resource.path.toLowerCase();
+      const path = (m.resource?.path ?? m.source ?? '').toLowerCase();
 
       if (includeFilter.trim()) {
         const patterns = includeFilter.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);

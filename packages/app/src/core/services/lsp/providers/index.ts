@@ -101,7 +101,9 @@ export function registerProviders(state: LspState, options: LspOptions = {}): vo
     if (options.codeLens && serverHas(caps, 'codeLensProvider')) {
       registerCodeLens(state);
     }
-    if (options.foldingRange !== false)      registerFoldingRange(state);
+    if (options.foldingRange !== false && serverHas(caps, 'foldingRangeProvider')) {
+      registerFoldingRange(state);
+    }
     if (options.selectionRange !== false && serverHas(caps, 'selectionRangeProvider')) {
       registerSelectionRange(state);
     }
@@ -120,9 +122,8 @@ export function registerProviders(state: LspState, options: LspOptions = {}): vo
       registerColorProvider(state);
     }
 
-    // Inlay: prefer server capability; never skip just because a setting is missing.
-    const serverOffersInlay = serverHas(caps, 'inlayHintProvider');
-    if (options.inlayHints !== false || serverOffersInlay) {
+    // Inlay: only register if server advertises support (avoids -32601)
+    if (options.inlayHints !== false && serverHas(caps, 'inlayHintProvider')) {
       registerInlayHints(state);
     }
   }

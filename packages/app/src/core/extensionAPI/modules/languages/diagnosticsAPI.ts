@@ -19,7 +19,7 @@ export const createDiagnosticsAPI = (extId: string) => ({
    */
   getDiagnostics: (uri?: string) => {
     const allMarkers = useProblemsStore.getState().markers;
-    if (uri) return allMarkers.filter(m => m.resource.path === uri);
+    if (uri) return allMarkers.filter(m => (m.resource?.path ?? '') === uri);
     return allMarkers;
   },
 

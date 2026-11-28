@@ -56,7 +56,7 @@ export const ProblemsPanel: React.FC = () => {
   const grouped = useMemo(() => {
     const groups: Record<string, monaco.editor.IMarker[]> = {};
     markers.forEach(m => {
-      const path = m.resource.path;
+      const path = m.resource?.path ?? m.source ?? '';
       if (!groups[path]) {
         groups[path] = [];
       }

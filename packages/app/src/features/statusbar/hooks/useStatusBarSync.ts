@@ -103,7 +103,10 @@ function collectMarkers(editor: IMonoEditor): IMarker[] {
     }
   };
   try {
-    pushAll(editor.getModelMarkers?.());
+    const list = editor.getModelMarkers?.() ?? [];
+    const uri = (editor.getModel?.() as any)?.uri;
+    const resource = uri ? { path: String(uri) } : { path: '' };
+    pushAll(list.map((m: any) => ({ ...m, resource: m.resource ?? resource })));
   } catch { /* ignore */ }
   try {
     pushAll(monaco.editor.getModelMarkers({}) as IMarker[]);
