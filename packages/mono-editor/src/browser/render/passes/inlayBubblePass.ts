@@ -1,3 +1,4 @@
+import { withEmojiFontFallback } from '../../../common/config/editorOptions';
 import { INLAY_CHIP_PAD_X, type ResolvedInlayHint } from '../../../common/virtualText';
 import type { FrameContext, RenderPass } from '../frameContext';
 
@@ -42,9 +43,10 @@ export const inlayBubblePass: RenderPass = {
   paint(ctx: CanvasRenderingContext2D, f: FrameContext): void {
     const { cssWidth, cssHeight, metrics, theme, topInsetPx = 0, stickyLines = [] } = f.opts;
     const { lineHeight, fontSize, fontFamily } = metrics;
-    const baseFont = `${fontSize}px ${fontFamily}`;
+    const resolvedFamily = withEmojiFontFallback(fontFamily);
+    const baseFont = `${fontSize}px ${resolvedFamily}`;
     const hintFontSize = Math.max(10, Math.round(fontSize * 0.86));
-    const hintFont = `${hintFontSize}px ${fontFamily}`;
+    const hintFont = `${hintFontSize}px ${resolvedFamily}`;
     const chipH = Math.max(14, lineHeight - 4);
     const gap = 4;
 

@@ -1,3 +1,4 @@
+import type { MultiCursorPasteMode } from '../../common/config/editorOptions';
 import type { MonoEditorTheme } from '../../common/config/themeTypes';
 import type { SelectionState } from '../../common/core/SelectionState';
 import type { IRange } from '../../common/core/types';
@@ -39,6 +40,7 @@ export interface CoreKeybindingHost {
   getTabSize(): number;
   getInsertSpaces?(): boolean;
   getEmptySelectionClipboard?(): boolean;
+  getMultiCursorPaste?(): MultiCursorPasteMode;
   getNativePasteSeq?(): number;
   getLanguageIdAtPosition?: (lineNumber: number, column: number) => string;
   onBeforePaste?: (text: string) => Promise<boolean>;
@@ -52,6 +54,7 @@ export interface CoreKeybindingHost {
 
 export function registerCoreKeybindingsAndActions(host: CoreKeybindingHost): void {
   const runAfter = () => {
+    host.view.notifyCaretActivity('edit');
     host.view.ensureCaretVisible();
     host.syncTextarea();
     host.view.paint();
@@ -193,8 +196,9 @@ export function registerCoreKeybindingsAndActions(host: CoreKeybindingHost): voi
         return { idx, start: Math.min(aOff, bOff), end: Math.max(aOff, bOff) };
       });
       const sortedAsc = [...items].sort((x, y) => x.start - y.start);
-      const lines = text.split('\n');
-      const perCursor = lines.length === sortedAsc.length && lines.length > 1;
+      const lines = text.split(/\r?\n/);
+      const pasteMode = host.getMultiCursorPaste?.() ?? 'spread';
+      const perCursor = pasteMode !== 'full' && lines.length === sortedAsc.length && lines.length > 1;
       const textFor = (i: number) => (perCursor ? lines[i]! : text);
       const finalOffsets = new Array<number>(sortedAsc.length);
       let delta = 0;

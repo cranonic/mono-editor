@@ -2,7 +2,9 @@ import type { LineBracketColor } from '../../common/brackets/bracketColorizerTyp
 import type { ColorMatch } from '../../common/color/colorTypes';
 import type {
   CursorBlinkingMode,
+  CursorSmoothCaretAnimationMode,
   CursorStyleMode,
+  CursorSurroundingLinesStyleMode,
   MonoErrorLensOptions,
   MonoLineNumbers,
   RenderLineHighlightMode,
@@ -61,6 +63,7 @@ import {
   type RowGeometry,
   type ViewZoneSpec,
 } from './viewLayout';
+import { CursorAnimationController, type CaretMotionHint } from './cursorAnimation';
 import { createEmptyViewProviders, type ViewDataProviders } from './viewProviders';
 
 export interface ViewDisplayPatch {
@@ -70,8 +73,11 @@ export interface ViewDisplayPatch {
   rulers?: readonly number[];
   renderLineHighlight?: RenderLineHighlightMode;
   cursorStyle?: CursorStyleMode;
+  cursorWidth?: number;
   cursorBlinking?: CursorBlinkingMode;
   cursorSurroundingLines?: number;
+  cursorSurroundingLinesStyle?: CursorSurroundingLinesStyleMode;
+  cursorSmoothCaretAnimation?: CursorSmoothCaretAnimationMode;
   errorLens?: boolean | MonoErrorLensOptions;
 }
 
@@ -112,8 +118,9 @@ export class ViewController {
   private rulers: readonly number[] = [];
   private renderLineHighlight: RenderLineHighlightMode = 'line';
   private cursorStyle: CursorStyleMode = 'line';
-  private cursorBlinking: CursorBlinkingMode = 'blink';
+  private cursorWidth = 2;
   private cursorSurroundingLines = 0;
+  private cursorSurroundingLinesStyle: CursorSurroundingLinesStyleMode = 'default';
   private errorLens: MonoErrorLensOptions | null = null;
   private hiddenAreas: IRange[] = [];
   private hiddenAreasVersion = 0;
@@ -127,6 +134,7 @@ export class ViewController {
   private onPaintCb: (() => void) | null = null;
   private paintRaf = 0;
   private maxCharsCache: MaxCharsCache | null = null;
+  private readonly cursorAnim = new CursorAnimationController(() => this.schedulePaint());
 
   constructor(
     model: TextModel, selection: SelectionState, renderer: CanvasRenderer,
@@ -165,8 +173,7 @@ export class ViewController {
   setStickyOutlineSymbols(symbols: readonly DocumentSymbol[] | null): void { this.sticky.setOutlineSymbols(symbols); }
   setGhostTextProviders(opts: {
     getLineGhostInline?: ((ln: number) => readonly InlineGhostRun[]) | null;
-    getGhostVersion?: (() => number) | null;
-    hasGhostRows?: (() => boolean) | null;
+    getGhostVersion?: (() => number) | null; hasGhostRows?: (() => boolean) | null;
     getLineGhostRows?: ((ln: number, wrapWidthPx: number, effectiveWrap: boolean) => readonly VirtualGhostRow[]) | null;
     getGhostTextItalic?: (() => boolean) | null;
   }): void {
@@ -185,42 +192,40 @@ export class ViewController {
     if (patch.rulers !== undefined) this.rulers = [...patch.rulers];
     if (patch.renderLineHighlight !== undefined) this.renderLineHighlight = patch.renderLineHighlight;
     if (patch.cursorStyle !== undefined) this.cursorStyle = patch.cursorStyle;
-    if (patch.cursorBlinking !== undefined) this.cursorBlinking = patch.cursorBlinking;
+    if (patch.cursorWidth !== undefined) this.cursorWidth = Math.max(1, Math.min(10, Math.round(patch.cursorWidth)));
+    if (patch.cursorBlinking !== undefined) this.cursorAnim.setBlinkingMode(patch.cursorBlinking);
     if (patch.cursorSurroundingLines !== undefined) this.cursorSurroundingLines = Math.max(0, patch.cursorSurroundingLines);
-    if (patch.errorLens !== undefined) {
-      this.errorLens = typeof patch.errorLens === 'boolean' ? { enabled: patch.errorLens } : patch.errorLens;
-    }
+    if (patch.cursorSurroundingLinesStyle !== undefined) this.cursorSurroundingLinesStyle = patch.cursorSurroundingLinesStyle;
+    if (patch.cursorSmoothCaretAnimation !== undefined) this.cursorAnim.setSmoothCaretMode(patch.cursorSmoothCaretAnimation);
+    if (patch.errorLens !== undefined) this.errorLens = typeof patch.errorLens === 'boolean' ? { enabled: patch.errorLens } : patch.errorLens;
     this.schedulePaint();
   }
 
-  getCursorBlinking(): CursorBlinkingMode { return this.cursorBlinking; }
+  getCursorBlinking(): CursorBlinkingMode { return this.cursorAnim.getBlinkingMode(); }
   getCursorSurroundingLines(): number { return this.cursorSurroundingLines; }
+  setCursorFocused(focused: boolean): void { this.cursorAnim.setFocused(focused); this.schedulePaint(); }
+  setPointerHeld(held: boolean): void { this.cursorAnim.setPointerHeld(held); this.schedulePaint(); }
+  notifyCaretActivity(hint: CaretMotionHint = 'explicit'): void { this.cursorAnim.notifyActivity(hint); }
 
   setHiddenAreas(ranges: readonly IRange[]): void {
-    this.hiddenAreas = ranges.map((r) => ({ ...r }));
-    this.hiddenAreasVersion++;
+    this.hiddenAreas = ranges.map((r) => ({ ...r })); this.hiddenAreasVersion++;
     this.projection.invalidate(); this.clampScroll(); this.schedulePaint();
   }
   private isLineInHiddenArea(ln: number): boolean {
     for (const r of this.hiddenAreas) if (ln >= r.startLineNumber && ln <= r.endLineNumber) return true;
     return false;
   }
-  isLineHidden(ln: number): boolean {
-    return (this.foldingEnabled && (this.foldingModel?.isLineHidden(ln) ?? false)) || this.isLineInHiddenArea(ln);
-  }
+  isLineHidden(ln: number): boolean { return (this.foldingEnabled && (this.foldingModel?.isLineHidden(ln) ?? false)) || this.isLineInHiddenArea(ln); }
 
   measureTextWidth(text: string): number { return this.renderer.measureTextWidth(text, this.getMetrics()); }
   setFoldingModel(folding: FoldingModel | null): void { this.foldingModel = folding; this.projection.invalidate(); }
   setFoldingEnabled(enabled: boolean): void {
     if (this.foldingEnabled === enabled) return;
-    this.foldingEnabled = enabled;
-    if (!enabled) this.foldingModel?.unfoldAll();
+    this.foldingEnabled = enabled; if (!enabled) this.foldingModel?.unfoldAll();
     this.projection.invalidate(); this.clampScroll(); this.schedulePaint();
   }
   setWordWrap(mode: WordWrapMode, indent?: WrappingIndentMode): void {
-    this.wordWrap = mode;
-    if (indent != null) this.wrappingIndent = indent;
-    if (mode === 'on') this.scrollLeft = 0;
+    this.wordWrap = mode; if (indent != null) this.wrappingIndent = indent; if (mode === 'on') this.scrollLeft = 0;
     this.projection.invalidate(); this.clampScroll(); this.schedulePaint();
   }
   getWordWrap(): WordWrapMode { return this.wordWrap; }
@@ -236,30 +241,24 @@ export class ViewController {
   getDynamicCaretColor(): boolean { return this.dynamicCaretColor; }
 
   setTopInset(px: number): void {
-    const next = Math.max(0, Math.round(px));
-    if (this.topInsetPx === next) return;
-    const delta = next - this.topInsetPx;
-    this.topInsetPx = next; this.scrollTop = Math.max(0, this.scrollTop + delta);
+    const next = Math.max(0, Math.round(px)); if (this.topInsetPx === next) return;
+    this.scrollTop = Math.max(0, this.scrollTop + (next - this.topInsetPx)); this.topInsetPx = next;
     this.clampScroll(); this.paint();
   }
   getTopInset(): number { return this.topInsetPx; }
   setRightInset(px: number): void {
-    const next = Math.max(0, Math.round(px));
-    if (this.rightInsetPx === next) return;
+    const next = Math.max(0, Math.round(px)); if (this.rightInsetPx === next) return;
     this.rightInsetPx = next; this.projection.invalidate(); this.clampScroll(); this.paint();
   }
   getRightInset(): number { return this.rightInsetPx; }
   setBottomInset(px: number): void {
-    const next = Math.max(0, Math.round(px));
-    if (this.bottomInsetPx === next) return;
+    const next = Math.max(0, Math.round(px)); if (this.bottomInsetPx === next) return;
     this.bottomInsetPx = next; this.clampScroll(); this.schedulePaint();
   }
   getBottomInset(): number { return this.bottomInsetPx; }
 
   setViewZone(zone: ViewZoneSpec | null): void {
-    this.viewZone = zone
-      ? { id: zone.id, afterLineNumber: Math.max(1, zone.afterLineNumber), heightPx: Math.max(0, Math.round(zone.heightPx)) }
-      : null;
+    this.viewZone = zone ? { id: zone.id, afterLineNumber: Math.max(1, zone.afterLineNumber), heightPx: Math.max(0, Math.round(zone.heightPx)) } : null;
     this.clampScroll(); this.paint();
   }
   getViewZone(): ViewZoneSpec | null { return this.viewZone; }
@@ -295,12 +294,8 @@ export class ViewController {
 
   getZoneTopForLine(afterLineNumber: number, zoneId: string): number {
     this.syncProjection();
-    const geom = this.getRowGeometry();
-    const afterRow =
-      afterLineNumber <= 0
-        ? -1
-        : resolveViewZoneAfterRow({ id: zoneId, afterLineNumber, heightPx: 1 }, this.model, this.projection);
-    return geom.zoneDocTop(afterRow, zoneId) - this.scrollTop;
+    const afterRow = afterLineNumber <= 0 ? -1 : resolveViewZoneAfterRow({ id: zoneId, afterLineNumber, heightPx: 1 }, this.model, this.projection);
+    return this.getRowGeometry().zoneDocTop(afterRow, zoneId) - this.scrollTop;
   }
 
   getColorHits(): ColorHit[] { return this.renderer.lastColorHits; }
@@ -311,36 +306,25 @@ export class ViewController {
 
   getVisibleLineRange(): { startLineNumber: number; endLineNumber: number } {
     this.syncProjection();
-    const geom = this.getRowGeometry();
-    const total = this.projection.getVisualLineCount();
+    const geom = this.getRowGeometry(), total = this.projection.getVisualLineCount();
     const firstRow = Math.max(0, geom.rowAtDocY(this.scrollTop).row - this.overscan);
     const lastRow = Math.min(total - 1, geom.rowAtDocY(this.scrollTop + (this.cssHeight || 400)).row + this.overscan);
-    return {
-      startLineNumber: this.projection.getVisualLine(firstRow).modelLine,
-      endLineNumber: this.projection.getVisualLine(Math.max(firstRow, lastRow)).modelLine,
-    };
+    return { startLineNumber: this.projection.getVisualLine(firstRow).modelLine, endLineNumber: this.projection.getVisualLine(Math.max(firstRow, lastRow)).modelLine };
   }
 
   getVisibleRanges(): IRange[] {
     this.syncProjection();
-    const geom = this.getRowGeometry();
-    const total = this.projection.getVisualLineCount();
+    const geom = this.getRowGeometry(), total = this.projection.getVisualLineCount();
     const firstRow = Math.max(0, Math.min(total - 1, geom.rowAtDocY(this.scrollTop + this.topInsetPx).row));
     const lastRow = Math.max(firstRow, Math.min(total - 1, geom.rowAtDocY(this.scrollTop + Math.max(geom.lineHeight, this.cssHeight)).row));
-    const startLine = this.projection.getVisualLine(firstRow).modelLine;
-    const endLine = this.projection.getVisualLine(lastRow).modelLine;
+    const startLine = this.projection.getVisualLine(firstRow).modelLine, endLine = this.projection.getVisualLine(lastRow).modelLine;
     return [{ startLineNumber: startLine, startColumn: 1, endLineNumber: endLine, endColumn: this.model.getLineContent(endLine).length + 1 }];
   }
 
-  getTopForLineNumber(lineNumber: number): number {
-    this.syncProjection();
-    return this.getRowGeometry().topOfRow(this.projection.modelLineToFirstVisualRow(lineNumber));
-  }
-
+  getTopForLineNumber(lineNumber: number): number { this.syncProjection(); return this.getRowGeometry().topOfRow(this.projection.modelLineToFirstVisualRow(lineNumber)); }
   getBottomForLineNumber(lineNumber: number): number {
     this.syncProjection();
-    const m = this.getMetrics();
-    const lines = this.projection.getVisualLinesForModelLine(lineNumber);
+    const m = this.getMetrics(), lines = this.projection.getVisualLinesForModelLine(lineNumber);
     const lastRow = lines.length ? lines[lines.length - 1]!.visualRow : this.projection.modelLineToFirstVisualRow(lineNumber);
     return this.getRowGeometry(m).topOfRow(lastRow) + m.lineHeight;
   }
@@ -351,12 +335,12 @@ export class ViewController {
     return { top: p.y, left: p.x, height: p.h };
   }
   getTargetAtLocalPoint(localX: number, localY: number, element: unknown = null): IMouseTarget {
-    this.syncProjection();
-    return computeTargetAtLocalPoint(this.buildHitContext(), localX, localY, this.cssWidth, this.cssHeight, element);
+    this.syncProjection(); return computeTargetAtLocalPoint(this.buildHitContext(), localX, localY, this.cssWidth, this.cssHeight, element);
   }
 
   setModel(model: TextModel): void {
     this.model = model; this.maxCharsCache = null; this.viewZone = null; this.hiddenAreas = [];
+    this.cursorAnim.resetTracking(model.getVersionId());
     this.sticky.setModel(model, this.tabSize); this.projection.invalidate();
   }
 
@@ -433,12 +417,13 @@ export class ViewController {
   invalidateScopes(): void { this.sticky.invalidate(); this.projection.invalidate(); }
   getStickyScrollOptions(): Required<MonoStickyScrollOptions> { return this.sticky.getOptions(); }
 
-  ensureCaretVisible(): void {
+  ensureCaretVisible(fromCommandOrEdit = true): void {
     this.syncProjection();
     const m = this.getMetrics();
     const { lineNumber: line, column: col } = this.selection.active;
     const topY = this.getRowGeometry(m).topOfRow(this.projection.modelToVisual(line, col).visualRow);
-    const padPx = this.cursorSurroundingLines * m.lineHeight;
+    const applyPad = this.cursorSurroundingLinesStyle === 'all' || fromCommandOrEdit;
+    const padPx = applyPad ? this.cursorSurroundingLines * m.lineHeight : 0;
     const effectiveH = Math.max(m.lineHeight, this.cssHeight - this.bottomInsetPx);
     if (topY < this.scrollTop + this.topInsetPx + m.paddingTop + padPx) {
       this.scrollTop = Math.max(0, topY - this.topInsetPx - m.paddingTop - padPx);
@@ -519,17 +504,25 @@ export class ViewController {
       : null;
 
     const p = this.providers;
+    const act = this.selection.active;
+    const screen = computeScreenPosOf(this.buildHitContext(), act.lineNumber, act.column);
+    const cursor = this.cursorAnim.preparePaint({
+      hasSelection: !this.selection.isEmpty, hasMultipleCursors: this.selection.hasMultipleCursors,
+      freeHandleActive: this.freeHandle !== null, caretLine: act.lineNumber, caretCol: act.column,
+      virtualSide: act.virtualSide, modelVersion: this.model.getVersionId(),
+      targetDocX: screen.x + this.scrollLeft, targetDocY: screen.y + this.scrollTop, renderLeft, renderTop,
+    });
     this.renderer.paint({
       model: this.model, selection: this.selection, scrollTop: renderTop, scrollLeft: renderLeft,
       cssWidth: this.cssWidth, cssHeight: this.cssHeight, metrics, theme: this.getTheme(),
       showLineNumbers: this.showLineNumbers(), lineNumbersMode: this.lineNumbersMode,
       glyphMargin: this.glyphMargin, renderWhitespace: this.renderWhitespace,
       rulers: this.rulers, renderLineHighlight: this.renderLineHighlight,
-      cursorStyle: this.cursorStyle, errorLens: this.errorLens,
+      cursorStyle: this.cursorStyle, cursorWidth: this.cursorWidth,
+      cursorOpacity: cursor.opacity, cursorScaleY: cursor.scaleY, cursorAnimPos: cursor.animPos,
+      errorLens: this.errorLens,
       markers: this.markersProvider?.() ?? [], overscan: this.overscan, projection: this.projection,
-      folding: this.foldingModel
-        ? { enabled: this.foldingEnabled, isFoldable: (ln) => this.foldingModel!.isFoldable(ln), isCollapsed: (ln) => this.foldingModel!.isCollapsed(ln) }
-        : undefined,
+      folding: this.foldingModel ? { enabled: this.foldingEnabled, isFoldable: (ln) => this.foldingModel!.isFoldable(ln), isCollapsed: (ln) => this.foldingModel!.isCollapsed(ln) } : undefined,
       bracketMatch, occurrences, indentGuides,
       getLineTokens: this.tokenization ? (ln) => this.tokenization!.getLineTokens(this.model, ln) : undefined,
       freeHandle: this.freeHandle, handlesVisible: this.handlesVisible, handleAlpha: this.handleAlpha,
@@ -552,27 +545,23 @@ export class ViewController {
 
   revealBottomStickyLine(lineNumber: number, localX?: number): void {
     this.syncProjection();
-    const m = this.getMetrics();
-    const line = Math.max(1, Math.min(this.model.getLineCount(), lineNumber));
+    const m = this.getMetrics(), line = Math.max(1, Math.min(this.model.getLineCount(), lineNumber));
     const docY = this.getRowGeometry(m).topOfRow(this.projection.modelLineToFirstVisualRow(line));
-    this.scrollTop = Math.max(0, docY - (this.cssHeight - m.lineHeight) / 2);
-    this.clampScroll();
+    this.scrollTop = Math.max(0, docY - (this.cssHeight - m.lineHeight) / 2); this.clampScroll();
     const col = localX != null ? this.columnAtX(line, localX - this.contentLeft - m.paddingLeft + this.scrollLeft, true) : this.selection.active.column;
     this.selection.setCaret(line, col); this.sticky.lastBottomSticky = null; this.paint();
   }
 
   revealStickyLine(lineNumber: number, index: number, localX?: number): void {
     this.syncProjection();
-    const m = this.getMetrics();
-    const line = Math.max(1, Math.min(this.model.getLineCount(), lineNumber));
+    const m = this.getMetrics(), line = Math.max(1, Math.min(this.model.getLineCount(), lineNumber));
     const docY = this.getRowGeometry(m).topOfRow(this.projection.modelLineToFirstVisualRow(line));
-    this.scrollTop = Math.max(0, docY - index * m.lineHeight);
-    this.clampScroll();
+    this.scrollTop = Math.max(0, docY - index * m.lineHeight); this.clampScroll();
     const col = localX != null ? this.columnAtX(line, localX - this.contentLeft - m.paddingLeft + this.scrollLeft, true) : 1;
     this.selection.setCaret(line, col); this.paint();
   }
 
-  dispose(): void { if (this.paintRaf) { cancelAnimationFrame(this.paintRaf); this.paintRaf = 0; } }
+  dispose(): void { this.cursorAnim.dispose(); if (this.paintRaf) { cancelAnimationFrame(this.paintRaf); this.paintRaf = 0; } }
 
   private buildHitContext(): HitTestContext {
     return {
@@ -584,13 +573,10 @@ export class ViewController {
       getLineGhostInline: this.providers.getLineGhostInline,
     };
   }
-
   private maxContentWidthPx(): number {
     const res = computeMaxContentWidthPx(this.wordWrap, this.cssWidth, this.contentLeft, this.getMetrics(), this.model, this.renderer, this.maxCharsCache);
-    this.maxCharsCache = res.cache;
-    return res.widthPx;
+    this.maxCharsCache = res.cache; return res.widthPx;
   }
-
   private clampScroll(): void {
     this.scrollTop = Math.max(0, Math.min(this.scrollTop, this.getMaxScrollTop()));
     const maxLeft = Math.max(0, this.maxContentWidthPx() - Math.max(0, this.cssWidth - this.rightInsetPx));

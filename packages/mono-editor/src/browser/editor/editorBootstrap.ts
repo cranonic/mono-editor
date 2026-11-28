@@ -3,7 +3,11 @@ import {
   DEFAULT_RAINBOW_BRACKET_COLORS,
   DEFAULT_UNEXPECTED_BRACKET_COLOR,
 } from '../../common/brackets';
-import type { MonoEditorOptions, RenderMetrics } from '../../common/config/editorOptions';
+import {
+  DEFAULT_MONO_FONT_FAMILY,
+  type MonoEditorOptions,
+  type RenderMetrics,
+} from '../../common/config/editorOptions';
 import { DEFAULT_THEME } from '../../common/config/themeTypes';
 import type { SelectionState } from '../../common/core/SelectionState';
 import type { IRange } from '../../common/core/types';
@@ -42,7 +46,7 @@ export function createInitialOptionState(options: MonoEditorOptions): EditorOpti
   const fontSize = options.fontSize ?? 14;
   const lineNumbersMode = options.lineNumbers ?? 'on';
   return {
-    fontFamily: options.fontFamily ?? 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+    fontFamily: options.fontFamily ?? DEFAULT_MONO_FONT_FAMILY,
     fontSize,
     lineHeight: options.lineHeight ?? Math.round(fontSize * 1.45),
     lineNumbers: lineNumbersMode !== 'off',
@@ -63,8 +67,14 @@ export function createInitialOptionState(options: MonoEditorOptions): EditorOpti
     rulers: options.rulers ? [...options.rulers] : [],
     renderLineHighlight: options.renderLineHighlight ?? 'line',
     cursorStyle: options.cursorStyle ?? 'line',
+    cursorWidth: Math.max(1, Math.min(10, Math.round(options.cursorWidth ?? 2))),
     cursorBlinking: options.cursorBlinking ?? 'blink',
     cursorSurroundingLines: Math.max(0, options.cursorSurroundingLines ?? 0),
+    cursorSurroundingLinesStyle: options.cursorSurroundingLinesStyle ?? 'default',
+    cursorSmoothCaretAnimation: options.cursorSmoothCaretAnimation ?? 'off',
+    multiCursorModifier: options.multiCursorModifier ?? 'alt',
+    multiCursorPaste: options.multiCursorPaste ?? 'spread',
+    multiCursorLimit: Math.max(1, Math.min(100000, Math.round(options.multiCursorLimit ?? 10000))),
     linkedEditing: options.linkedEditing !== false,
     codeLens: options.codeLens !== false,
     errorLens: options.errorLens ?? false,
@@ -126,6 +136,7 @@ export function createEditorSubsystems(params: {
     () => params.opts.lineNumbers, params.overscan, params.tokenization,
     params.options.stickyScroll, params.options.scrollBeyondLastLine !== false,
   );
+  params.selection.setMaxCursors(params.opts.multiCursorLimit);
   view.setTokenTypeProvider((ln, col) => params.modelCtrl.getTokenTypeAt(params.tokenization, ln, col));
   view.setFoldingModel(params.folding);
   view.setFoldingEnabled(params.opts.foldingEnabled);
@@ -138,8 +149,11 @@ export function createEditorSubsystems(params: {
     rulers: params.opts.rulers,
     renderLineHighlight: params.opts.renderLineHighlight,
     cursorStyle: params.opts.cursorStyle,
+    cursorWidth: params.opts.cursorWidth,
     cursorBlinking: params.opts.cursorBlinking,
     cursorSurroundingLines: params.opts.cursorSurroundingLines,
+    cursorSurroundingLinesStyle: params.opts.cursorSurroundingLinesStyle,
+    cursorSmoothCaretAnimation: params.opts.cursorSmoothCaretAnimation,
     errorLens: params.opts.errorLens,
   });
   view.setMarkersProvider(() => params.markers.getModelMarkers());
@@ -222,6 +236,9 @@ export function createEditorSubsystems(params: {
     params.root, params.modelCtrl.model, params.selection,
     (ev) => {
       handleVis.onType();
+      if (ev.kind !== 'composition') {
+        view.notifyCaretActivity(ev.kind === 'move' ? 'explicit' : 'edit');
+      }
       params.onInputComplete(ev);
     },
     {
@@ -232,6 +249,7 @@ export function createEditorSubsystems(params: {
       readOnly: params.opts.readOnly,
       ariaLabel: params.opts.ariaLabel,
       pageSize: 40,
+      multiCursorPaste: params.opts.multiCursorPaste,
       bracketEnterIndent: params.options.bracketEnterIndent !== false,
       autoClosingBrackets: params.options.autoClosingBrackets,
       autoClosingQuotes: params.options.autoClosingQuotes,
@@ -244,8 +262,26 @@ export function createEditorSubsystems(params: {
       onDidPaste: params.onDidPaste,
       onKeyDownEvent: params.onKeyDownEvent,
       onKeyUpEvent: params.onKeyUpEvent,
-      onFocus: params.onTextFocus,
-      onBlur: params.onTextBlur,
+      onFocus: () => {
+        view.setCursorFocused(true);
+        params.onTextFocus?.();
+      },
+      onBlur: () => {
+        setTimeout(() => {
+          const active = document.activeElement;
+          if (
+            active &&
+            active !== input.textarea &&
+            active !== document.body &&
+            active !== document.documentElement &&
+            (!params.root.contains(active) ||
+              Boolean((active as HTMLElement).closest?.('input, textarea, select, [contenteditable="true"], [data-mono-focusable="true"]')))
+          ) {
+            view.setCursorFocused(false);
+          }
+        }, 0);
+        params.onTextBlur?.();
+      },
     },
   );
 
@@ -286,6 +322,7 @@ export function buildContributionHost(params: {
     tokenization: params.tokenization, isPeekEditor: params.isPeekEditor, initialOptions: params.initialOptions,
     isDisposed: params.isDisposed, isReadOnly: () => params.opts.readOnly,
     isFoldingEnabled: () => params.opts.foldingEnabled, getTabSize: () => params.opts.tabSize,
+    getMultiCursorLimit: () => params.opts.multiCursorLimit,
     getFontFamily: () => params.opts.fontFamily, getFontSize: () => params.opts.fontSize,
     getLineHeight: () => params.opts.lineHeight, showLineNumbers: () => params.opts.lineNumbers,
     getTheme: () => params.opts.theme, getMinimapWidth: () => params.minimap.getWidth(),
@@ -409,6 +446,7 @@ export function createEditorPointer(params: {
         const n = Math.max(10, Math.min(32, Math.round(params.opts.fontSize * ratio)));
         if (n !== params.opts.fontSize) params.updateFontSize(n);
       },
+      getMultiCursorModifier: () => params.opts.multiCursorModifier,
     },
   );
 }

@@ -112,6 +112,8 @@ export class MultiCursorController implements IEditorContribution {
     }
 
     if (found === -1) return;
+    const limit = Math.max(1, this.host.getMultiCursorLimit?.() ?? sel.getMaxCursors());
+    if (sel.selections.length >= limit) return;
     const sPos = model.getPositionAt(found);
     const ePos = model.getPositionAt(found + needle.length);
     sel.addSelection(sPos, ePos, false);
@@ -138,9 +140,10 @@ export class MultiCursorController implements IEditorContribution {
     }
     if (!needle) return;
 
+    const limit = Math.max(1, this.host.getMultiCursorLimit?.() ?? sel.getMaxCursors());
     const ranges: { anchor: IPosition; active: IPosition }[] = [];
     let idx = val.indexOf(needle, 0);
-    while (idx !== -1 && ranges.length < 500) {
+    while (idx !== -1 && ranges.length < limit) {
       ranges.push({
         anchor: model.getPositionAt(idx),
         active: model.getPositionAt(idx + needle.length),
@@ -159,6 +162,8 @@ export class MultiCursorController implements IEditorContribution {
     const sel = this.host.selection;
     const lineCount = model.getLineCount();
     const cur = sel.selections;
+    const limit = Math.max(1, this.host.getMultiCursorLimit?.() ?? sel.getMaxCursors());
+    if (cur.length >= limit) return;
     let target = cur[0]!.active;
     for (const s of cur) {
       if (deltaLine < 0 && s.active.lineNumber < target.lineNumber) target = s.active;

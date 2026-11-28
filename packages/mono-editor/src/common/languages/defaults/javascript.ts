@@ -1,4 +1,11 @@
-import { emitStringWithEscapes, isOverTimeBudget, nowMs, resolveLineBudget } from '../tokenization/monarchEngine';
+import {
+  emitStringWithEscapes,
+  isOverTimeBudget,
+  nowMs,
+  resolveLineBudget,
+  scanKeycapEmojiEnd,
+  scanNonAsciiRun,
+} from '../tokenization/monarchEngine';
 import { StateInterner } from '../tokenization/stateInterner';
 import type { MonoToken, MonoTokenType } from '../tokenization/tokenTypes';
 import type { LineTokenizeResult, MonoTokensProvider, TokenizeLineOptions } from '../tokenization/TokensProvider';
@@ -314,6 +321,17 @@ export function createJavaScriptTokensProvider(
           continue;
         }
 
+        // Emoji keycap sequence ([0-9#*]\uFE0F?\u20E3)
+        const keycapEnd = scanKeycapEmojiEnd(line, i, len);
+        if (keycapEnd > i) {
+          tokens.push({ startColumn: i + 1, endColumn: keycapEnd + 1, type: 'plain' });
+          i = keycapEnd;
+          regexAllowed = false;
+          prevWord = '';
+          afterDot = false;
+          continue;
+        }
+
         // Numbers (hex, binary, octal, decimal, bigint, separators)
         if (isDigit(ch) || (ch === '.' && i + 1 < len && isDigit(line[i + 1]!))) {
           let j = i;
@@ -448,6 +466,17 @@ export function createJavaScriptTokensProvider(
           regexAllowed = true;
           prevWord = '';
           afterDot = false;
+          continue;
+        }
+
+        // Non-ASCII runs (Indic/Arabic/Urdu scripts, emojis, surrogate pairs): keep intact for shaping
+        if (ch.charCodeAt(0) > 0x7f) {
+          const j = scanNonAsciiRun(line, i, len);
+          tokens.push({ startColumn: i + 1, endColumn: j + 1, type: 'plain' });
+          regexAllowed = false;
+          prevWord = '';
+          afterDot = false;
+          i = j;
           continue;
         }
 

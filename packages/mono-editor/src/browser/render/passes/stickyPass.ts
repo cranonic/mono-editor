@@ -9,6 +9,7 @@ import {
   type FrameContext,
   type RenderPass,
 } from '../frameContext';
+import { coalesceStyledSpans, resolveLineSpans } from './textPass';
 
 /**
  * Paints a sticky line using the same swatch-only inline layout as the real line (Track F):
@@ -66,16 +67,11 @@ function paintStickyLineContent(
   };
 
   const tokens = getLineTokens?.(line) ?? [];
-  if (!tokens.length) {
-    drawSlice(1, content.length + 1, theme.foreground);
-  } else {
-    let col = 1;
-    for (const tok of tokens) {
-      if (tok.startColumn > col) drawSlice(col, tok.startColumn, theme.foreground);
-      drawSlice(tok.startColumn, tok.endColumn, tokenColors[tok.type] ?? theme.foreground);
-      col = Math.max(col, tok.endColumn);
-    }
-    if (col <= content.length) drawSlice(col, content.length + 1, theme.foreground);
+  const spans = coalesceStyledSpans(
+    resolveLineSpans(content.length, tokens, [], tokenColors, theme.foreground),
+  );
+  for (const sp of spans) {
+    drawSlice(sp.start, sp.end, sp.color);
   }
 
   // Paint inline color swatches in sticky header (aligned identically with real line)

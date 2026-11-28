@@ -70,7 +70,7 @@ function paintTeardropAt(
   side?: VirtualSide,
 ): void {
   const { opts, teardrops } = frame;
-  const { metrics, projection, freeHandle = null } = opts;
+  const { metrics, projection, freeHandle = null, cursorAnimPos = null } = opts;
   const { lineHeight } = metrics;
   const { w, h } = TEARDROP;
 
@@ -82,6 +82,10 @@ function paintTeardropAt(
     cx = freeHandle.x;
     tipY = freeHandle.y;
     lineTop = tipY - lineHeight + 1;
+  } else if (type === 'cursor' && cursorAnimPos) {
+    cx = cursorAnimPos.x;
+    lineTop = cursorAnimPos.y;
+    tipY = lineTop + lineHeight - 1;
   } else {
     const role = type === 'cursor' ? 'caret' : type === 'start' ? 'selStart' : 'selEnd';
     cx = frame.xAt(line, col, role, side);
@@ -98,7 +102,9 @@ function paintTeardropAt(
   else if (type === 'end') left = cx - w * 0.58;
 
   drawTeardropShape(ctx, left, tipY, w, h, color, type);
-  drawTipCaret(ctx, left, w, type, lineTop, lineHeight, color);
+  if (type !== 'cursor' || (freeHandle && freeHandle.type === 'cursor')) {
+    drawTipCaret(ctx, left, w, type, lineTop, lineHeight, color);
+  }
   teardrops.push({ type, x: left, y: tipY, w, h: h + 12 });
 }
 

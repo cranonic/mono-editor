@@ -1,4 +1,7 @@
-import type { MonoEditorOptions } from '../../common/config/editorOptions';
+import {
+  DEFAULT_MONO_FONT_FAMILY,
+  type MonoEditorOptions,
+} from '../../common/config/editorOptions';
 import type {
   IContentSizeChangedEvent,
   IDimension,
@@ -98,7 +101,7 @@ export class MonoDiffEditor implements IMonoDiffEditor {
     registerBuiltinThemes();
     this.options = {
       fontSize: 13,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+      fontFamily: DEFAULT_MONO_FONT_FAMILY,
       renderSideBySide: undefined,
       renderSideBySideInlineBreakpoint: options.renderSideBySideInlineBreakpoint ?? options.inlineBreakpointPx ?? 900,
       inlineBreakpointPx: options.inlineBreakpointPx ?? options.renderSideBySideInlineBreakpoint ?? 900,

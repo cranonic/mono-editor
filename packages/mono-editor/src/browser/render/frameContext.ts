@@ -109,12 +109,7 @@ export interface OrderedSelectionSlice {
 }
 
 export interface PaintDecorationSpec {
-  range: {
-    startLineNumber: number;
-    startColumn: number;
-    endLineNumber: number;
-    endColumn: number;
-  };
+  range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number };
   underline: 'none' | 'squiggle' | 'solid' | 'dots';
   color: string;
   background?: string;
@@ -160,12 +155,7 @@ export interface PaintOptions {
   findMatches?: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }[];
   findCurrentIndex?: number;
   decorations?: PaintDecorationSpec[];
-  compositionRange?: {
-    startLineNumber: number;
-    startColumn: number;
-    endLineNumber: number;
-    endColumn: number;
-  } | null;
+  compositionRange?: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number } | null;
   dynamicCaretColor?: boolean;
   topInsetPx?: number;
   viewZone?: { afterVisualRow: number; heightPx: number } | null;
@@ -176,7 +166,10 @@ export interface PaintOptions {
   rulers?: readonly number[];
   renderLineHighlight?: RenderLineHighlightMode;
   cursorStyle?: CursorStyleMode;
+  cursorWidth?: number;
   cursorOpacity?: number;
+  cursorScaleY?: number;
+  cursorAnimPos?: { x: number; y: number } | null;
   errorLens?: MonoErrorLensOptions | null;
   markers?: readonly IMarker[];
   getLineColors?: (lineNumber: number) => readonly ColorMatch[];

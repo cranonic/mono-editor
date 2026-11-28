@@ -17,9 +17,48 @@ export const decorationsAndCaretsPass: RenderPass = {
       decorations = [],
       compositionRange = null,
       cursorStyle = 'line',
+      cursorWidth = 2,
       cursorOpacity = 1,
+      cursorScaleY = 1,
+      cursorAnimPos = null,
     } = f.opts;
     const { lineHeight, charWidth } = metrics;
+    const lineWidthPx = Math.max(1, Math.min(10, Math.round(cursorWidth)));
+    const scaleY = Math.max(0.15, Math.min(1, cursorScaleY));
+
+    const paintCaret = (cx: number, y: number, caretColor: string) => {
+      ctx.save();
+      ctx.globalAlpha = cursorOpacity;
+      ctx.fillStyle = caretColor;
+      ctx.strokeStyle = caretColor;
+      const blockW = Math.max(charWidth, 7);
+      if (cursorStyle === 'block') {
+        const fullH = lineHeight - 2;
+        const h = Math.max(2, fullH * scaleY);
+        ctx.globalAlpha = cursorOpacity * 0.42;
+        ctx.fillRect(cx, y + 1 + (fullH - h) / 2, blockW, h);
+      } else if (cursorStyle === 'block-outline') {
+        const fullH = lineHeight - 3;
+        const h = Math.max(2, fullH * scaleY);
+        ctx.lineWidth = 1.25;
+        ctx.strokeRect(cx + 0.5, y + 1.5 + (fullH - h) / 2, blockW - 1, h);
+      } else if (cursorStyle === 'underline') {
+        const w = Math.max(2, blockW * scaleY);
+        ctx.fillRect(cx + (blockW - w) / 2, y + lineHeight - 3, w, 2.5);
+      } else if (cursorStyle === 'underline-thin') {
+        const w = Math.max(2, blockW * scaleY);
+        ctx.fillRect(cx + (blockW - w) / 2, y + lineHeight - 2, w, 1.2);
+      } else if (cursorStyle === 'line-thin') {
+        const fullH = lineHeight - 4;
+        const h = Math.max(2, fullH * scaleY);
+        ctx.fillRect(cx, y + 2 + (fullH - h) / 2, 1, h);
+      } else {
+        const fullH = lineHeight - 4;
+        const h = Math.max(2, fullH * scaleY);
+        ctx.fillRect(cx, y + 2 + (fullH - h) / 2, lineWidthPx, h);
+      }
+      ctx.restore();
+    };
 
     ctx.save();
     ctx.beginPath();
@@ -103,6 +142,7 @@ export const decorationsAndCaretsPass: RenderPass = {
 
       if (cursorOpacity > 0.01) {
         for (let si = 0; si < f.orderedSelections.length; si++) {
+          if (si === 0 && cursorAnimPos && f.orderedSelections[0]!.isEmpty) continue;
           const os = f.orderedSelections[si]!;
           const showCaretForSel = si === 0 ? os.isEmpty : true;
           if (
@@ -112,30 +152,15 @@ export const decorationsAndCaretsPass: RenderPass = {
             (os.caretCol < seg.endCol || seg.isLastSegment)
           ) {
             const cx = f.segCaretX(content, seg, os.caretCol, si === 0 ? selectionSides(f.opts.selection.selections[0]).caret : undefined);
-            const caretColor = f.tokenColorAt(os.caretLine, os.caretCol);
-            ctx.save();
-            ctx.globalAlpha = cursorOpacity;
-            ctx.fillStyle = caretColor;
-            ctx.strokeStyle = caretColor;
-            if (cursorStyle === 'block') {
-              ctx.globalAlpha = cursorOpacity * 0.42;
-              ctx.fillRect(cx, y + 1, Math.max(charWidth, 7), lineHeight - 2);
-            } else if (cursorStyle === 'block-outline') {
-              ctx.lineWidth = 1.25;
-              ctx.strokeRect(cx + 0.5, y + 1.5, Math.max(charWidth, 7) - 1, lineHeight - 3);
-            } else if (cursorStyle === 'underline') {
-              ctx.fillRect(cx, y + lineHeight - 3, Math.max(charWidth, 7), 2.5);
-            } else if (cursorStyle === 'underline-thin') {
-              ctx.fillRect(cx, y + lineHeight - 2, Math.max(charWidth, 7), 1.2);
-            } else if (cursorStyle === 'line-thin') {
-              ctx.fillRect(cx, y + 2, 1, lineHeight - 4);
-            } else {
-              ctx.fillRect(cx, y + 2, 2, lineHeight - 4);
-            }
-            ctx.restore();
+            paintCaret(cx, y, f.tokenColorAt(os.caretLine, os.caretCol));
           }
         }
       }
+    }
+
+    if (cursorOpacity > 0.01 && cursorAnimPos && f.orderedSelections[0]?.isEmpty) {
+      const os = f.orderedSelections[0];
+      paintCaret(cursorAnimPos.x, cursorAnimPos.y, f.tokenColorAt(os.caretLine, os.caretCol));
     }
     ctx.restore();
   },

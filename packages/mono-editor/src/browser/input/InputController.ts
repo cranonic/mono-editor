@@ -1,3 +1,4 @@
+import type { MultiCursorPasteMode } from '../../common/config/editorOptions';
 import type { SelectionState } from '../../common/core/SelectionState';
 import type { IRange } from '../../common/core/types';
 import {
@@ -29,6 +30,7 @@ export interface InputControllerOptions {
   readOnly?: boolean;
   ariaLabel?: string;
   pageSize?: number;
+  multiCursorPaste?: MultiCursorPasteMode;
   bracketEnterIndent?: boolean;
   autoClosingBrackets?: AutoClosingBehavior;
   autoClosingQuotes?: AutoClosingBehavior;
@@ -60,6 +62,7 @@ export class InputController {
   private trimAutoWhitespace = true;
   private readOnly = false;
   private pageSize = 40;
+  private multiCursorPaste: MultiCursorPasteMode = 'spread';
   private bracketEnterIndent = true;
   private autoClosingBrackets: AutoClosingBehavior = 'languageDefined';
   private autoClosingQuotes: AutoClosingBehavior = 'languageDefined';
@@ -94,6 +97,7 @@ export class InputController {
     if (options?.trimAutoWhitespace != null) this.trimAutoWhitespace = options.trimAutoWhitespace;
     if (options?.readOnly != null) this.readOnly = options.readOnly;
     if (options?.pageSize != null) this.pageSize = Math.max(1, options.pageSize);
+    if (options?.multiCursorPaste != null) this.multiCursorPaste = options.multiCursorPaste;
     if (options?.bracketEnterIndent != null) this.bracketEnterIndent = options.bracketEnterIndent;
     if (options?.autoClosingBrackets != null) this.autoClosingBrackets = options.autoClosingBrackets;
     if (options?.autoClosingQuotes != null) this.autoClosingQuotes = options.autoClosingQuotes;
@@ -132,6 +136,7 @@ export class InputController {
   setAriaLabel(label: string): void { this.bridge.setAriaLabel(label); }
   announce(message: string): void { this.bridge.announce(message); }
   setPageSize(n: number): void { this.pageSize = Math.max(1, n | 0); }
+  setMultiCursorPaste(v: MultiCursorPasteMode): void { this.multiCursorPaste = v; }
   setBracketEnterIndent(v: boolean): void { this.bracketEnterIndent = v; }
   setAutoClosingBrackets(v: AutoClosingBehavior): void { this.autoClosingBrackets = v; }
   setAutoClosingQuotes(v: AutoClosingBehavior): void { this.autoClosingQuotes = v; }
@@ -231,8 +236,8 @@ export class InputController {
           return { idx, start: Math.min(aOff, bOff), end: Math.max(aOff, bOff) };
         });
         const sortedAsc = [...items].sort((x, y) => x.start - y.start);
-        const lines = text.split('\n');
-        const perCursor = lines.length === sortedAsc.length && lines.length > 1;
+        const lines = text.split(/\r?\n/);
+        const perCursor = this.multiCursorPaste !== 'full' && lines.length === sortedAsc.length && lines.length > 1;
         const textFor = (i: number) => (perCursor ? lines[i]! : text);
         const finalOffsets = new Array<number>(sortedAsc.length);
         let delta = 0;

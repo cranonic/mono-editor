@@ -11,6 +11,17 @@ import type { MonoStickyScrollOptions } from '../viewModel/StickyScroll';
 import type { WordWrapMode, WrappingIndentMode } from '../viewModel/ViewLineProjection';
 import type { MonoEditorTheme } from './themeTypes';
 
+export const DEFAULT_MONO_FONT_FAMILY =
+  "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji'";
+
+export function withEmojiFontFallback(fontFamily: string): string {
+  const f = (fontFamily || '').trim();
+  if (!f) return DEFAULT_MONO_FONT_FAMILY;
+  return /emoji/i.test(f)
+    ? f
+    : `${f}, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji'`;
+}
+
 export type MonoLineNumbers =
   | 'on'
   | 'off'
@@ -28,6 +39,10 @@ export type CursorStyleMode =
   | 'block-outline'
   | 'underline-thin';
 export type CursorBlinkingMode = 'blink' | 'smooth' | 'phase' | 'expand' | 'solid';
+export type CursorSurroundingLinesStyleMode = 'default' | 'all';
+export type CursorSmoothCaretAnimationMode = 'off' | 'explicit' | 'on';
+export type MultiCursorModifierMode = 'ctrlCmd' | 'alt';
+export type MultiCursorPasteMode = 'spread' | 'full';
 
 // ── Gutter layout (CSS px): [ glyph margin | left pad | line numbers | pad | fold chevron | border ] ──
 /** Space reserved on the far left for breakpoints / bookmarks when `glyphMargin` is true. */
@@ -258,8 +273,14 @@ export interface MonoEditorOptions {
   rulers?: readonly number[];
   renderLineHighlight?: RenderLineHighlightMode;
   cursorStyle?: CursorStyleMode;
+  cursorWidth?: number;
   cursorBlinking?: CursorBlinkingMode;
   cursorSurroundingLines?: number;
+  cursorSurroundingLinesStyle?: CursorSurroundingLinesStyleMode;
+  cursorSmoothCaretAnimation?: CursorSmoothCaretAnimationMode;
+  multiCursorModifier?: MultiCursorModifierMode;
+  multiCursorPaste?: MultiCursorPasteMode;
+  multiCursorLimit?: number;
   linkedEditing?: boolean;
   codeLens?: boolean;
   codeLensFontSize?: number;

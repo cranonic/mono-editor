@@ -20,12 +20,14 @@ export class CodeActionController implements IEditorContribution {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private lightbulbMode: LightbulbEnabledMode;
   private featuresSub: { dispose(): void } | null = null;
+  private lastActions: CodeAction[] = [];
   private actionProviders = new WeakMap<CodeAction, { resolveCodeAction?: (a: CodeAction, token: { isCancellationRequested: boolean }) => CodeAction | Promise<CodeAction | null | undefined> | null | undefined }>();
 
   constructor(host: IEditorContributionHost) {
     this.host = host;
     this.lightbulbMode = host.initialOptions.lightbulb?.enabled ?? 'on';
     this.widget = new CodeActionLightbulbWidget(host.root);
+    this.syncWidgetFontOptions();
     this.featuresSub = languageFeatures.onDidChange(() => this.scheduleLightbulb());
 
     host.keybindings.add({
@@ -73,10 +75,28 @@ export class CodeActionController implements IEditorContribution {
   onThemeChange(wt: ResolvedWidgetTheme): void { this.widget.applyTheme(wt); }
 
   onOptionsChange(patch: Partial<MonoEditorOptions>): void {
+    const typographyChanged =
+      patch.fontSize !== undefined ||
+      patch.lineHeight !== undefined ||
+      patch.fontFamily !== undefined ||
+      patch.lineNumbers !== undefined ||
+      patch.glyphMargin !== undefined ||
+      patch.folding !== undefined;
+    if (typographyChanged) {
+      this.syncWidgetFontOptions();
+      if (this.lightbulbMode !== 'off' && this.widget.isLightbulbVisible() && this.lastActions.length) {
+        this.presentLightbulb(this.lastActions);
+      }
+      if (this.widget.isMenuOpen()) {
+        const scr = this.host.view.caretScreenPos();
+        this.widget.openMenu(this.lastActions, { x: scr.x, y: scr.y + scr.h }, (act) => this.executeCodeAction(act));
+      }
+    }
     if (patch.lightbulb?.enabled !== undefined) {
       this.lightbulbMode = patch.lightbulb.enabled;
       if (this.lightbulbMode === 'off') {
         if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+        this.lastActions = [];
         this.widget.hideLightbulb();
       } else {
         this.scheduleLightbulb();
@@ -85,7 +105,9 @@ export class CodeActionController implements IEditorContribution {
   }
 
   async runQuickFix(): Promise<boolean> {
+    this.syncWidgetFontOptions();
     const actions = await this.collectCodeActionsAtSelection();
+    this.lastActions = actions;
     const scr = this.host.view.caretScreenPos();
     this.widget.openMenu(actions, { x: scr.x, y: scr.y + scr.h }, (act) => this.executeCodeAction(act));
     return actions.length > 0;
@@ -181,14 +203,30 @@ export class CodeActionController implements IEditorContribution {
         const actions = await this.collectCodeActionsAtSelection();
         if (this.host.isDisposed() || this.lightbulbMode === 'off') return;
         if (!actions.length) {
+          this.lastActions = [];
           this.widget.hideLightbulb();
           return;
         }
-        const pos = this.host.selection.active;
-        const scr = this.host.view.screenPosOf(pos.lineNumber, 1);
-        const gutterLeft = Math.max(2, this.host.view.contentLeft - 18);
-        this.widget.showLightbulb(actions, { x: gutterLeft, y: scr.y + 1 }, (act) => this.executeCodeAction(act));
+        this.presentLightbulb(actions);
       })();
     }, 220);
+  }
+
+  private syncWidgetFontOptions(): void {
+    this.widget.setFontOptions({
+      fontSize: this.host.getFontSize(),
+      lineHeight: this.host.getLineHeight(),
+    });
+  }
+
+  private presentLightbulb(actions: CodeAction[]): void {
+    this.syncWidgetFontOptions();
+    this.lastActions = actions;
+    const pos = this.host.selection.active;
+    const scr = this.host.view.screenPosOf(pos.lineNumber, 1);
+    const bulbSize = this.widget.getBulbSize();
+    const gutterLeft = Math.max(2, this.host.view.contentLeft - Math.round(bulbSize * 0.9));
+    const bulbTop = scr.y + Math.max(0, Math.round((scr.h - bulbSize) / 2));
+    this.widget.showLightbulb(actions, { x: gutterLeft, y: bulbTop }, (act) => this.executeCodeAction(act));
   }
 }

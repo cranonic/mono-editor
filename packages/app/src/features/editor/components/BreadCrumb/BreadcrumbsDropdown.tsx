@@ -97,9 +97,14 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
   const [filter, setFilter] = useState('');
   // -1 = no row highlighted when nothing matches; matched isCurrent row is highlighted on open
   const [selectedIdx, setSelectedIdx] = useState(-1);
+  const [keyboardNavSeq, setKeyboardNavSeq] = useState(0);
   const [loading, setLoading] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
   const autoScrolledKeyRef = useRef<string | null>(null);
+  const activeItemRef = useRef(activeItem);
+  useEffect(() => {
+    activeItemRef.current = activeItem;
+  });
 
   // File/folder tree state
   const [rootPathItems, setRootPathItems] = useState<readonly IBreadcrumbItem[]>([]);
@@ -136,7 +141,7 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
     let alive = true;
     setLoading(true);
     model
-      .getSiblings(activeItem)
+      .getSiblings(activeItemRef.current)
       .then((siblings) => {
         if (!alive) return;
         setRootPathItems(siblings);
@@ -148,7 +153,7 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
     return () => {
       alive = false;
     };
-  }, [activeItem, isSymbolMode, model]);
+  }, [activeItem.id, isSymbolMode, model]);
 
   // Build visible tree rows (symbols or files/folders)
   const treeRows = useMemo<DropdownRow[]>(() => {
@@ -229,7 +234,7 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
   // Auto-jump scroll + highlight the clicked/current block or file once rows are ready
   useEffect(() => {
     if (loading || isFiltering) return;
-    const scrollKey = `${activeItem.id}:${dirStack.length}:${treeRows.length}`;
+    const scrollKey = `${activeItem.id}:${dirStack.length}`;
     if (autoScrolledKeyRef.current === scrollKey) return;
     if (treeRows.length === 0) return;
 
@@ -260,16 +265,23 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
     }
   }, [activeItem.id, dirStack.length, loading, isFiltering, treeRows, rowHeight, maxH, maxSticky]);
 
-  // Scroll focused row into view when navigating with keyboard
+  const kbScrollStateRef = useRef({ selectedIdx, stickyCount: stickyIndices.length, rowHeight });
   useEffect(() => {
-    if (selectedIdx < 0) return;
+    kbScrollStateRef.current = { selectedIdx, stickyCount: stickyIndices.length, rowHeight };
+  });
+
+  // Scroll focused row into view ONLY when navigating with keyboard (never fight user scroll)
+  useEffect(() => {
+    if (keyboardNavSeq === 0) return;
+    const { selectedIdx: idx, stickyCount, rowHeight: rowH } = kbScrollStateRef.current;
+    if (idx < 0) return;
     const listEl = listRef.current;
     if (!listEl) return;
-    const activeEl = listEl.querySelector<HTMLElement>(`[data-bc-idx="${selectedIdx}"]`);
+    const activeEl = listEl.querySelector<HTMLElement>(`[data-bc-idx="${idx}"]`);
     if (!activeEl) return;
-    const stickyOffset = stickyIndices.length * rowHeight;
+    const stickyOffset = stickyCount * rowH;
     const rowTop = activeEl.offsetTop;
-    const rowBottom = rowTop + rowHeight;
+    const rowBottom = rowTop + rowH;
     if (rowTop < listEl.scrollTop + stickyOffset) {
       const next = Math.max(0, rowTop - stickyOffset);
       listEl.scrollTop = next;
@@ -279,7 +291,7 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
       listEl.scrollTop = next;
       setScrollTop(next);
     }
-  }, [selectedIdx, stickyIndices.length, rowHeight]);
+  }, [keyboardNavSeq]);
 
   // Clean up any pending long-press timer on unmount
   const clearLongPress = useCallback(() => {
@@ -503,22 +515,34 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
     }
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      if (count > 0) setSelectedIdx((i) => (i < 0 ? 0 : (i + 1) % count));
+      if (count > 0) {
+        setSelectedIdx((i) => (i < 0 ? 0 : (i + 1) % count));
+        setKeyboardNavSeq((s) => s + 1);
+      }
       return;
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault();
-      if (count > 0) setSelectedIdx((i) => (i < 0 ? count - 1 : (i - 1 + count) % count));
+      if (count > 0) {
+        setSelectedIdx((i) => (i < 0 ? count - 1 : (i - 1 + count) % count));
+        setKeyboardNavSeq((s) => s + 1);
+      }
       return;
     }
     if (e.key === 'Home') {
       e.preventDefault();
-      if (count > 0) setSelectedIdx(0);
+      if (count > 0) {
+        setSelectedIdx(0);
+        setKeyboardNavSeq((s) => s + 1);
+      }
       return;
     }
     if (e.key === 'End') {
       e.preventDefault();
-      if (count > 0) setSelectedIdx(count - 1);
+      if (count > 0) {
+        setSelectedIdx(count - 1);
+        setKeyboardNavSeq((s) => s + 1);
+      }
       return;
     }
     if (e.key === 'Enter') {
@@ -557,6 +581,7 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
           if (selectedIdx + 1 < count && filteredRows[selectedIdx + 1]!.depth > row.depth) {
             e.preventDefault();
             setSelectedIdx(selectedIdx + 1);
+            setKeyboardNavSeq((s) => s + 1);
             return;
           }
         } else if (row.kind === 'folder' && row.pathItem?.path) {
@@ -567,6 +592,7 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
             void toggleFolderExpand(row.pathItem.path);
           } else if (selectedIdx + 1 < count && filteredRows[selectedIdx + 1]!.depth > row.depth) {
             setSelectedIdx(selectedIdx + 1);
+            setKeyboardNavSeq((s) => s + 1);
           }
           return;
         }
@@ -586,6 +612,7 @@ export const BreadcrumbsDropdown: React.FC<BreadcrumbsDropdownProps> = ({
       if (row && row.parentIndex >= 0) {
         e.preventDefault();
         setSelectedIdx(row.parentIndex);
+        setKeyboardNavSeq((s) => s + 1);
         return;
       }
       e.preventDefault();

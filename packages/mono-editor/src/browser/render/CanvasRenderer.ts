@@ -1,4 +1,4 @@
-import type { RenderMetrics } from '../../common/config/editorOptions';
+import { withEmojiFontFallback, type RenderMetrics } from '../../common/config/editorOptions';
 import {
   buildFrameContext,
   colorAdvanceBefore,
@@ -102,18 +102,18 @@ export class CanvasRenderer {
 
   /** Line-local pixel X of a 1-based column (fast path on ASCII, grapheme-exact on Indic/Unicode). */
   measureColumnX(line: string, col: number, metrics: RenderMetrics): number {
-    const font = `${metrics.fontSize}px ${metrics.fontFamily}`;
+    const font = `${metrics.fontSize}px ${withEmojiFontFallback(metrics.fontFamily)}`;
     return this.layoutCache.measureColumnX(line, col, font, metrics.charWidth);
   }
 
   /** Map line-local pixel X to a 1-based column (grapheme-boundary snapped on Indic/Unicode). */
   columnAtX(line: string, textX: number, metrics: RenderMetrics, round = true): number {
-    const font = `${metrics.fontSize}px ${metrics.fontFamily}`;
+    const font = `${metrics.fontSize}px ${withEmojiFontFallback(metrics.fontFamily)}`;
     return this.layoutCache.columnAtX(line, textX, font, metrics.charWidth, round);
   }
 
   measureTextWidth(text: string, metrics: RenderMetrics, fontOverride?: string): number {
-    const font = fontOverride ?? `${metrics.fontSize}px ${metrics.fontFamily}`;
+    const font = fontOverride ?? `${metrics.fontSize}px ${withEmojiFontFallback(metrics.fontFamily)}`;
     if (this.ctx.font !== font) this.ctx.font = font;
     return this.ctx.measureText(text).width || text.length * metrics.charWidth;
   }
@@ -121,7 +121,7 @@ export class CanvasRenderer {
   paint(opts: PaintOptions): void {
     const { ctx } = this;
     const { fontSize, fontFamily } = opts.metrics;
-    ctx.font = `${fontSize}px ${fontFamily}`;
+    ctx.font = `${fontSize}px ${withEmojiFontFallback(fontFamily)}`;
     ctx.textBaseline = 'top';
 
     const frame = buildFrameContext(

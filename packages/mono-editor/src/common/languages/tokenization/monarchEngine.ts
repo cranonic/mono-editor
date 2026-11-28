@@ -167,3 +167,27 @@ export function emitStringWithEscapes(
     tokensOut.push({ startColumn: segStart + 1, endColumn: end0 + 1, type: baseType });
   }
 }
+
+/**
+ * Advances across a contiguous non-ASCII / Unicode run (Indic conjuncts, Arabic/Urdu,
+ * combining marks, surrogate pairs, ZWJ/emoji sequences) so tokenizers never split
+ * complex scripts or surrogate pairs across single-UTF-16-code-unit tokens.
+ */
+export function scanNonAsciiRun(line: string, start: number, len: number): number {
+  let j = start;
+  while (j < len && line.charCodeAt(j) > 0x7f) j++;
+  return j;
+}
+
+/**
+ * Detects an emoji keycap sequence (`[0-9#*]\uFE0F?\u20E3`) starting at `i`
+ * and returns its exclusive end offset, or `-1` otherwise.
+ */
+export function scanKeycapEmojiEnd(line: string, i: number, len: number): number {
+  const ch = line.charCodeAt(i);
+  if (!((ch >= 48 && ch <= 57) || ch === 35 || ch === 42)) return -1;
+  let k = i + 1;
+  if (k < len && line.charCodeAt(k) === 0xfe0f) k++;
+  if (k < len && line.charCodeAt(k) === 0x20e3) return k + 1;
+  return -1;
+}

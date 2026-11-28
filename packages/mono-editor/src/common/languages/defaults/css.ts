@@ -1,4 +1,4 @@
-import { isOverTimeBudget, nowMs, resolveLineBudget } from '../tokenization/monarchEngine';
+import { isOverTimeBudget, nowMs, resolveLineBudget, scanKeycapEmojiEnd, scanNonAsciiRun } from '../tokenization/monarchEngine';
 import { StateInterner } from '../tokenization/stateInterner';
 import type { MonoToken } from '../tokenization/tokenTypes';
 import type { LineTokenizeResult, MonoTokensProvider, TokenizeLineOptions } from '../tokenization/TokensProvider';
@@ -175,6 +175,14 @@ export function createCssTokensProvider(): MonoTokensProvider {
           continue;
         }
 
+        // Emoji keycap sequence ([0-9#*]\uFE0F?\u20E3)
+        const keycapEnd = scanKeycapEmojiEnd(line, i, len);
+        if (keycapEnd > i) {
+          tokens.push({ startColumn: i + 1, endColumn: keycapEnd + 1, type: 'plain' });
+          i = keycapEnd;
+          continue;
+        }
+
         // Numbers + CSS units (`14px`, `1.5rem`, `100%`, `-2px`, `360deg`, `0.2s`)
         const numMatch = /^-?(?:\d+\.?\d*|\.\d+)(%|px|em|rem|vh|vw|vmin|vmax|ch|ex|dvh|svh|fr|deg|rad|turn|ms|s|dpi)?/.exec(
           line.slice(i),
@@ -242,6 +250,13 @@ export function createCssTokensProvider(): MonoTokensProvider {
         if ('>+~*=|^$'.includes(ch)) {
           tokens.push({ startColumn: i + 1, endColumn: i + 2, type: 'operator' });
           i++;
+          continue;
+        }
+
+        if (ch.charCodeAt(0) > 0x7f) {
+          const j = scanNonAsciiRun(line, i, len);
+          tokens.push({ startColumn: i + 1, endColumn: j + 1, type: 'plain' });
+          i = j;
           continue;
         }
 

@@ -1,3 +1,4 @@
+import { withEmojiFontFallback } from '../../../common/config/editorOptions';
 import { rgbaToCss } from '../../../common/color/colorFormat';
 import { MarkerSeverity, MarkerTag, type IMarker } from '../../../common/decorations/types';
 import type { SemanticTokenSpan } from '../../../common/languages/semanticTokens';
@@ -9,7 +10,7 @@ import {
 } from '../frameContext';
 import { paintInlayChip } from './inlayBubblePass';
 
-interface StyledSpan {
+export interface StyledSpan {
   start: number;
   end: number;
   color: string;
@@ -22,10 +23,39 @@ interface StyledSpan {
 
 function buildFontString(size: number, family: string, italic?: boolean, bold?: boolean): string {
   const prefix = `${italic ? 'italic ' : ''}${bold ? '600 ' : ''}`;
-  return `${prefix}${size}px ${family}`;
+  return `${prefix}${size}px ${withEmojiFontFallback(family)}`;
 }
 
-function resolveLineSpans(
+/**
+ * Merges adjacent spans with identical visual styling so contiguous runs
+ * (such as Indic/Arabic/Urdu shaping sequences, spaces, or emoji clusters)
+ * are painted in a single `ctx.fillText` call.
+ */
+export function coalesceStyledSpans(spans: readonly StyledSpan[]): StyledSpan[] {
+  if (spans.length <= 1) return spans.length ? [{ ...spans[0]! }] : [];
+  const merged: StyledSpan[] = [];
+  for (const sp of spans) {
+    if (sp.end <= sp.start) continue;
+    const prev = merged[merged.length - 1];
+    if (
+      prev &&
+      prev.end === sp.start &&
+      prev.color === sp.color &&
+      Boolean(prev.italic) === Boolean(sp.italic) &&
+      Boolean(prev.bold) === Boolean(sp.bold) &&
+      Boolean(prev.strikethrough) === Boolean(sp.strikethrough) &&
+      Boolean(prev.underline) === Boolean(sp.underline) &&
+      Boolean(prev.dimmed) === Boolean(sp.dimmed)
+    ) {
+      prev.end = sp.end;
+    } else {
+      merged.push({ ...sp });
+    }
+  }
+  return merged;
+}
+
+export function resolveLineSpans(
   contentLen: number,
   tokens: readonly { startColumn: number; endColumn: number; type: string }[],
   semantics: readonly SemanticTokenSpan[],
@@ -206,7 +236,8 @@ export const textPass: RenderPass = {
       errorLens,
     } = f.opts;
     const { lineHeight, fontSize, fontFamily } = metrics;
-    const baseFont = `${fontSize}px ${fontFamily}`;
+    const resolvedFontFamily = withEmojiFontFallback(fontFamily);
+    const baseFont = `${fontSize}px ${resolvedFontFamily}`;
     const ghostFg =
       theme.ghostTextForeground ??
       (f.dark ? 'rgba(156, 163, 175, 0.56)' : 'rgba(100, 116, 139, 0.62)');
@@ -366,6 +397,7 @@ export const textPass: RenderPass = {
 
       let spans = resolveLineSpans(content.length, tokens, semantics, f.tokenColors, theme.foreground);
       if (markers.length) spans = applyMarkerTags(spans, line, content.length, markers);
+      spans = coalesceStyledSpans(spans);
       for (const sp of spans) emitSpan(sp);
 
       // Whitespace rendering (dots & tab arrows)
@@ -408,7 +440,7 @@ export const textPass: RenderPass = {
       // Inline Inlay Hint Chips
       if (segInlays.length) {
         const hintFontSize = Math.max(10, Math.round(fontSize * 0.86));
-        const hintFont = `${hintFontSize}px ${fontFamily}`;
+        const hintFont = `${hintFontSize}px ${resolvedFontFamily}`;
         const chipH = Math.max(14, lineHeight - 4);
         const chipY = Math.round(y + (lineHeight - chipH) / 2);
         const hintTextY = Math.round(y + (lineHeight - hintFontSize) / 2);
@@ -466,7 +498,7 @@ export const textPass: RenderPass = {
                   ? (f.dark ? 'rgba(251, 191, 36, 0.84)' : 'rgba(180, 83, 9, 0.84)')
                   : (f.dark ? 'rgba(96, 165, 250, 0.82)' : 'rgba(37, 99, 235, 0.82)');
             const lensFontSize = Math.max(11, fontSize - 1);
-            ctx.font = `italic ${lensFontSize}px ${fontFamily}`;
+            ctx.font = `italic ${lensFontSize}px ${resolvedFontFamily}`;
             ctx.fillStyle = lensColor;
             ctx.fillText(`  ${msg}`, endX, y + (lineHeight - lensFontSize) / 2);
             ctx.font = baseFont;

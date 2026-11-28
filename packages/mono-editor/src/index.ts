@@ -68,7 +68,9 @@ export type {
 
 export type {
   CursorBlinkingMode,
+  CursorSmoothCaretAnimationMode,
   CursorStyleMode,
+  CursorSurroundingLinesStyleMode,
   ICursorPositionChangedEvent,
   ICursorSelectionChangedEvent,
   IEditorContribution,
@@ -87,6 +89,8 @@ export type {
   MonoErrorLensOptions,
   MonoLineNumbers,
   MonoMobileQuickKeysOptions,
+  MultiCursorModifierMode,
+  MultiCursorPasteMode,
   RenderLineHighlightMode,
   RenderWhitespaceMode,
 } from './api/types';

@@ -4,6 +4,7 @@ import {
   isOverTimeBudget,
   nowMs,
   resolveLineBudget,
+  scanNonAsciiRun,
 } from '../tokenization/monarchEngine';
 import { StateInterner } from '../tokenization/stateInterner';
 import type { LanguageSegment, MonoToken } from '../tokenization/tokenTypes';
@@ -357,6 +358,12 @@ function tokenizeMermaidLine(line: string, tokens: MonoToken[]): void {
       while (j < len && /[A-Za-z0-9_-]/.test(line[j]!)) j++;
       const w = line.slice(i, j);
       tokens.push({ startColumn: i + 1, endColumn: j + 1, type: MERMAID_KW.has(w) ? 'keywordControl' : 'variable' });
+      i = j;
+      continue;
+    }
+    if (line.charCodeAt(i) > 0x7f) {
+      const j = scanNonAsciiRun(line, i, len);
+      tokens.push({ startColumn: i + 1, endColumn: j + 1, type: 'plain' });
       i = j;
       continue;
     }

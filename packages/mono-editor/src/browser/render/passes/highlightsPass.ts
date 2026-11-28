@@ -164,19 +164,38 @@ export const highlightsPass: RenderPass = {
       }
 
       if (bracketMatch) {
-        const pairPts = [bracketMatch.open, bracketMatch.close];
-        for (const bp of pairPts) {
+        const { open, close } = bracketMatch;
+        const fill = f.dark ? 'rgba(56, 189, 248, 0.16)' : 'rgba(37, 99, 235, 0.12)';
+        const stroke = f.dark ? 'rgba(125, 211, 252, 0.85)' : 'rgba(37, 99, 235, 0.78)';
+        const paintBox = (x1: number, x2: number) => {
+          ctx.fillStyle = fill;
+          ctx.fillRect(x1, y + 1, Math.max(2, x2 - x1), lineHeight - 2);
+          ctx.strokeStyle = stroke;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x1 + 0.5, y + 1.5, Math.max(1, x2 - x1 - 1), lineHeight - 3);
+        };
+        const first = open.column <= close.column ? open : close;
+        const second = first === open ? close : open;
+        const sameSegContiguous =
+          open.lineNumber === line &&
+          close.lineNumber === line &&
+          first.column + first.length === second.column &&
+          first.column >= seg.startCol &&
+          second.column + second.length <= seg.endCol;
+        if (sameSegContiguous) {
+          const seamGap =
+            f.segX(content, seg, second.column) - f.segX(content, seg, first.column + first.length);
+          if (Math.abs(seamGap) < 1.5) {
+            paintBox(f.segX(content, seg, first.column), f.segX(content, seg, second.column + second.length));
+            continue;
+          }
+        }
+        for (const bp of [open, close]) {
           if (bp.lineNumber !== line) continue;
           const c1 = Math.max(seg.startCol, bp.column);
           const c2 = Math.min(seg.endCol, bp.column + bp.length);
           if (c2 <= c1) continue;
-          const x1 = f.segX(content, seg, c1);
-          const x2 = f.segX(content, seg, c2);
-          ctx.fillStyle = f.dark ? 'rgba(56, 189, 248, 0.16)' : 'rgba(37, 99, 235, 0.12)';
-          ctx.fillRect(x1, y + 1, Math.max(2, x2 - x1), lineHeight - 2);
-          ctx.strokeStyle = f.dark ? 'rgba(125, 211, 252, 0.85)' : 'rgba(37, 99, 235, 0.78)';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x1 + 0.5, y + 1.5, Math.max(1, x2 - x1 - 1), lineHeight - 3);
+          paintBox(f.segX(content, seg, c1), f.segX(content, seg, c2));
         }
       }
     }

@@ -1,12 +1,16 @@
 import type { BracketColorizer } from '../../common/brackets';
 import type {
   CursorBlinkingMode,
+  CursorSmoothCaretAnimationMode,
   CursorStyleMode,
+  CursorSurroundingLinesStyleMode,
   FoldingStrategy,
   MonoEditorOptions,
   MonoErrorLensOptions,
   MonoLineNumbers,
   MonoMobileQuickKeysOptions,
+  MultiCursorModifierMode,
+  MultiCursorPasteMode,
   RenderLineHighlightMode,
   RenderWhitespaceMode,
 } from '../../common/config/editorOptions';
@@ -51,8 +55,14 @@ export interface EditorOptionState {
   rulers: number[];
   renderLineHighlight: RenderLineHighlightMode;
   cursorStyle: CursorStyleMode;
+  cursorWidth: number;
   cursorBlinking: CursorBlinkingMode;
   cursorSurroundingLines: number;
+  cursorSurroundingLinesStyle: CursorSurroundingLinesStyleMode;
+  cursorSmoothCaretAnimation: CursorSmoothCaretAnimationMode;
+  multiCursorModifier: MultiCursorModifierMode;
+  multiCursorPaste: MultiCursorPasteMode;
+  multiCursorLimit: number;
   linkedEditing: boolean;
   codeLens: boolean;
   errorLens: boolean | MonoErrorLensOptions;
@@ -102,6 +112,7 @@ export function applyEditorOptionsPatch(
   deps: {
     root: HTMLDivElement;
     modelCtrl: ModelController;
+    selection?: SelectionState;
     view: ViewController;
     input: InputController;
     commands: CommandService;
@@ -178,6 +189,10 @@ export function applyEditorOptionsPatch(
     state.cursorStyle = options.cursorStyle;
     deps.view.setDisplayOptions({ cursorStyle: options.cursorStyle });
   }
+  if (options.cursorWidth != null) {
+    state.cursorWidth = Math.max(1, Math.min(10, Math.round(options.cursorWidth)));
+    deps.view.setDisplayOptions({ cursorWidth: state.cursorWidth });
+  }
   if (options.cursorBlinking != null) {
     state.cursorBlinking = options.cursorBlinking;
     deps.view.setDisplayOptions({ cursorBlinking: options.cursorBlinking });
@@ -185,6 +200,23 @@ export function applyEditorOptionsPatch(
   if (options.cursorSurroundingLines != null) {
     state.cursorSurroundingLines = Math.max(0, options.cursorSurroundingLines);
     deps.view.setDisplayOptions({ cursorSurroundingLines: state.cursorSurroundingLines });
+  }
+  if (options.cursorSurroundingLinesStyle != null) {
+    state.cursorSurroundingLinesStyle = options.cursorSurroundingLinesStyle;
+    deps.view.setDisplayOptions({ cursorSurroundingLinesStyle: options.cursorSurroundingLinesStyle });
+  }
+  if (options.cursorSmoothCaretAnimation != null) {
+    state.cursorSmoothCaretAnimation = options.cursorSmoothCaretAnimation;
+    deps.view.setDisplayOptions({ cursorSmoothCaretAnimation: options.cursorSmoothCaretAnimation });
+  }
+  if (options.multiCursorModifier != null) state.multiCursorModifier = options.multiCursorModifier;
+  if (options.multiCursorPaste != null) {
+    state.multiCursorPaste = options.multiCursorPaste;
+    deps.input.setMultiCursorPaste(options.multiCursorPaste);
+  }
+  if (options.multiCursorLimit != null) {
+    state.multiCursorLimit = Math.max(1, Math.min(100000, Math.round(options.multiCursorLimit)));
+    deps.selection?.setMaxCursors(state.multiCursorLimit);
   }
   if (options.linkedEditing != null) state.linkedEditing = options.linkedEditing;
   if (options.codeLens != null) state.codeLens = options.codeLens;
@@ -403,7 +435,12 @@ export function dispatchPointerInteraction(
   deps.pushStackElement();
   deps.handleVis.onUserInteract();
   deps.syncTextarea();
-  if (kind === 'tap' || kind === 'handleTap') deps.input.focus();
+  if (kind === 'tap' || kind === 'handleTap') {
+    deps.view.notifyCaretActivity('explicit');
+    deps.input.focus();
+  } else {
+    deps.view.notifyCaretActivity('immediate');
+  }
   deps.view.paint();
   if (kind === 'tap' || kind === 'handle' || kind === 'select') deps.emitCursorEvents('mouse');
   if (kind === 'handleTap' || kind === 'select') {

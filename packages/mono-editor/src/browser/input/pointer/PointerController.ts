@@ -1,4 +1,4 @@
-import type { RenderMetrics } from '../../../common/config/editorOptions';
+import type { MultiCursorModifierMode, RenderMetrics } from '../../../common/config/editorOptions';
 import type { SelectionState } from '../../../common/core/SelectionState';
 import type { TextModel } from '../../../common/model/TextModel';
 import { graphemeRangeAt } from '../../../common/util/grapheme';
@@ -20,6 +20,7 @@ export interface PointerExtraCallbacks {
   onMouseEvent?: (kind: 'down' | 'up' | 'move' | 'leave' | 'contextmenu', e: MouseEvent) => void;
   onPinchZoom?: (scaleRatio: number) => void;
   onTapMeta?: (info: { clientX: number; clientY: number; pointerType: string }) => void;
+  getMultiCursorModifier?: () => MultiCursorModifierMode;
 }
 
 const TAP_SLOP = 14;
@@ -132,6 +133,7 @@ export class PointerController {
     this.scrolling = false;
     this.selecting = false;
     this.view.freeHandle = null;
+    this.view.setPointerHeld(false);
   }
 
   dispose(): void {
@@ -143,6 +145,7 @@ export class PointerController {
     this.teardrops.dispose();
     this.touchPointers.clear();
     this.view.freeHandle = null;
+    this.view.setPointerHeld(false);
     this.root.removeEventListener('pointerdown', this.onDown);
     this.root.removeEventListener('pointermove', this.onMove);
     this.root.removeEventListener('pointerup', this.onUp);
@@ -204,6 +207,7 @@ export class PointerController {
       onFoldToggle: this.onFoldToggle,
       onColorSwatchClick: this.onColorSwatchClick,
       onLinkClick: this.onLinkClick,
+      multiCursorModifier: this.extra?.getMultiCursorModifier?.() ?? 'alt',
       onStickyTap: () => this.onInteract('tap'),
       onBottomStickyTap: () => this.scrollPhysics.stop(),
     });
@@ -223,6 +227,7 @@ export class PointerController {
         this.pinchActive = true;
         this.pinchStartDist = Math.max(10, this.getPinchDistance());
         this.active = false;
+        this.view.setPointerHeld(false);
         this.clearLongPress();
         this.scrollPhysics.stop();
         return;
@@ -256,9 +261,11 @@ export class PointerController {
     if (this.tryHandleOverlayClick(e)) {
       this.active = false;
       this.pointerId = null;
+      this.view.setPointerHeld(false);
       return;
     }
 
+    this.view.setPointerHeld(true);
     const hit = this.pendingDouble
       ? null
       : this.teardrops.hitTest(this.root, this.getTeardrops(), e.clientX, e.clientY);
@@ -360,7 +367,7 @@ export class PointerController {
     if (this.selecting || this.longPressFired) {
       const pos = this.hitTest(e.clientX, e.clientY);
       this.selection.moveActive(pos.lineNumber, pos.column, true);
-      this.view.ensureCaretVisible();
+      this.view.ensureCaretVisible(false);
       this.view.schedulePaint();
       return;
     }
@@ -403,6 +410,7 @@ export class PointerController {
 
     this.active = false;
     this.pointerId = null;
+    this.view.setPointerHeld(false);
     this.teardrops.reset();
     this.pendingDouble = false;
     this.scrolling = false;
@@ -410,7 +418,7 @@ export class PointerController {
 
     if (wasHandleDrag) {
       this.view.freeHandle = null;
-      this.view.ensureCaretVisible();
+      this.view.ensureCaretVisible(false);
       this.view.schedulePaint();
       this.onInteract(!this.selection.isEmpty ? 'select' : 'handle');
       return;
@@ -489,7 +497,9 @@ export class PointerController {
       }
       this.clearSingleTap();
       const pos = this.hitTest(e.clientX, e.clientY);
-      if (e.altKey) this.selection.addSelection(pos, pos, true);
+      const modMode = this.extra?.getMultiCursorModifier?.() ?? 'alt';
+      const addMulti = modMode === 'ctrlCmd' ? (e.ctrlKey || e.metaKey) && !e.altKey : e.altKey;
+      if (addMulti) this.selection.addSelection(pos, pos, true);
       else this.selection.setCaret(pos.lineNumber, pos.column);
       this.view.schedulePaint();
       this.extra?.onTapMeta?.({ clientX: e.clientX, clientY: e.clientY, pointerType: e.pointerType || 'mouse' });
@@ -517,6 +527,7 @@ export class PointerController {
     this.teardrops.stopAutoScroll();
     this.active = false;
     this.pointerId = null;
+    this.view.setPointerHeld(false);
     this.teardrops.reset();
     this.pendingDouble = false;
     this.scrolling = false;

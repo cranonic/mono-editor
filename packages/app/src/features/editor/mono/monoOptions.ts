@@ -60,7 +60,7 @@ export function buildMonoEditorOptions(
   const fontSize = Math.max(6, Math.min(100, num(settings['editor.fontSize'], 13)));
   const fontFamily =
     (typeof settings['editor.fontFamily'] === 'string' && settings['editor.fontFamily'].trim()) ||
-    "'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    "'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji'";
   const lineHeight = resolveLineHeight(settings['editor.lineHeight'], fontSize);
 
   // Line numbers

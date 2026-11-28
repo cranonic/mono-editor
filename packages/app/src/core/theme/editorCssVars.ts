@@ -18,7 +18,7 @@ export const EDITOR_CSS_VARS = {
 
 /** Fallback stack when setting is empty (matches monacoOptions defaults) */
 export const DEFAULT_EDITOR_FONT_FAMILY =
-  "'Fira Code', 'Cascadia Code', Consolas, 'Courier New', monospace";
+  "'Fira Code', 'Cascadia Code', Consolas, 'Courier New', monospace, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji'";
 
 const DEFAULT_FONT_SIZE = '13px';
 const DEFAULT_FONT_WEIGHT = 'normal';

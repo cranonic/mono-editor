@@ -119,7 +119,7 @@ export class MonoEditor implements IMonoEditor {
       getModel: () => this.modelCtrl.model, selection: this.selection, view: this.view,
       keybindings: this.keybindings, commands: this.commands, isReadOnly: () => this.opts.readOnly,
       getTabSize: () => this.opts.tabSize, getInsertSpaces: () => this.opts.insertSpaces,
-      getEmptySelectionClipboard: () => this.opts.emptySelectionClipboard, getNativePasteSeq: () => this.input.getNativePasteSeq(), onBeforePaste: tryPaste, onAfterPaste: onPasteDone,
+      getEmptySelectionClipboard: () => this.opts.emptySelectionClipboard, getMultiCursorPaste: () => this.opts.multiCursorPaste, getNativePasteSeq: () => this.input.getNativePasteSeq(), onBeforePaste: tryPaste, onAfterPaste: onPasteDone,
       onSyncIndentOptions: (sp, ts) => { this.opts.insertSpaces = sp; this.opts.tabSize = ts; this.input.setInsertSpaces(sp); this.input.setTabSize(ts); this.view.setTabSize(ts); },
       getLanguageIdAtPosition: (ln, col) => this.tokenization.getLanguageIdAtPosition(this.modelCtrl.model, ln, col),
       syncTextarea: () => this.syncTextarea(), emitContent: () => this.emitContent(), emitCursorEvents: (src) => this.emitCursorEvents(src),
@@ -151,7 +151,7 @@ export class MonoEditor implements IMonoEditor {
     this.detachDomListeners = attachRootDomListeners({
       root: this.root, textarea: this.input.textarea, isDisposed: () => this.disposed,
       getContributions: () => this.contributions.values(), dispatchKeybinding: (e) => this.keybindings.dispatchDetailed(e),
-      onOutsidePointerDown: () => { this.input.blur(); for (const c of this.contributions.values()) c.onOutsidePointerDown?.(); },
+      onOutsidePointerDown: () => { this.input.blur(); this.view.setCursorFocused(false); for (const c of this.contributions.values()) c.onOutsidePointerDown?.(); },
       onWheelScroll: (dx, dy) => { for (const c of this.contributions.values()) c.onPointerInteract?.('scroll'); this.handleVis.onScrollStart(); this.view.scrollBy(dx, dy); this.flushScrollDelta(); },
       onWheelEnd: () => { this.handleVis.onScrollEnd(); for (const c of this.contributions.values()) c.onScrollEnd?.(); },
     });
@@ -210,7 +210,7 @@ export class MonoEditor implements IMonoEditor {
     const raw = typeof positionOrLine === 'number' ? { lineNumber: positionOrLine, column: column ?? 1 } : positionOrLine;
     const pos = clampPosition(this.modelCtrl.model, raw.lineNumber, raw.column);
     if (this.folding.isLineHidden(pos.lineNumber)) { this.folding.unfoldContaining(pos.lineNumber); this.view.projection.invalidate(); }
-    this.selection.setCaret(pos.lineNumber, pos.column); this.view.ensureCaretVisible(); this.syncTextarea(); this.view.paint(); this.emitCursorEvents('api');
+    this.selection.setCaret(pos.lineNumber, pos.column); this.view.notifyCaretActivity('explicit'); this.view.ensureCaretVisible(); this.syncTextarea(); this.view.paint(); this.emitCursorEvents('api');
   }
   getSelection(): ISelection { return rangeToISelection(this.selection.anchor, this.selection.active); }
   setSelection(sel: ISelection) { this.setSelections([sel]); }
@@ -255,8 +255,8 @@ export class MonoEditor implements IMonoEditor {
   saveViewState(): IEditorViewState | null { return this.disposed ? null : saveEditorViewState(this.selection, this.view, this.folding); }
   restoreViewState(s: IEditorViewState | null) { restoreEditorViewState(s, this.modelCtrl.model, this.selection, this.view, this.folding); this.view.paint(); this.syncTextarea(); }
 
-  focus() { this.syncTextarea(); this.input.focus(); this.events.emitFocus(); }
-  blur() { this.input.blur(); this.events.emitBlur(); }
+  focus() { this.syncTextarea(); this.input.focus(); this.view.setCursorFocused(true); this.events.emitFocus(); }
+  blur() { this.input.blur(); this.view.setCursorFocused(false); this.events.emitBlur(); }
   hasTextFocus() { return document.activeElement === this.input.textarea; }
   hasWidgetFocus() { const a = document.activeElement; return Boolean(a && (a === this.input.textarea || this.root.contains(a))); }
   layout(dimension?: IDimension) {
@@ -269,7 +269,7 @@ export class MonoEditor implements IMonoEditor {
   }
   updateOptions(options: Partial<MonoEditorOptions>) {
     applyEditorOptionsPatch(this.opts, options, {
-      root: this.root, modelCtrl: this.modelCtrl, view: this.view, input: this.input, commands: this.commands,
+      root: this.root, modelCtrl: this.modelCtrl, selection: this.selection, view: this.view, input: this.input, commands: this.commands,
       scrollbar: this.scrollbar, minimap: this.minimap, tokenization: this.tokenization, bracketColorizer: this.bracketColorizer, folding: this.folding, isPeekEditor: this.isPeekEditor,
       applyAllWidgetThemes: () => this.applyAllWidgetThemes(), setLanguageId: (id) => this.setLanguageId(id),
       setValue: (v) => this.setValue(v), notifyContributions: (p) => { for (const c of this.contributions.values()) c.onOptionsChange?.(p); },

@@ -1,3 +1,4 @@
+import type { MultiCursorModifierMode } from '../../../common/config/editorOptions';
 import type { ColorHit, InlayHintHit, LinkHit } from '../../render/CanvasRenderer';
 import type { ViewController } from '../../view/ViewController';
 
@@ -13,6 +14,7 @@ export interface OverlayHitHandlers {
   onColorSwatchClick?: (hit: ColorHit) => void;
   onLinkClick?: (hit: LinkHit, e: PointerEvent) => void;
   onInlayHintClick?: (hit: InlayHintHit, meta?: InlayHintClickMeta) => void;
+  multiCursorModifier?: MultiCursorModifierMode;
 }
 
 export function hitTestStickyColorSwatch(
@@ -132,7 +134,8 @@ export function handlePointerDownOverlay(
     }
   }
 
-  if (handlers.onLinkClick && (e.ctrlKey || e.metaKey)) {
+  const linkModifierPressed = handlers.multiCursorModifier === 'ctrlCmd' ? e.altKey : (e.ctrlKey || e.metaKey);
+  if (handlers.onLinkClick && linkModifierPressed) {
     const link = hitTestLink(view, localX, localY);
     if (link) {
       e.preventDefault();

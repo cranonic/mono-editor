@@ -345,6 +345,7 @@ export interface IEditorContributionHost {
   isReadOnly(): boolean;
   isFoldingEnabled(): boolean;
   getTabSize(): number;
+  getMultiCursorLimit?(): number;
   getFontFamily(): string;
   getFontSize(): number;
   getLineHeight(): number;

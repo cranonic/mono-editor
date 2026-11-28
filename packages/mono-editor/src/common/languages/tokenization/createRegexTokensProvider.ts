@@ -1,4 +1,10 @@
-import { isOverTimeBudget, nowMs, resolveLineBudget } from './monarchEngine';
+import {
+  isOverTimeBudget,
+  nowMs,
+  resolveLineBudget,
+  scanKeycapEmojiEnd,
+  scanNonAsciiRun,
+} from './monarchEngine';
 import type { MonoToken, MonoTokenType } from './tokenTypes';
 import type { LineTokenizeResult, MonoTokensProvider, TokenizeLineOptions } from './TokensProvider';
 
@@ -83,6 +89,15 @@ export function createRegexTokensProvider(opts: RegexProviderOptions): MonoToken
           continue;
         }
 
+        if (cur === initial) {
+          const keycapEnd = scanKeycapEmojiEnd(line, i, len);
+          if (keycapEnd > i) {
+            tokens.push({ startColumn: i + 1, endColumn: keycapEnd + 1, type: 'plain' });
+            i = keycapEnd;
+            continue;
+          }
+        }
+
         let matched = false;
         for (const rule of rules) {
           if (rule.whenState !== undefined && rule.whenState !== cur) continue;
@@ -131,6 +146,13 @@ export function createRegexTokensProvider(opts: RegexProviderOptions): MonoToken
             type = 'type';
           }
           tokens.push({ startColumn: i + 1, endColumn: j + 1, type });
+          i = j;
+          continue;
+        }
+
+        if (line.charCodeAt(i) > 0x7f) {
+          const j = scanNonAsciiRun(line, i, len);
+          tokens.push({ startColumn: i + 1, endColumn: j + 1, type: 'plain' });
           i = j;
           continue;
         }

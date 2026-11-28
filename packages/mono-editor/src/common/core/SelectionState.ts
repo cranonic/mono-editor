@@ -35,6 +35,19 @@ export class SelectionState {
   selections: MonoSelectionRange[] = [
     { anchor: { lineNumber: 1, column: 1 }, active: { lineNumber: 1, column: 1 } },
   ];
+  private maxCursors = 10000;
+
+  getMaxCursors(): number {
+    return this.maxCursors;
+  }
+
+  setMaxCursors(limit: number): void {
+    const clamped = Math.max(1, Math.min(100000, Math.round(limit)));
+    this.maxCursors = clamped;
+    if (this.selections.length > clamped) {
+      this.selections = this.selections.slice(0, clamped);
+    }
+  }
 
   get anchor(): MonoPosition {
     return this.selections[0]!.anchor;
@@ -96,6 +109,7 @@ export class SelectionState {
         return;
       }
     }
+    if (this.selections.length >= this.maxCursors) return;
     this.selections.push({
       anchor: { ...anchor },
       active: { ...active },
@@ -171,10 +185,14 @@ export class SelectionState {
     this.selections = merged.length
       ? merged.map((m) => m.s)
       : [{ anchor: { ...primary.anchor }, active: { ...primary.active } }];
+    if (this.selections.length > this.maxCursors) {
+      this.selections = this.selections.slice(0, this.maxCursors);
+    }
   }
 
   clone(): SelectionState {
     const s = new SelectionState();
+    s.maxCursors = this.maxCursors;
     s.selections = this.selections.map((r) => ({
       anchor: { ...r.anchor },
       active: { ...r.active },
